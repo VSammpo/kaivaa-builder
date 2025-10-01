@@ -1,0 +1,48 @@
+[tool.poetry]
+name = "kaivaa-builder"
+version = "0.1.0"
+description = "Template builder for automated presentation generation"
+authors = ["Votre Nom <votre.email@example.com>"]
+readme = "README.md"
+packages = [{include = "backend"}]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+streamlit = "^1.30.0"
+pandas = "^2.1.0"
+numpy = "^1.26.0"
+openpyxl = "^3.1.2"
+python-pptx = "^0.6.23"
+pyyaml = "^6.0.1"
+pydantic = "^2.5.0"
+sqlalchemy = "^2.0.23"
+psycopg2-binary = "^2.9.9"
+xlwings = "^0.30.0"
+pywin32 = "^306"
+python-dotenv = "^1.0.0"
+loguru = "^0.7.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.3"
+black = "^23.12.0"
+ruff = "^0.1.7"
+mypy = "^1.7.1"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ['py312']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
