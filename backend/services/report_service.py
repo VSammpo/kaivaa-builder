@@ -195,7 +195,7 @@ class ReportService:
         logger.info(f"{len(replacements)} balises chargées")
         
         # Remplacer les balises dans PowerPoint
-        with powerpoint_app_context(output_path, visible=False) as (ppt_app, presentation):
+        with powerpoint_app_context(output_path, visible=True) as (ppt_app, presentation):  # <- CHANGÉ visible=True
             # Remplacement dans toutes les slides
             for slide in presentation.Slides:
                 for shape in slide.Shapes:
@@ -218,7 +218,7 @@ class ReportService:
         
         replacements = load_replacement_tags(str(excel_path))
         
-        with powerpoint_app_context(str(ppt_path), visible=False) as (ppt_app, presentation):
+        with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation): 
             for slide_id, images_config in self.config.image_injections.items():
                 # Trouver la slide
                 slide = find_slide_by_id(presentation, slide_id)
