@@ -107,12 +107,43 @@ data_source_type = st.selectbox(
     ["postgresql", "mysql", "excel", "csv"]
 )
 
-if data_source_type in ["postgresql", "mysql"]:
+# Configuration spécifique selon le type
+if data_source_type == "excel":
+    st.info("💡 Vous utiliserez un fichier Excel comme source de données")
+    
+    excel_config_mode = st.radio(
+        "Mode de configuration Excel",
+        ["Fichier unique (template = données)", "Fichiers séparés (template + données)"]
+    )
+    
+    if excel_config_mode == "Fichiers séparés (template + données)":
+        st.warning("🚧 Cette fonctionnalité sera disponible dans la prochaine version")
+        st.markdown("""
+        Pour l'instant, le fichier Excel template que vous avez uploadé sera utilisé comme source de données.
+        Les tableaux structurés (ex: 'Performance') seront lus depuis ce fichier.
+        """)
+    
+    table_names = st.text_input(
+        "Noms des tableaux Excel à lire",
+        value="Performance",
+        help="Noms des tableaux structurés Excel (séparés par des virgules)"
+    )
+    tables_list = [t.strip() for t in table_names.split(',') if t.strip()]
+
+elif data_source_type in ["postgresql", "mysql"]:
     required_tables = st.text_area(
         "Tables requises (une par ligne)",
         placeholder="observations\ndim_produits\ndim_drives"
     )
     tables_list = [t.strip() for t in required_tables.split('\n') if t.strip()]
+
+elif data_source_type == "csv":
+    st.info("💡 Vous utiliserez des fichiers CSV comme source de données")
+    csv_files = st.text_area(
+        "Fichiers CSV à utiliser (un par ligne)",
+        placeholder="data/observations.csv\ndata/produits.csv"
+    )
+    tables_list = [t.strip() for t in csv_files.split('\n') if t.strip()]
 else:
     tables_list = []
 

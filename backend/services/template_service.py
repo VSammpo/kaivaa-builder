@@ -66,7 +66,7 @@ class TemplateService:
             description=config.description,
             version=config.version,
             created_by=user_id,
-            config=config.model_dump(mode='json'),  # <- AJOUTER mode='json'
+            config=config.model_dump(mode='json'), 
             config_file_path=str(created_files['config']),
             ppt_template_path=str(created_files['ppt']),
             excel_template_path=str(created_files['excel']),
@@ -79,6 +79,9 @@ class TemplateService:
         
         # Créer la première version
         self._create_version(template, user_id, "Création initiale")
+        
+        # Faire un dernier refresh pour avoir l'objet complet
+        self.db.refresh(template)
         
         logger.success(f"Template '{config.name}' créé (ID: {template.id})")
         return template
