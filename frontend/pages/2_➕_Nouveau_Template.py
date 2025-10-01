@@ -143,26 +143,33 @@ if st.button("🚀 Créer le template", type="primary", use_container_width=True
             excel_path = None
             
             if ppt_file:
-                ppt_path = Path(f"/tmp/{ppt_file.name}")
+                import tempfile
+                temp_dir = Path(tempfile.gettempdir())
+                ppt_path = temp_dir / ppt_file.name
                 with open(ppt_path, 'wb') as f:
                     f.write(ppt_file.getbuffer())
             
             if excel_file:
-                excel_path = Path(f"/tmp/{excel_file.name}")
+                import tempfile
+                temp_dir = Path(tempfile.gettempdir())
+                excel_path = temp_dir / excel_file.name
                 with open(excel_path, 'wb') as f:
                     f.write(excel_file.getbuffer())
             
             # Créer le template
+            template_name = None
             with DatabaseService.get_session() as db:
                 service = TemplateService(db)
                 template = service.create_template(
                     config=config,
-                    user_id=1,  # TODO: récupérer l'utilisateur connecté
+                    user_id=1,
                     ppt_source=ppt_path,
                     excel_source=excel_path
                 )
+                template_name = template.name
+                template_id = template.id
             
-            st.success(f"✅ Template '{template.name}' créé avec succès!")
+            st.success(f"✅ Template '{template_name}' créé avec succès! (ID: {template_id})")
             st.balloons()
             
             # Réinitialiser
