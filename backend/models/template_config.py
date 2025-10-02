@@ -55,7 +55,7 @@ class ImageInjection(BaseModel):
     position: Dict[str, float] = Field(..., description="Position {left, top}")
     size: Dict[str, float] = Field(..., description="Taille {max_width, max_height}")
     background: bool = Field(False, description="Placer en arrière-plan")
-
+    loop_dependent: bool = Field(False, description="Image dépendante d'une boucle")  
 
 class LoopConfig(BaseModel):
     """Configuration d'une boucle sur slides"""
