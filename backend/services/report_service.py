@@ -3,7 +3,7 @@ Service de génération de rapports
 """
 
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from datetime import datetime
 from loguru import logger
 
@@ -46,7 +46,7 @@ class ReportService:
         Génère un rapport complet.
         
         Args:
-            parameters: Paramètres du rapport (ex: {"entreprise": "ACME", "background": "Cuisine"})
+            parameters: Paramètres du rapport
             output_name: Nom personnalisé pour les fichiers de sortie
             
         Returns:
@@ -64,24 +64,30 @@ class ReportService:
         start_time = datetime.now()
         
         try:
-            logger.info("Étape 1/6 : Préparation Excel")
+            logger.info("Étape 1/8 : Préparation Excel")
             excel_path = self._prepare_excel(parameters, output_paths['excel_path'])
             
-            logger.info("Étape 2/6 : Lecture des données")
+            logger.info("Étape 2/8 : Lecture des données")
             data = self._load_data(excel_path)
             
-            logger.info("Étape 3/6 : Export des graphiques")
+            logger.info("Étape 3/8 : Export des graphiques")
             chart_exporter = ChartExporter(str(excel_path))
             charts_map = chart_exporter.export_all_charts()
             
-            logger.info("Étape 4/6 : Génération PowerPoint")
+            logger.info("Étape 4/8 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
             
-            logger.info("Étape 5/6 : Application des boucles")
+            logger.info("Étape 5/8 : Application des boucles")
             self._apply_loops(ppt_path, excel_path)
             
-            logger.info("Étape 6/6 : Injection des images")
+            logger.info("Étape 6/8 : Injection des tableaux")
+            self._inject_tables_to_slides(ppt_path, excel_path)
+            
+            logger.info("Étape 7/8 : Injection des images")
             self._inject_images(ppt_path, excel_path)
+            
+            logger.info("Étape 8/8 : Injection des graphiques")
+            self._inject_chart_images(ppt_path, charts_map)
             
             chart_exporter.cleanup()
             
@@ -386,4 +392,140 @@ class ReportService:
                     except Exception as e:
                         logger.warning(f"Erreur injection image dans {slide_id} : {e}")
             
+            presentation.Save()
+    
+    def _inject_tables_to_slides(self, ppt_path: Path, excel_path: Path) -> None:
+        """Injecte les données Excel dans les tableaux PowerPoint"""
+        if not self.config.slide_mappings:
+            logger.info("Aucun mapping de tableau configuré")
+            return
+        
+        logger.info(f"Injection de {len(self.config.slide_mappings)} tableau(x)")
+        
+        from backend.core.excel_handler import read_excel_range_data
+        
+        with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
+            for mapping in self.config.slide_mappings:
+                slide = find_slide_by_id(presentation, mapping.slide_id)
+                
+                if not slide:
+                    logger.warning(f"Slide {mapping.slide_id} non trouvée pour mapping")
+                    continue
+                
+                # Lire les données Excel
+                try:
+                    data_text, hyperlinks_data = read_excel_range_data(
+                        str(excel_path), 
+                        mapping.sheet_name, 
+                        mapping.excel_range
+                    )
+                except Exception as e:
+                    logger.error(f"Erreur lecture {mapping.sheet_name}!{mapping.excel_range} : {e}")
+                    continue
+                
+                if not data_text:
+                    logger.warning(f"Aucune donnée pour {mapping.slide_id}")
+                    continue
+                
+                # Trouver le tableau dans la slide
+                table_shape = None
+                for shape in slide.Shapes:
+                    if hasattr(shape, 'HasTable') and shape.HasTable:
+                        table_shape = shape
+                        break
+                
+                if not table_shape:
+                    logger.warning(f"Aucun tableau dans slide {mapping.slide_id}")
+                    continue
+                
+                # Injection
+                try:
+                    self._inject_data_to_table(
+                        table_shape.Table, 
+                        data_text, 
+                        mapping.has_header,
+                        hyperlinks_data
+                    )
+                    logger.info(f"Tableau injecté dans {mapping.slide_id}")
+                except Exception as e:
+                    logger.error(f"Erreur injection tableau {mapping.slide_id} : {e}")
+            
+            presentation.Save()
+    
+    def _inject_data_to_table(self, table, data: list, has_header: bool, hyperlinks_data: dict = None) -> None:
+        """Injecte des données dans un tableau PowerPoint"""
+        offset = 1 if has_header else 0
+        n_rows = min(len(data), table.Rows.Count - offset)
+        n_cols = min(len(data[0]), table.Columns.Count) if n_rows > 0 else 0
+        
+        for r in range(n_rows):
+            for c in range(n_cols):
+                try:
+                    value = data[r][c] if data[r][c] else ""
+                    cell_shape = table.Cell(r + 1 + offset, c + 1).Shape
+                    text_range = cell_shape.TextFrame2.TextRange
+                    text_range.Text = str(value)
+                    
+                    # Hyperliens
+                    if hyperlinks_data and (r, c) in hyperlinks_data:
+                        url = hyperlinks_data[(r, c)]["url"]
+                        try:
+                            text_range.ActionSettings[1].Hyperlink.Address = url
+                        except:
+                            pass
+                except:
+                    continue
+    
+    def _inject_chart_images(self, ppt_path: Path, charts_map: Dict[str, List[str]]) -> None:
+        """Injecte les graphiques Excel exportés comme images dans PowerPoint"""
+        if not charts_map:
+            logger.info("Aucun graphique à injecter")
+            return
+        
+        total_charts = sum(len(charts) for charts in charts_map.values())
+        logger.info(f"Injection de {total_charts} graphique(s)")
+        
+        with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
+            all_chart_images = []
+            for sheet_name, chart_paths in charts_map.items():
+                all_chart_images.extend(chart_paths)
+            
+            replaced_count = 0
+            
+            for slide in presentation.Slides:
+                shapes_to_process = []
+                for shape in slide.Shapes:
+                    if hasattr(shape, 'HasChart') and shape.HasChart:
+                        shapes_to_process.append(shape)
+                
+                for shape in shapes_to_process:
+                    if not all_chart_images:
+                        break
+                    
+                    try:
+                        left = shape.Left
+                        top = shape.Top
+                        width = shape.Width
+                        height = shape.Height
+                        
+                        chart_image = all_chart_images.pop(0)
+                        
+                        shape.Delete()
+                        
+                        slide.Shapes.AddPicture(
+                            FileName=chart_image,
+                            LinkToFile=False,
+                            SaveWithDocument=True,
+                            Left=left,
+                            Top=top,
+                            Width=width,
+                            Height=height
+                        )
+                        
+                        replaced_count += 1
+                        logger.debug(f"Graphique remplacé par image PNG")
+                    except Exception as e:
+                        logger.warning(f"Erreur remplacement graphique : {e}")
+            
+            logger.info(f"{replaced_count}/{total_charts} graphiques remplacés")
             presentation.Save()
