@@ -2,6 +2,7 @@
 Générateur principal de templates
 """
 
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 from loguru import logger
@@ -65,8 +66,8 @@ class TemplateGenerator:
         )
         created_files['excel'] = excel_path
         
-        # 3. Copie ou création PowerPoint
-        ppt_path = self._handle_ppt_template(ppt_source, create_new)
+        # 3. Copie ou création PowerPoint + MISE À JOUR DES LIENS EXCEL
+        ppt_path = self._handle_ppt_template(ppt_source, create_new, excel_path)
         created_files['ppt'] = ppt_path
         
         # 4. Génération dossier queries/
@@ -91,8 +92,16 @@ class TemplateGenerator:
         config_generator.generate(config_path)
         return config_path
     
-    def _handle_ppt_template(self, source: Optional[Path], create_new: bool) -> Path:
-        """Gère la création/copie du template PowerPoint"""
+    def _handle_ppt_template(
+        self, 
+        source: Optional[Path], 
+        create_new: bool,
+        excel_path: Path
+    ) -> Path:
+        """
+        Gère la création/copie du template PowerPoint.
+        CORRECTION : Met à jour les liens Excel vers le nouveau master.xlsx
+        """
         ppt_path = self.template_dir / "master.pptx"
         
         if create_new or source is None:
@@ -112,8 +121,42 @@ class TemplateGenerator:
             logger.info(f"Copie du PowerPoint source : {source}")
             import shutil
             shutil.copy2(source, ppt_path)
+            
+            # CORRECTION : Mettre à jour les liens Excel
+            self._update_excel_links_in_ppt(ppt_path, excel_path)
         
         return ppt_path
+    
+    def _update_excel_links_in_ppt(self, ppt_path: Path, excel_path: Path) -> None:
+        """
+        Met à jour tous les liens Excel dans le PowerPoint pour pointer vers le nouveau master.xlsx.
+        Utilise la même méthode que report_service.py qui fonctionne.
+        """
+        from backend.core.ppt_handler import powerpoint_app_context
+        
+        logger.info("Mise à jour des liens Excel dans le PowerPoint...")
+        
+        excel_path_abs = os.path.abspath(str(excel_path))
+        
+        with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
+            updated_links = 0
+            
+            for slide in presentation.Slides:
+                for shape in slide.Shapes:
+                    try:
+                        if shape.Type == 3 and hasattr(shape, 'LinkFormat') and shape.LinkFormat:
+                            old_source = shape.LinkFormat.SourceFullName
+                            shape.LinkFormat.SourceFullName = excel_path_abs
+                            updated_links += 1
+                            logger.debug(f"Lien mis à jour : {old_source} -> {excel_path_abs}")
+                    except:
+                        continue
+            
+            if updated_links > 0:
+                logger.success(f"{updated_links} lien(s) Excel mis à jour")
+                presentation.Save()
+            else:
+                logger.warning("Aucun lien Excel trouvé dans le PowerPoint")
     
     def _generate_queries_directory(self) -> Path:
         """Génère le dossier queries/ avec templates SQL"""

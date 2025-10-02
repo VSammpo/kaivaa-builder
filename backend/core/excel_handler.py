@@ -13,50 +13,41 @@ from loguru import logger
 
 
 @contextmanager
-def excel_app_context(excel_path: str, visible: bool = False):
+def excel_app_context(path: str, visible: bool = False, read_only: bool = False):
     """
     Context manager pour gérer proprement les ressources Excel.
-    Garantit la fermeture même en cas d'exception.
     
     Args:
-        excel_path: Chemin vers le fichier Excel
+        path: Chemin vers le fichier Excel
         visible: Si True, affiche l'application Excel
+        read_only: Si True, ouvre en lecture seule
         
     Yields:
-        Tuple[xw.App, xw.Book]: Application et workbook Excel
-        
-    Example:
-        with excel_app_context("data.xlsx") as (app, wb):
-            sheet = wb.sheets["Sheet1"]
-            sheet.range("A1").value = "Hello"
+        Tuple[xlwings.App, xlwings.Book]: Application et workbook Excel
     """
     app = None
     wb = None
     try:
-        logger.debug(f"Ouverture Excel: {excel_path}")
+        logger.debug(f"Ouverture Excel: {path}")
         app = xw.App(visible=visible)
-        wb = app.books.open(excel_path)
+        wb = app.books.open(path, read_only=read_only)  # <- AJOUTER read_only ici
         yield app, wb
-    except FileNotFoundError:
-        logger.error(f"Fichier Excel introuvable: {excel_path}")
-        raise FileNotFoundError(f"Fichier Excel introuvable : {excel_path}")
     except Exception as e:
         logger.error(f"Erreur ouverture Excel: {e}")
-        raise RuntimeError(f"Erreur lors de l'ouverture d'Excel : {e}")
+        raise RuntimeError(f"Erreur lors de l'ouverture d'Excel ({path}): {e}")
     finally:
-        if wb:
+        if wb is not None:
             try:
                 wb.close()
                 logger.debug("Workbook fermé")
             except:
                 pass
-        if app:
+        if app is not None:
             try:
                 app.quit()
                 logger.debug("Application Excel fermée")
             except:
                 pass
-
 
 def copy_template_excel(template_path: str, dest_path: str) -> None:
     """

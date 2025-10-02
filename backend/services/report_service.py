@@ -1,7 +1,7 @@
 """
 Service de génération de rapports
 """
-
+import os
 from pathlib import Path
 from typing import Dict, Optional, Any, List
 from datetime import datetime
@@ -21,7 +21,6 @@ from backend.core.image_handler import inject_image_to_slide, find_slides_by_ids
 from backend.core.batch_processor import BatchProcessor, SlideAxis, create_slide_axes_from_config
 from backend.core.chart_handler import ChartExporter
 from backend.utils.file_utils import get_output_paths, ensure_directories
-from backend.utils.cleanup import cleanup_before_run
 
 
 class ReportService:
@@ -42,20 +41,14 @@ class ReportService:
         parameters: Dict[str, Any],
         output_name: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Génère un rapport complet.
-        
-        Args:
-            parameters: Paramètres du rapport
-            output_name: Nom personnalisé pour les fichiers de sortie
-            
-        Returns:
-            Dict avec chemins des fichiers générés et métadonnées
-        """
+        """Génère un rapport complet."""
         logger.info(f"Génération du rapport '{self.config.name}'")
         logger.info(f"Paramètres : {parameters}")
         
         self._validate_parameters(parameters)
+        
+        # Nettoyage préventif
+        from backend.utils.cleanup import cleanup_before_run
         cleanup_before_run()
         
         output_paths = self._generate_output_paths(parameters, output_name)
@@ -64,32 +57,29 @@ class ReportService:
         start_time = datetime.now()
         
         try:
-            logger.info("Étape 1/8 : Préparation Excel")
+            logger.info("Étape 1/6 : Préparation Excel")
             excel_path = self._prepare_excel(parameters, output_paths['excel_path'])
             
-            logger.info("Étape 2/8 : Lecture des données")
+            logger.info("Étape 2/6 : Lecture des données")
             data = self._load_data(excel_path)
             
-            logger.info("Étape 3/8 : Export des graphiques")
-            chart_exporter = ChartExporter(str(excel_path))
-            charts_map = chart_exporter.export_all_charts()
+            # SUPPRIMÉ : Étape 3/8 Export des graphiques
+            # Les graphiques restent liés à Excel et seront rafraîchis pendant les boucles
             
-            logger.info("Étape 4/8 : Génération PowerPoint")
+            logger.info("Étape 3/6 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
             
-            logger.info("Étape 5/8 : Application des boucles")
+            logger.info("Étape 4/6 : Application des boucles")
+            # C'est ici que les graphiques sont rafraîchis et convertis
             self._apply_loops(ppt_path, excel_path)
             
-            logger.info("Étape 6/8 : Injection des tableaux")
+            logger.info("Étape 5/6 : Injection des tableaux")
             self._inject_tables_to_slides(ppt_path, excel_path)
             
-            logger.info("Étape 7/8 : Injection des images")
+            logger.info("Étape 6/6 : Injection des images")
             self._inject_images(ppt_path, excel_path)
             
-            logger.info("Étape 8/8 : Injection des graphiques")
-            self._inject_chart_images(ppt_path, charts_map)
-            
-            chart_exporter.cleanup()
+            # SUPPRIMÉ : Étape 8/8 Injection des graphiques (désormais géré dans _apply_loops)
             
             execution_time = (datetime.now() - start_time).total_seconds()
             
@@ -114,7 +104,17 @@ class ReportService:
                 "execution_time_seconds": execution_time,
                 "parameters": parameters
             }
-    
+        
+        finally:
+            # Forcer fermeture Excel/PowerPoint
+            try:
+                import time
+                time.sleep(1)
+                os.system("taskkill /f /im excel.exe 2>nul 1>nul")
+                logger.debug("Excel fermé en fin de génération")
+            except:
+                pass
+
     def _validate_parameters(self, parameters: Dict[str, Any]) -> None:
         """Valide que tous les paramètres requis sont fournis"""
         for param in self.config.parameters:
@@ -182,22 +182,55 @@ class ReportService:
         return data
     
     def _generate_powerpoint(self, excel_path: Path, output_path: str, parameters: Dict[str, Any]) -> Path:
-        """Génère le PowerPoint final"""
+        """Génère le PowerPoint final en préservant les slides qui seront bouclées"""
         import shutil
+        import os
         
         template_ppt = self.template_dir / "master.pptx"
         shutil.copy2(template_ppt, output_path)
         
         logger.info(f"PowerPoint copié : {output_path}")
+        # 🔗 Relinker le PPT de sortie vers l'Excel de sortie
+        relinked = self._relink_excel_links_in_ppt(output_path, excel_path)
+        logger.info(f"{relinked} lien(s) Excel relinkés vers l'Excel de sortie")
+
         
         replacements = load_replacement_tags(str(excel_path))
         logger.info(f"{len(replacements)} balises chargées")
         
+        # Identifier les slides qui seront bouclées
+        loop_slide_ids = set()
+        for loop in self.config.loops:
+            loop_slide_ids.update(loop.slides)
+        
+        logger.info(f"Slides loop à ignorer : {loop_slide_ids}")
+        
         with powerpoint_app_context(output_path, visible=True) as (ppt_app, presentation):
-            for slide in presentation.Slides:
-                for shape in slide.Shapes:
-                    replace_tags_in_shape(shape, replacements)
             
+            # Identifier les INDEX des slides loop
+            loop_slide_indices = set()
+            for slide_id in loop_slide_ids:
+                slide = find_slide_by_id(presentation, slide_id)
+                if slide:
+                    loop_slide_indices.add(slide.SlideIndex)
+                    logger.debug(f"Slide loop {slide_id} trouvée à index {slide.SlideIndex}")
+            
+            # Remplacer les balises SAUF pour les slides loop
+            static_slides_processed = 0
+            loop_slides_skipped = 0
+            
+            for slide in presentation.Slides:
+                if slide.SlideIndex in loop_slide_indices:
+                    loop_slides_skipped += 1
+                    logger.debug(f"Slide index {slide.SlideIndex} ignorée (sera bouclée)")
+                else:
+                    for shape in slide.Shapes:
+                        replace_tags_in_shape(shape, replacements)
+                    static_slides_processed += 1
+            
+            logger.info(f"Balises remplacées : {static_slides_processed} slides statiques, {loop_slides_skipped} slides bouclées préservées")
+            
+            # Supprimer les slides [@SUPR@]
             removed_slides = check_and_remove_suppressed_slides(presentation)
             if removed_slides:
                 logger.info(f"Slides supprimées : {', '.join(removed_slides)}")
@@ -207,17 +240,14 @@ class ReportService:
         return Path(output_path)
     
     def _apply_loops(self, ppt_path: Path, excel_path: Path) -> None:
-        """Applique les boucles pour dupliquer les slides"""
+        """Applique les boucles en gardant Excel ET PowerPoint ouverts simultanément"""
         if not self.config.loops:
             logger.info("Aucune boucle configurée")
             return
         
         logger.info(f"Application de {len(self.config.loops)} boucle(s)")
         
-        from backend.core.batch_processor import BatchProcessor
         import time
-        
-        processor = BatchProcessor(str(excel_path))
         
         for loop_config in self.config.loops:
             logger.info(f"Traitement boucle '{loop_config.loop_id}'")
@@ -230,82 +260,89 @@ class ReportService:
             
             logger.info(f"  → {param_count} itérations pour slides {loop_config.slides}")
             
-            with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
-                
-                # Trouver les slides sources
-                source_slides = {}
-                for slide_id in loop_config.slides:
-                    slide = find_slide_by_id(presentation, slide_id)
-                    if slide:
-                        source_slides[slide_id] = {
-                            'slide': slide,
-                            'original_index': slide.SlideIndex
-                        }
-                
-                if not source_slides:
-                    logger.error(f"Aucune slide source pour '{loop_config.loop_id}'")
-                    continue
-                
-                # Créer les slides pour chaque itération
-                created_slides = []
-                
-                for iteration in range(1, param_count + 1):
-                    logger.debug(f"    → Itération {iteration}/{param_count}")
-                    
-                    # CORRECTION : Mettre à jour Excel AVANT de lire les balises
-                    self._update_loop_iteration(excel_path, loop_config, iteration)
-                    
-                    # Attendre que Excel recalcule
-                    time.sleep(0.5)
-                    
-                    # CORRECTION : Lire les balises APRÈS mise à jour
-                    replacements = load_replacement_tags(str(excel_path))
-                    logger.debug(f"      Balises rechargées pour itération {iteration}")
-                    
-                    for slide_id, slide_info in source_slides.items():
-                        source_slide = slide_info['slide']
-                        original_index = slide_info['original_index']
+            # Ouvrir Excel UNE SEULE FOIS
+            try:
+                with excel_app_context(str(excel_path)) as (app, wb):
+                    # Ouvrir PowerPoint
+                    with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
                         
-                        # CORRECTION : Toujours dupliquer (même pour iteration 1)
-                        new_slide = source_slide.Duplicate().Item(1)
+                        # Trouver les slides sources
+                        source_slides = {}
+                        for slide_id in loop_config.slides:
+                            slide = find_slide_by_id(presentation, slide_id)
+                            if slide:
+                                source_slides[slide_id] = {
+                                    'slide': slide,
+                                    'original_index': slide.SlideIndex
+                                }
                         
-                        # Position cible
-                        target_position = original_index + (iteration - 1)
+                        if not source_slides:
+                            logger.error(f"Aucune slide source pour '{loop_config.loop_id}'")
+                            continue
                         
-                        if target_position <= presentation.Slides.Count:
-                            new_slide.MoveTo(target_position)
+                        # Créer les slides pour chaque itération
+                        for iteration in range(1, param_count + 1):
+                            logger.debug(f"    → Itération {iteration}/{param_count}")
+                            
+                            # 1. Mettre à jour Excel (qui reste ouvert)
+                            self._update_loop_iteration_with_wb(wb, loop_config, iteration)
+                            time.sleep(0.5)
+                            
+                            # 2. Lire les balises APRÈS mise à jour
+                            replacements = self._load_replacement_tags_from_wb(wb)
+                            logger.debug(f"      Balises rechargées pour itération {iteration}")
+                            
+                            for slide_id, slide_info in source_slides.items():
+                                source_slide = slide_info['slide']
+                                original_index = slide_info['original_index']
+                                
+                                # 3. Rafraîchir les graphiques de la SLIDE SOURCE (Excel ouvert)
+                                self._refresh_chart_links_in_slide_live(source_slide)
+                                
+                                # 4. Dupliquer APRÈS rafraîchissement
+                                new_slide = source_slide.Duplicate().Item(1)
+                                
+                                # Position cible
+                                target_position = original_index + (iteration - 1)
+                                if target_position <= presentation.Slides.Count:
+                                    new_slide.MoveTo(target_position)
+                                
+                                logger.debug(f"      Slide {slide_id} créée à position {target_position}")
+                                
+                                # 5. Remplacer les balises sur la COPIE
+                                for shape in new_slide.Shapes:
+                                    replace_tags_in_shape(shape, replacements)
+                                
+                                # 6. Injecter les images
+                                if slide_id in self.config.image_injections:
+                                    for img_config in self.config.image_injections[slide_id]:
+                                        is_loop_dependent = getattr(img_config, 'loop_dependent', True)
+                                        if is_loop_dependent:
+                                            try:
+                                                inject_image_to_slide(new_slide, img_config.dict(), replacements)
+                                                logger.debug(f"      Image injectée dans {slide_id}")
+                                            except Exception as e:
+                                                logger.warning(f"Erreur injection image : {e}")
+                                
+                                # 7. Convertir les graphiques de la COPIE en images
+                                self._convert_charts_in_slide(new_slide)
                         
-                        created_slides.append(new_slide)
-                        logger.debug(f"      Slide {slide_id} créée à position {target_position}")
+                        # Supprimer les slides sources
+                        logger.info(f"  → Suppression de {len(source_slides)} slide(s) source(s)")
+                        for slide_id, slide_info in sorted(source_slides.items(), 
+                                                        key=lambda x: x[1]['slide'].SlideIndex, 
+                                                        reverse=True):
+                            try:
+                                slide_info['slide'].Delete()
+                                logger.debug(f"    Slide source {slide_id} supprimée")
+                            except Exception as e:
+                                logger.warning(f"Erreur suppression {slide_id} : {e}")
                         
-                        # Remplacer les balises avec les valeurs de CETTE itération
-                        for shape in new_slide.Shapes:
-                            replace_tags_in_shape(shape, replacements)
-                        
-                        # Injecter les images si configurées
-                        if slide_id in self.config.image_injections:
-                            for img_config in self.config.image_injections[slide_id]:
-                                # Vérifier si l'attribut existe (compatibilité)
-                                is_loop_dependent = getattr(img_config, 'loop_dependent', True)
-                                if is_loop_dependent:
-                                    try:
-                                        inject_image_to_slide(new_slide, img_config.dict(), replacements)
-                                        logger.debug(f"      Image injectée dans {slide_id}")
-                                    except Exception as e:
-                                        logger.warning(f"Erreur injection image : {e}")
-                
-                # CORRECTION : Supprimer les slides sources APRÈS avoir créé toutes les itérations
-                logger.info(f"  → Suppression de {len(source_slides)} slide(s) source(s)")
-                for slide_id, slide_info in sorted(source_slides.items(), 
-                                                   key=lambda x: x[1]['slide'].SlideIndex, 
-                                                   reverse=True):
-                    try:
-                        slide_info['slide'].Delete()
-                        logger.debug(f"    Slide source {slide_id} supprimée")
-                    except Exception as e:
-                        logger.warning(f"Erreur suppression {slide_id} : {e}")
-                
-                presentation.Save()
+                        presentation.Save()
+            
+            except Exception as e:
+                logger.error(f"Erreur dans la boucle : {e}")
+                raise
         
         logger.success("Boucles appliquées avec succès")
     
@@ -387,7 +424,9 @@ class ReportService:
                 
                 for img_config in images_config:
                     try:
-                        inject_image_to_slide(slide, img_config, replacements)
+                        # Convertir en dict pour utilisation avec inject_image_to_slide
+                        img_dict = img_config.dict() if hasattr(img_config, 'dict') else img_config
+                        inject_image_to_slide(slide, img_dict, replacements)
                         logger.info(f"Image injectée dans slide {slide_id}")
                     except Exception as e:
                         logger.warning(f"Erreur injection image dans {slide_id} : {e}")
@@ -529,3 +568,263 @@ class ReportService:
             
             logger.info(f"{replaced_count}/{total_charts} graphiques remplacés")
             presentation.Save()
+
+    def _convert_charts_in_slide(self, slide) -> None:
+        """Convertit tous les graphiques d'une slide en images PNG"""
+        import time
+        
+        try:
+            charts_converted = 0
+            shapes_to_process = []
+            
+            # Collecter tous les graphiques
+            for shape in slide.Shapes:
+                if hasattr(shape, 'HasChart') and shape.HasChart:
+                    shapes_to_process.append(shape)
+            
+            if not shapes_to_process:
+                return
+            
+            # Convertir chaque graphique
+            for shape in shapes_to_process:
+                try:
+                    # Sauvegarder position et taille
+                    left = shape.Left
+                    top = shape.Top
+                    width = shape.Width
+                    height = shape.Height
+                    
+                    # Copier le graphique
+                    shape.Copy()
+                    time.sleep(0.2)
+                    
+                    # Supprimer l'original
+                    shape.Delete()
+                    
+                    # Coller comme image
+                    try:
+                        slide.Shapes.PasteSpecial(14)  # ppPasteEnhancedMetafile
+                    except:
+                        try:
+                            slide.Shapes.PasteSpecial(2)  # ppPastePicture
+                        except:
+                            slide.Shapes.Paste()
+                    
+                    # Repositionner
+                    try:
+                        new_shape = slide.Shapes(slide.Shapes.Count)
+                        new_shape.Left = left
+                        new_shape.Top = top
+                        new_shape.Width = width
+                        new_shape.Height = height
+                    except:
+                        pass
+                    
+                    charts_converted += 1
+                
+                except Exception as e:
+                    logger.warning(f"Erreur conversion graphique : {e}")
+                    continue
+            
+            if charts_converted > 0:
+                logger.debug(f"      {charts_converted} graphiques convertis en images")
+        
+        except Exception as e:
+            logger.error(f"Erreur conversion graphiques slide : {e}")
+
+    def _refresh_chart_links_in_slide(self, slide, excel_path: Path) -> None:
+        """
+        Rafraîchit RÉELLEMENT les graphiques en forçant Excel à recalculer.
+        Cette méthode DOIT être appelée sur la slide source AVANT duplication.
+        """
+        import time
+        
+        try:
+            charts_refreshed = 0
+            
+            for shape in slide.Shapes:
+                if hasattr(shape, 'HasChart') and shape.HasChart:
+                    try:
+                        chart = shape.Chart
+                        
+                        # Méthode 1 : Activer le ChartData (ouvre Excel en arrière-plan)
+                        try:
+                            chart.ChartData.Activate()
+                            charts_refreshed += 1
+                        except:
+                            pass
+                        
+                        # Méthode 2 : Forcer le recalcul via le Workbook
+                        try:
+                            workbook = chart.ChartData.Workbook
+                            workbook.Application.Calculate()
+                            workbook.Application.CalculateFullRebuild()
+                        except:
+                            pass
+                        
+                        # Méthode 3 : Refresh du graphique lui-même
+                        try:
+                            chart.Refresh()
+                        except:
+                            pass
+                        
+                    except Exception as e:
+                        logger.debug(f"      Erreur rafraîchissement graphique : {e}")
+                        continue
+            
+            if charts_refreshed > 0:
+                logger.debug(f"      {charts_refreshed} graphique(s) rafraîchi(s)")
+                # IMPORTANT : Pause pour laisser Excel recalculer
+                time.sleep(0.5)
+        
+        except Exception as e:
+            logger.warning(f"Erreur rafraîchissement graphiques : {e}")
+
+    def _update_loop_iteration_with_wb(self, excel_wb, loop_config: LoopConfig, iteration: int) -> None:
+        """Met à jour la valeur d'itération dans le tableau Loop avec workbook ouvert"""
+        try:
+            sheet = excel_wb.sheets[loop_config.sheet_name]
+            
+            table = None
+            for t in sheet.api.ListObjects:
+                if t.Name.strip().lower() == "loop":
+                    table = t
+                    break
+            
+            if not table:
+                return
+            
+            for row in table.DataBodyRange.Rows:
+                id_value = row.Columns(1).Value
+                if id_value and str(id_value).strip() == loop_config.loop_id:
+                    row.Columns(2).Value = iteration
+                    
+                    # Forcer le recalcul complet
+                    excel_wb.app.calculate()
+                    excel_wb.save()
+                    
+                    logger.debug(f"Loop '{loop_config.loop_id}' itération {iteration} - Excel recalculé")
+                    return
+        
+        except Exception as e:
+            logger.error(f"Erreur mise à jour Loop : {e}")
+
+    def _load_replacement_tags_from_wb(self, excel_wb, sheet_name: str = "Balises", table_name: str = "Balises") -> Dict[str, str]:
+        """Lit les balises depuis un workbook déjà ouvert"""
+        try:
+            sht = excel_wb.sheets[sheet_name]
+            
+            table = None
+            for t in sht.api.ListObjects:
+                if t.Name.strip().lower() == table_name.lower():
+                    table = t
+                    break
+            
+            if not table:
+                logger.error(f"Tableau '{table_name}' introuvable")
+                return {}
+            
+            replacements = {}
+            data_range = table.DataBodyRange
+            if data_range is None:
+                return {}
+            
+            for row in data_range.Rows:
+                try:
+                    balise = row.Columns(1).Value
+                    valeur = row.Columns(3).Text
+                    if balise and valeur is not None:
+                        replacements[balise] = str(valeur)
+                except:
+                    continue
+            
+            logger.debug(f"{len(replacements)} balises lues depuis workbook ouvert")
+            return replacements
+        
+        except Exception as e:
+            logger.error(f"Erreur lecture balises : {e}")
+            return {}
+
+    def _refresh_chart_links_in_slide_live(self, slide) -> None:
+        """
+        Rafraîchit les graphiques avec Excel ouvert simultanément.
+        CRITIQUE : Excel doit être ouvert pour que les données se mettent à jour.
+        """
+        import time
+        
+        try:
+            charts_refreshed = 0
+            
+            for shape in slide.Shapes:
+                if hasattr(shape, 'HasChart') and shape.HasChart:
+                    try:
+                        chart = shape.Chart
+                        
+                        # Activer le ChartData (ouvre la connexion Excel)
+                        chart.ChartData.Activate()
+                        
+                        # Forcer le refresh
+                        chart.Refresh()
+                        
+                        charts_refreshed += 1
+                        
+                    except Exception as e:
+                        logger.debug(f"      Erreur rafraîchissement graphique : {e}")
+                        continue
+            
+            if charts_refreshed > 0:
+                logger.debug(f"      {charts_refreshed} graphique(s) rafraîchi(s)")
+                time.sleep(0.5)
+        
+        except Exception as e:
+            logger.warning(f"Erreur rafraîchissement graphiques : {e}")
+
+
+    def _relink_excel_links_in_ppt(self, ppt_path: Path, excel_path: Path) -> int:
+        """Pointe tous les liens Excel du PPT vers l'Excel de sortie."""
+        from backend.core.ppt_handler import powerpoint_app_context
+        import os
+        excel_path_abs = os.path.abspath(str(excel_path))
+        relinked = 0
+        with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
+            for slide in presentation.Slides:
+                for shape in slide.Shapes:
+                    try:
+                        # Cas 1: objets liés (OLE, images liées, etc.)
+                        if hasattr(shape, "LinkFormat") and shape.LinkFormat:
+                            old_src = shape.LinkFormat.SourceFullName
+                            # Ne relinker que s'il s'agit d'un fichier Excel
+                            if old_src and (old_src.lower().endswith(".xlsx") or ".xlsx" in old_src.lower()):
+                                shape.LinkFormat.SourceFullName = excel_path_abs
+                                relinked += 1
+                        # Cas 2: certains graphiques natives PPT avec data link externe (rare)
+                        if hasattr(shape, "HasChart") and shape.HasChart:
+                            try:
+                                # Si le chart est "linked", certains environnements exposent LinkFormat
+                                if hasattr(shape, "LinkFormat") and shape.LinkFormat:
+                                    old_src2 = shape.LinkFormat.SourceFullName
+                                    if old_src2 and (old_src2.lower().endswith(".xlsx") or ".xlsx" in old_src2.lower()):
+                                        shape.LinkFormat.SourceFullName = excel_path_abs
+                                        relinked += 1
+                            except:
+                                pass
+                    except:
+                        continue
+            presentation.Save()
+        return relinked
+
+def _log_chart_sources(self, ppt_path: Path) -> None:
+    from backend.core.ppt_handler import powerpoint_app_context
+    with powerpoint_app_context(str(ppt_path), visible=False) as (ppt_app, presentation):
+        for slide in presentation.Slides:
+            for shape in slide.Shapes:
+                if hasattr(shape, "HasChart") and shape.HasChart:
+                    try:
+                        chart = shape.Chart
+                        # Selon les cas, on peut accéder au classeur
+                        wb = chart.ChartData.Workbook
+                        if hasattr(wb, "FullName"):
+                            from loguru import logger
+                            logger.debug(f"Slide {slide.SlideIndex} chart uses workbook: {wb.FullName}")
+                    except Exception:
+                        pass
