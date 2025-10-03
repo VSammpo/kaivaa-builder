@@ -1,0 +1,141 @@
+{
+  "gabarits": [
+    {
+      "name": "benchmark_entreprises",
+      "version": "v1",
+      "description": "Analyse de la performance financière des entreprises selon la source INPI/BCE",
+      "columns": [
+        {
+          "name": "siren",
+          "type": "text",
+          "is_key": true
+        },
+        {
+          "name": "date_cloture_exercice",
+          "type": "date",
+          "is_key": true
+        },
+        {
+          "name": "Chiffre_d_affaires",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Marge_brute",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "EBE",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "EBIT",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Resultat_net",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Taux_d_endettement",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Ratio_de_liquidite",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Ratio_de_vetuste",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Autonomie_financiere",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Poids_BFR_exploitation_sur_CA",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Couverture_des_interets",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "CAF_sur_CA",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Capacite_de_remboursement",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Marge_EBE",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Resultat_courant_avant_impots_sur_CA",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Poids_BFR_exploitation_sur_CA_jours",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Rotation_des_stocks_jours",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Credit_clients_Jours",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Credit_fournisseurs_Jours",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "type_bilan",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "confidentiality",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Entreprises.Nom",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Entreprises.Activité",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Entreprises.Activité_détaillée",
+          "type": "text",
+          "is_key": false
+        }
+      ]
+    }
+  ]
+}

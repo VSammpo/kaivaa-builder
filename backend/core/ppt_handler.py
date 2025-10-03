@@ -10,49 +10,81 @@ from contextlib import contextmanager
 from typing import Dict, List, Optional
 import win32com.client as win32
 from loguru import logger
-
+import pythoncom
+import pywintypes
+from win32com.client import constants
 
 @contextmanager
 def powerpoint_app_context(ppt_path: str, visible: bool = True, read_only: bool = False):
     """
-    Context manager pour gérer proprement les ressources PowerPoint.
-    
-    Args:
-        ppt_path: Chemin vers le fichier PowerPoint
-        visible: Si True, affiche l'application PowerPoint
-        read_only: Si True, ouvre en lecture seule
-        
-    Yields:
-        Tuple[Application, Presentation]: Application et présentation PowerPoint
+    Contexte PowerPoint avec initialisation COM correcte sur le thread courant.
+    - Initialise COM (STA) avant Dispatch
+    - Ouvre éventuellement la présentation
+    - Ferme proprement et désinitialise COM
     """
     ppt_app = None
     presentation = None
+    initialized_here = False
     try:
+        # --- Initialiser COM en STA sur ce thread ---
+        try:
+            pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+            initialized_here = True
+        except pywintypes.com_error as e:
+            # RPC_E_CHANGED_MODE (-2147417850) = déjà initialisé en MTA : on continue.
+            if e.hresult != -2147417850:
+                raise
+
+        # --- Lancer PowerPoint ---
         logger.debug(f"Ouverture PowerPoint: {ppt_path}")
-        ppt_app = win32.Dispatch("PowerPoint.Application")
-        ppt_app.Visible = visible
-        presentation = ppt_app.Presentations.Open(
-            os.path.abspath(ppt_path), 
-            WithWindow=False, 
-            ReadOnly=read_only, 
-            Untitled=False
-        )
-        yield ppt_app, presentation
-    except Exception as e:
-        logger.error(f"Erreur ouverture PowerPoint: {e}")
-        raise RuntimeError(f"Erreur lors de l'ouverture de PowerPoint ({ppt_path}): {e}")
-    finally:
-        if presentation is not None:
-            try:
-                presentation.Close()
-                logger.debug("Présentation fermée")
-            except:
-                pass
-        if ppt_app is not None:
+        try:
+            ppt_app = win32.Dispatch("PowerPoint.Application")
+        except pywintypes.com_error as e:
+            raise RuntimeError(f"Echec Dispatch PowerPoint.Application: {e}") from e
+
+        ppt_app.Visible = True if visible else False
+
+
+        # --- Ouvrir la présentation ---
+        try:
+            presentation = ppt_app.Presentations.Open(
+                os.path.abspath(ppt_path),
+                WithWindow=visible,
+                ReadOnly=read_only,
+                Untitled=False
+            )
+        except pywintypes.com_error as e:
+            # Nettoyage si l'ouverture échoue
             try:
                 ppt_app.Quit()
+            except Exception:
+                pass
+            raise RuntimeError(f"Erreur lors de l'ouverture de PowerPoint ({ppt_path}): {e}") from e
+
+        yield ppt_app, presentation
+
+    finally:
+        # Fermer la présentation
+        try:
+            if presentation is not None:
+                presentation.Close()
+                logger.debug("Présentation fermée")
+        except Exception:
+            pass
+
+        # Quitter PowerPoint
+        try:
+            if ppt_app is not None:
+                ppt_app.Quit()
                 logger.debug("Application PowerPoint fermée")
-            except:
+        except Exception:
+            pass
+
+        # Désinitialiser COM si on l'a initialisé ici
+        if initialized_here:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
                 pass
 
 

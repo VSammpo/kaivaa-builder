@@ -27,7 +27,7 @@ class SlideAxis:
     name: str
     loop_id: str
     slides: List[str]
-    sheet_name: str = "Itérations"
+    sheet_name: str = "Boucles"
 
 
 @dataclass
@@ -359,7 +359,7 @@ def create_slide_axes_from_config(config: Dict[str, Dict[str, Any]]) -> Dict[str
                 name=axis_name,
                 loop_id=axis_config["loop_id"],
                 slides=axis_config["slides"],
-                sheet_name=axis_config.get("sheet_name", "Charts_settings")
+                sheet_name=axis_config.get("sheet_name", "Boucles")
             )
         except KeyError as e:
             logger.error(f"Configuration incomplète pour axe {axis_name} : clé manquante {e}")

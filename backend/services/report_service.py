@@ -21,6 +21,7 @@ from backend.core.image_handler import inject_image_to_slide, find_slides_by_ids
 from backend.core.batch_processor import BatchProcessor, SlideAxis, create_slide_axes_from_config
 from backend.core.chart_handler import ChartExporter
 from backend.utils.file_utils import get_output_paths, ensure_directories
+from zoneinfo import ZoneInfo
 
 
 class ReportService:
@@ -36,6 +37,10 @@ class ReportService:
         self.config = template_config
         self.template_dir = PathConfig.TEMPLATES / self.config.name
     
+    def _now(self):
+        """Datetime en Europe/Paris (évite les décalages si la machine est en UTC)."""
+        return datetime.now(ZoneInfo("Europe/Paris"))
+
     def generate_report(
         self,
         parameters: Dict[str, Any],
@@ -54,7 +59,7 @@ class ReportService:
         output_paths = self._generate_output_paths(parameters, output_name)
         ensure_directories(output_paths['excel_path'], output_paths['pptx_path'])
         
-        start_time = datetime.now()
+        start_time = self._now()
         
         try:
             logger.info("Étape 1/6 : Préparation Excel")
@@ -62,9 +67,6 @@ class ReportService:
             
             logger.info("Étape 2/6 : Lecture des données")
             data = self._load_data(excel_path)
-            
-            # SUPPRIMÉ : Étape 3/8 Export des graphiques
-            # Les graphiques restent liés à Excel et seront rafraîchis pendant les boucles
             
             logger.info("Étape 3/6 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
@@ -81,9 +83,7 @@ class ReportService:
             logger.info("Étape 6/6 : Injection des images")
             self._inject_images(ppt_path, excel_path)
             
-            # SUPPRIMÉ : Étape 8/8 Injection des graphiques (désormais géré dans _apply_loops)
-            
-            execution_time = (datetime.now() - start_time).total_seconds()
+            execution_time = (self._now() - start_time).total_seconds()
             
             result = {
                 "success": True,
@@ -98,7 +98,7 @@ class ReportService:
         
         except Exception as e:
             logger.error(f"Erreur génération rapport : {e}")
-            execution_time = (datetime.now() - start_time).total_seconds()
+            execution_time = (self._now() - start_time).total_seconds()
             
             return {
                 "success": False,
@@ -117,20 +117,25 @@ class ReportService:
             except:
                 pass
 
+
     def _validate_parameters(self, parameters: Dict[str, Any]) -> None:
         """Valide que tous les paramètres requis sont fournis"""
         for param in self.config.parameters:
             if param.required and param.name not in parameters:
                 raise ValueError(f"Paramètre requis manquant : {param.name}")
     
+
     def _generate_output_paths(self, parameters: Dict[str, Any], custom_name: Optional[str]) -> Dict[str, str]:
         """Génère les chemins de sortie"""
         if custom_name:
             base_name = custom_name
         else:
-            param_values = "_".join([str(v) for v in parameters.values()])
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-            base_name = f"{self.config.name}_{param_values}_{timestamp}"
+            param_values = "_".join([str(v) for v in parameters.values()]) if parameters else ""
+            timestamp = self._now().strftime("%Y%m%d_%H%M")
+            base_name = f"{self.config.name}"
+            if param_values:
+                base_name += f"_{param_values}"
+            base_name += f"_{timestamp}"
         
         output_dir = PathConfig.OUTPUT / self.config.name
         
@@ -138,7 +143,8 @@ class ReportService:
             "excel_path": str(output_dir / f"{base_name}.xlsx"),
             "pptx_path": str(output_dir / f"{base_name}.pptx")
         }
-    
+
+
     def _prepare_excel(self, parameters: Dict[str, Any], output_path: str) -> Path:
         """Prépare le fichier Excel avec les paramètres"""
         import shutil

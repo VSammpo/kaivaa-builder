@@ -13,7 +13,8 @@ from backend.database.models import Template, User, TemplateVersion
 from backend.models.template_config import TemplateConfig
 from backend.generator.template_generator import TemplateGenerator
 import re
-
+from zoneinfo import ZoneInfo
+from datetime import datetime
 
 class TemplateService:
     """Service CRUD pour les templates"""
@@ -169,7 +170,7 @@ class TemplateService:
                 setattr(template, field, value)
                 change_description.append(f"{field}: {old_value} → {value}")
         
-        template.updated_at = datetime.utcnow()
+        template.updated_at = datetime.now(ZoneInfo("Europe/Paris"))
         
         self.db.commit()
         self.db.refresh(template)
@@ -346,7 +347,7 @@ class TemplateService:
         # 4) Nom de fichier propre et unique
         stem = self._slugify(template.name)
         ext = _Path(original_filename).suffix.lower() or ".png"
-        fname = f"{stem}_{_dt.utcnow().strftime('%Y%m%d%H%M%S')}{ext}"
+        fname = f"{stem}_{_dt.now(ZoneInfo('Europe/Paris')).strftime('%Y%m%d%H%M%S')}{ext}"
         out_path = assets_dir / fname
 
         # 5) Écriture du fichier
@@ -356,8 +357,202 @@ class TemplateService:
         # 6) Mise à jour du chemin en base (chemin ABSOLU)
         abs_path_str = str(out_path.resolve())
         template.card_image_path = abs_path_str
-        template.updated_at = _dt.utcnow()
+        template.updated_at = _dt.now(ZoneInfo("Europe/Paris"))
         self.db.commit()
         self.db.refresh(template)
 
         return abs_path_str
+    
+
+    def get_config(self, template_id: int) -> dict:
+        """
+        Retourne le JSON config du template, toujours avec des clés par défaut.
+        IMPORTANT: self.db est une Session SQLAlchemy, ne pas appeler get_session() ici.
+        """
+        tpl = self.db.query(Template).get(template_id)
+        cfg = tpl.config or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+
+        # Compat legacy: ancienne clé 'contracts' (on la garde vide, mais on n'en dépend plus)
+        if "contracts" not in cfg or not isinstance(cfg["contracts"], dict):
+            cfg["contracts"] = {}
+
+        # Clés MVP: usages & sources de gabarits par livrable
+        if "gabarit_usages" not in cfg or not isinstance(cfg["gabarit_usages"], list):
+            cfg["gabarit_usages"] = []
+        if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
+            cfg["gabarit_sources"] = []
+
+        return cfg
+
+
+    def update_config(self, template_id: int, new_config: dict) -> None:
+        """
+        Écrase la config du template par new_config (et garantit les clés par défaut).
+        """
+        cfg = new_config or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+
+        # Compat legacy
+        if "contracts" not in cfg or not isinstance(cfg["contracts"], dict):
+            cfg["contracts"] = {}
+
+        # Clés MVP
+        if "gabarit_usages" not in cfg or not isinstance(cfg["gabarit_usages"], list):
+            cfg["gabarit_usages"] = []
+        if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
+            cfg["gabarit_sources"] = []
+
+        tpl = self.db.query(Template).get(template_id)
+        tpl.config = cfg
+        self.db.add(tpl)
+        self.db.commit()
+        self.db.refresh(tpl)
+
+
+    def list_gabarit_sources(self, template_id: int) -> list[dict]:
+        cfg = self.get_config(template_id)
+        sources = cfg.get("gabarit_sources", [])
+        return sources if isinstance(sources, list) else []
+
+    def upsert_gabarit_source(self, template_id: int, gabarit_name: str, gabarit_version: str, source: dict) -> None:
+        """
+        source (MVP CSV) :
+        {
+          "type": "csv",
+          "path": "C:/.../file.csv",
+          "sep": ";",
+          "encoding": "utf-8-sig"
+        }
+        """
+        cfg = self.get_config(template_id)
+        sources = cfg.get("gabarit_sources", [])
+        if not isinstance(sources, list):
+            sources = []
+
+        gabarit_name = (gabarit_name or "").strip()
+        gabarit_version = (gabarit_version or "v1").strip()
+
+        # Remplacer si déjà présent (name+version)
+        sources = [
+            s for s in sources
+            if not (s.get("gabarit_name") == gabarit_name and s.get("gabarit_version") == gabarit_version)
+        ]
+        sources.append({
+            "gabarit_name": gabarit_name,
+            "gabarit_version": gabarit_version,
+            "source": source
+        })
+
+        cfg["gabarit_sources"] = sources
+        self.update_config(template_id, cfg)
+
+    def get_gabarit_source(self, template_id: int, gabarit_name: str, gabarit_version: str):
+        for s in self.list_gabarit_sources(template_id):
+            if s.get("gabarit_name") == gabarit_name and s.get("gabarit_version") == gabarit_version:
+                return s.get("source")
+        return None
+
+    def delete_gabarit_source(self, template_id: int, gabarit_name: str, gabarit_version: str) -> bool:
+        cfg = self.get_config(template_id)
+        sources = cfg.get("gabarit_sources", [])
+        if not isinstance(sources, list):
+            sources = []
+
+        new_sources = [
+            s for s in sources
+            if not (s.get("gabarit_name") == gabarit_name and s.get("gabarit_version") == gabarit_version)
+        ]
+        if len(new_sources) == len(sources):
+            return False
+
+        cfg["gabarit_sources"] = new_sources
+        self.update_config(template_id, cfg)
+        return True
+
+
+    def list_gabarit_usages(self, template_id: int) -> list[dict]:
+        """
+        Liste des gabarits rattachés au livrable (dans templates.config['gabarit_usages']).
+        Chaque item :
+        {
+        "gabarit_name": str,
+        "gabarit_version": str,
+        "columns_enabled": [str, ...],
+        "excel_target": {"sheet": str, "table": str}
+        }
+        """
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        return usages if isinstance(usages, list) else []
+
+
+    def upsert_gabarit_usage(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str,
+        columns_enabled: list[str],
+        excel_sheet: str,
+        excel_table: str,
+    ) -> None:
+        """
+        Crée/maj l'usage d'un gabarit pour ce livrable (clé: name+version).
+        """
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        if not isinstance(usages, list):
+            usages = []
+
+        gabarit_name = (gabarit_name or "").strip()
+        gabarit_version = (gabarit_version or "v1").strip()
+        excel_sheet = (excel_sheet or "").strip()
+        excel_table = (excel_table or "").strip()
+        columns_enabled = [c.strip() for c in (columns_enabled or []) if c and c.strip()]
+
+        # Remplacer si déjà présent (name+version)
+        usages = [
+            u for u in usages
+            if not (u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version)
+        ]
+        usages.append({
+            "gabarit_name": gabarit_name,
+            "gabarit_version": gabarit_version,
+            "columns_enabled": columns_enabled,
+            "excel_target": {"sheet": excel_sheet, "table": excel_table},
+        })
+
+        cfg["gabarit_usages"] = usages
+        self.update_config(template_id, cfg)
+
+
+    def delete_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str) -> bool:
+        """
+        Supprime l'usage (name+version) pour ce livrable. Renvoie True si supprimé.
+        """
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        if not isinstance(usages, list):
+            usages = []
+        new_usages = [
+            u for u in usages
+            if not (u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version)
+        ]
+        if len(new_usages) == len(usages):
+            return False
+        cfg["gabarit_usages"] = new_usages
+        self.update_config(template_id, cfg)
+        return True
+
+
+    def get_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str):
+        """
+        Retourne un usage précis (name+version), ou None.
+        """
+        for u in self.list_gabarit_usages(template_id):
+            if u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version:
+                return u
+        return None
+

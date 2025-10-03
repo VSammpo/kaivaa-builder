@@ -11,43 +11,90 @@ import xlwings as xw
 import pandas as pd
 from loguru import logger
 
+# backend/core/excel_handler.py
+import pythoncom
+import pywintypes
+import win32com.client as win32
 
 @contextmanager
-def excel_app_context(path: str, visible: bool = False, read_only: bool = False):
+def excel_app_context(xlsx_path: str, visible: bool = False, read_only: bool = False):
     """
-    Context manager pour gérer proprement les ressources Excel.
-    
-    Args:
-        path: Chemin vers le fichier Excel
-        visible: Si True, affiche l'application Excel
-        read_only: Si True, ouvre en lecture seule
-        
-    Yields:
-        Tuple[xlwings.App, xlwings.Book]: Application et workbook Excel
+    Contexte xlwings (retourne un xw.App et un xw.Book).
+    -> wb.sheets, wb.save(), etc. fonctionnent comme dans le reste du code.
     """
-    app = None
-    wb = None
+    app = xw.App(visible=visible, add_book=False)
     try:
-        logger.debug(f"Ouverture Excel: {path}")
-        app = xw.App(visible=visible)
-        wb = app.books.open(path, read_only=read_only)  # <- AJOUTER read_only ici
+        wb = app.books.open(xlsx_path, read_only=read_only)
+        logger.debug(f"Ouverture Excel (xlwings): {xlsx_path}")
         yield app, wb
-    except Exception as e:
-        logger.error(f"Erreur ouverture Excel: {e}")
-        raise RuntimeError(f"Erreur lors de l'ouverture d'Excel ({path}): {e}")
     finally:
-        if wb is not None:
-            try:
-                wb.close()
+        try:
+            if 'wb' in locals() and wb is not None:
+                wb.close()          # ne pas sauver ici (le reste du code le fait)
                 logger.debug("Workbook fermé")
-            except:
-                pass
-        if app is not None:
+        except Exception:
+            pass
+        try:
+            app.quit()
+            logger.debug("Application Excel fermée")
+        except Exception:
+            pass
+
+
+def _resolve_listobject(wb, sheet_name: str, table_name: str):
+    """
+    Essaie plusieurs stratégies pour retrouver un ListObject :
+    1) accès direct : wb.Sheets[sheet_name].ListObjects(table_name)
+    2) scan global de toutes les feuilles
+    3) via Names manager si un nom défini 'table_name' pointe sur une plage du tableau
+    Retourne le COM ListObject ou None.
+    """
+    # 1) accès direct
+    try:
+        sht = wb.Sheets(sheet_name)
+        for lo in sht.ListObjects:
+            if lo.Name.strip().lower() == table_name.strip().lower():
+                return lo
+    except Exception:
+        pass
+
+    # 2) scan global
+    try:
+        for sht in wb.Sheets:
             try:
-                app.quit()
-                logger.debug("Application Excel fermée")
-            except:
-                pass
+                for lo in sht.ListObjects:
+                    if lo.Name.strip().lower() == table_name.strip().lower():
+                        return lo
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 3) via Names manager
+    try:
+        for nm in wb.Names:
+            try:
+                if nm.Name.strip().split("!")[-1].strip().lower() == table_name.strip().lower() \
+                   or nm.Name.strip().lower() == table_name.strip().lower():
+                    rng = nm.RefersToRange
+                    try:
+                        # Si la plage appartient à un tableau, on peut remonter au ListObject
+                        lo = rng.ListObject
+                        if lo and lo.Name.strip().lower() == table_name.strip().lower():
+                            return lo
+                    except Exception:
+                        # fallback : essayer la feuille de la plage
+                        sht = rng.Worksheet
+                        for lo in sht.ListObjects:
+                            if lo.Name.strip().lower() == table_name.strip().lower():
+                                return lo
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    return None
+
 
 def copy_template_excel(template_path: str, dest_path: str) -> None:
     """
@@ -73,7 +120,7 @@ def copy_template_excel(template_path: str, dest_path: str) -> None:
 def inject_filter_values(
     excel_path: str, 
     values: Dict[str, Any], 
-    sheet_name: str = "Charts_settings"
+    sheet_name: str = "Boucles"
 ) -> None:
     """
     Injecte des valeurs dans des cellules spécifiques d'Excel.
@@ -113,105 +160,122 @@ def inject_filter_values(
         logger.info(f"Valeurs injectées: {len(values)} cellules")
 
 
-def load_replacement_tags(
-    excel_path: str, 
-    sheet_name: str = "Balises", 
-    table_name: str = "Balises"
-) -> Dict[str, str]:
-    """
-    Lit les balises de remplacement depuis un tableau structuré Excel.
-    
-    Args:
-        excel_path: Chemin du fichier Excel
-        sheet_name: Nom de la feuille contenant les balises
-        table_name: Nom du tableau structuré
-        
-    Returns:
-        Dict des balises {balise: valeur}
-        
-    Example:
-        tags = load_replacement_tags("data.xlsx")
-        # {"[Marque]": "BOMBAY", "[Segment]": "Gin"}
-    """
-    max_retries = 3
-    
-    for attempt in range(max_retries):
-        try:
-            if attempt > 0:
-                _force_close_excel_instances()
-                import time
-                time.sleep(2.0)
-            
-            with excel_app_context(excel_path) as (app, wb):
-                try:
-                    sht = wb.sheets[sheet_name]
-                except Exception:
-                    raise ValueError(f"Feuille '{sheet_name}' introuvable")
-                
-                if not hasattr(sht, 'api') or sht.api is None:
-                    raise RuntimeError("API Excel corrompue")
-                
-                # Recherche du tableau
-                table = None
-                try:
-                    list_objects = sht.api.ListObjects
-                    if list_objects is None:
-                        raise ValueError(f"Aucun tableau accessible dans '{sheet_name}'")
-                    
-                    try:
-                        table = list_objects(table_name)
-                        if table:
-                            logger.debug(f"Tableau '{table_name}' trouvé par accès direct")
-                    except:
-                        for t in list_objects:
-                            if t.Name.strip().lower() == table_name.lower():
-                                table = t
-                                logger.debug(f"Tableau '{table_name}' trouvé par itération")
-                                break
-                
-                except Exception as list_error:
-                    raise RuntimeError(f"Erreur accès tableaux : {list_error}")
-                
-                if not table:
-                    raise ValueError(f"Tableau '{table_name}' introuvable dans '{sheet_name}'")
-                
-                # Lecture des balises
-                replacements = {}
-                try:
-                    data_range = table.DataBodyRange
-                    if data_range is None:
-                        logger.warning(f"Tableau '{table_name}' vide")
-                        return {}
-                    
-                    for row in data_range.Rows:
-                        try:
-                            balise = row.Columns(1).Value
-                            valeur = row.Columns(3).Text
-                            if balise and valeur is not None:
-                                replacements[balise] = str(valeur)
-                        except Exception:
-                            continue
-                
-                except Exception as e:
-                    raise RuntimeError(f"Erreur lecture balises : {e}")
-                
-                logger.info(f"{len(replacements)} balises chargées")
-                return replacements
-        
-        except Exception as e:
-            error_msg = str(e).lower()
-            is_com_error = any(keyword in error_msg for keyword in [
-                "enumeration", "rejeté", "rejected", "automation", "com_error"
-            ])
-            
-            if is_com_error and attempt < max_retries - 1:
-                logger.warning(f"Tentative {attempt + 1} échouée (erreur COM), retry...")
+import os
+import pythoncom, pywintypes, win32com.client as win32
+
+def _resolve_listobject_com(wb, sheet_name: str, table_name: str):
+    # stratégie COM pour retrouver le ListObject, même si accès direct échoue
+    try:
+        sht = wb.Sheets(sheet_name)
+        for lo in sht.ListObjects:
+            if lo.Name.strip().lower() == table_name.strip().lower():
+                return lo
+    except Exception:
+        pass
+    try:
+        for sht in wb.Sheets:
+            try:
+                for lo in sht.ListObjects:
+                    if lo.Name.strip().lower() == table_name.strip().lower():
+                        return lo
+            except Exception:
                 continue
-            else:
-                logger.error(f"Erreur lecture balises après {attempt + 1} tentatives")
+    except Exception:
+        pass
+    try:
+        for nm in wb.Names:
+            try:
+                nm_name = nm.Name.strip().split("!")[-1].strip().lower()
+                if nm_name == table_name.strip().lower() or nm.Name.strip().lower() == table_name.strip().lower():
+                    rng = nm.RefersToRange
+                    try:
+                        lo = rng.ListObject
+                        if lo and lo.Name.strip().lower() == table_name.strip().lower():
+                            return lo
+                    except Exception:
+                        sht = rng.Worksheet
+                        for lo in sht.ListObjects:
+                            if lo.Name.strip().lower() == table_name.strip().lower():
+                                return lo
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return None
+
+def load_replacement_tags(xlsx_path: str, sheet_name: str = "Balises", table_name: str = "Balises") -> dict:
+    """
+    Lecture des balises depuis Excel, en contournant Protected View si présent.
+    N'affecte pas le reste du code : on n’utilise COM que pour LECTURE des balises.
+    """
+    replacements = {}
+    initialized_here = False
+    app = None
+    wb = None
+    try:
+        try:
+            pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+            initialized_here = True
+        except pywintypes.com_error as e:
+            if e.hresult != -2147417850:  # RPC_E_CHANGED_MODE
                 raise
-    
-    return {}
+
+        app = win32.Dispatch("Excel.Application")
+        app.Visible = False
+        app.DisplayAlerts = False
+
+        # 1) tentative ouverture normale
+        try:
+            wb = app.Workbooks.Open(os.path.abspath(xlsx_path), ReadOnly=True)
+        except pywintypes.com_error:
+            wb = None
+
+        # 2) fallback Protected View -> .Edit()
+        if wb is None:
+            pvw = app.ProtectedViewWindows.Open(os.path.abspath(xlsx_path))
+            wb = pvw.Workbook
+            pvw.Edit()
+
+        lo = _resolve_listobject_com(wb, sheet_name, table_name)
+        if lo is None:
+            raise RuntimeError(f"Tableau '{table_name}' introuvable dans '{sheet_name}'")
+
+        body = lo.DataBodyRange
+        if body is None:
+            return replacements
+
+        n_rows = body.Rows.Count
+        n_cols = body.Columns.Count
+
+        for i in range(1, n_rows + 1):
+            tag = body.Cells(i, 1).Value
+            if not tag:
+                continue
+            val = None
+            if n_cols >= 2:
+                val = body.Cells(i, 2).Value
+            if (val is None or val == "") and n_cols >= 3:
+                val = body.Cells(i, 3).Value
+            replacements[str(tag)] = "" if val is None else str(val)
+
+        return replacements
+
+    finally:
+        try:
+            if wb is not None:
+                wb.Close(SaveChanges=False)
+        except Exception:
+            pass
+        try:
+            if app is not None:
+                app.Quit()
+        except Exception:
+            pass
+        if initialized_here:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
 
 
 def read_excel_range_data(

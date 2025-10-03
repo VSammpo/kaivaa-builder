@@ -16,7 +16,8 @@ from datetime import datetime
 from typing import Optional
 from backend.database.models import ExecutionJob
 from sqlalchemy.orm import Session
-
+from zoneinfo import ZoneInfo
+from datetime import datetime
 
 
 class DatabaseService:
@@ -120,7 +121,7 @@ class DatabaseService:
 
             base = os.path.basename(file_path)
             stem, ext = os.path.splitext(base)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            ts = datetime.now(ZoneInfo("Europe/Paris")).strftime("%Y%m%d_%H%M%S")
             dest = os.path.join(trash_dir, f"{stem}__DELETED_{ts}{ext}")
 
             shutil.move(file_path, dest)
