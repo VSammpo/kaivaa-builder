@@ -57,6 +57,7 @@ if 'selected_template' in st.session_state and st.session_state.selected_templat
         template_name = template_db.name
         template_version = template_db.version
         template_description = template_db.description
+        template_card_image_path = template_db.card_image_path
     
     # Pré-remplir les états si c'est la première fois
     if not st.session_state.get('_template_loaded'):
@@ -135,9 +136,9 @@ with st.sidebar:
     st.write(f"**Source** : {template_config.data_source.type if edit_mode else '—'}")
 
     # Aperçu image carte
-    if edit_mode and template_db and getattr(template_db, 'card_image_path', None):
+    if edit_mode and template_card_image_path:
         try:
-            st.image(template_db.card_image_path, caption="Image actuelle", width="stretch")
+            st.image(template_card_image_path, caption="Image actuelle", use_container_width=True)
         except Exception:
             st.caption("Aperçu indisponible.")
 
@@ -207,211 +208,226 @@ if upload_mode == "Uploader des fichiers existants":
 
 st.divider()
 
+# ===== PARTIES NÉCESSAIRES =====
+st.header("📋 Parties nécessaires")
+st.caption("Activez uniquement les sections dont vous avez besoin pour ce template")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    show_params = st.checkbox(
+        "Paramètres d'utilisation",
+        value=True,
+        help="Variables à renseigner lors de chaque génération (ex: période, enseigne, segment)"
+    )
+
+with col2:
+    show_loops = st.checkbox(
+        "Pages itératives",
+        value=len(st.session_state.loops) > 0,
+        help="Slides à dupliquer selon un tableau Loop (ex: une slide par produit)"
+    )
+
+with col3:
+    show_images = st.checkbox(
+        "Images dynamiques",
+        value=len(st.session_state.images) > 0,
+        help="Images injectées automatiquement selon des patterns (logos, photos produits)"
+    )
+
+with col4:
+    show_mappings = st.checkbox(
+        "Tableaux dynamiques",
+        value=len(st.session_state.mappings) > 0,
+        help="Données Excel à injecter dans des tableaux PowerPoint"
+    )
+
+st.divider()
+
+
+
 # ===== ÉTAPE 3 : Paramètres =====
-st.header("3️⃣ Paramètres (édition en tableau)")
-st.markdown("Ajoute/modifie directement dans le tableau. Les lignes vides sont ignorées.")
+if show_params:
+    st.header("3️⃣ Paramètres")
+    st.markdown("Ajoute/modifie directement dans le tableau. Les lignes vides sont ignorées.")
 
-# DataFrame source
-param_df = pd.DataFrame(st.session_state.parameters or [],
-                        columns=["name", "type", "required", "balise_ppt"])
+    # DataFrame source
+    param_df = pd.DataFrame(st.session_state.parameters or [],
+                            columns=["name", "type", "required", "balise_ppt"])
 
-# Valeurs par défaut si vide
-if param_df.empty:
-    param_df = pd.DataFrame([{"name": "", "type": "string", "required": True, "balise_ppt": ""}])
+    # Valeurs par défaut si vide
+    if param_df.empty:
+        param_df = pd.DataFrame([{"name": "", "type": "string", "required": True, "balise_ppt": ""}])
 
-param_editor = st.data_editor(
-    param_df,
-    num_rows="dynamic",
-    width="stretch",
-    column_config={
-        "name": st.column_config.TextColumn("Nom", help="Nom interne du paramètre (ex: sous_marque)"),
-        "type": st.column_config.SelectboxColumn("Type", options=["string", "integer", "date", "list"]),
-        "required": st.column_config.CheckboxColumn("Obligatoire"),
-        "balise_ppt": st.column_config.TextColumn("Balise PPT", help="ex: [SousMarque]"),
-    }
-)
-
-# Sauvegarde dans la session (en nettoyant les lignes vides)
-st.session_state.parameters = [
-    {
-        "name": str(row.get("name", "")).strip(),
-        "type": row.get("type") or "string",
-        "required": bool(row.get("required", True)),
-        "balise_ppt": str(row.get("balise_ppt", "")).strip()
-    }
-    for _, row in param_editor.iterrows()
-    if str(row.get("name", "")).strip() and str(row.get("balise_ppt", "")).strip()
-]
-
-
-st.divider()
-
-# ===== ÉTAPE 4 : Source de données =====
-st.header("4️⃣ Source de données")
-
-data_source_type = st.selectbox(
-    "Type de source",
-    ["excel", "postgresql", "mysql", "csv"],
-    index=["excel", "postgresql", "mysql", "csv"].index(template_config.data_source.type) if edit_mode else 0
-)
-
-if data_source_type == "excel":
-    st.info("💡 Les tableaux structurés du fichier Excel seront utilisés comme source")
-    table_names = st.text_input(
-        "Noms des tableaux Excel",
-        value=", ".join(template_config.data_source.required_tables) if edit_mode else "Performance",
-        help="Noms des tableaux structurés (séparés par des virgules)"
+    param_editor = st.data_editor(
+        param_df,
+        num_rows="dynamic",
+        width="stretch",
+        column_config={
+            "name": st.column_config.TextColumn("Nom", help="Nom interne du paramètre (ex: sous_marque)"),
+            "type": st.column_config.SelectboxColumn("Type", options=["string", "integer", "date", "list"]),
+            "required": st.column_config.CheckboxColumn("Obligatoire"),
+            "balise_ppt": st.column_config.TextColumn("Balise PPT", help="ex: [SousMarque]"),
+        }
     )
-    tables_list = [t.strip() for t in table_names.split(',') if t.strip()]
-else:
-    required_tables = st.text_area(
-        "Tables requises (une par ligne)",
-        value="\n".join(template_config.data_source.required_tables) if edit_mode else "",
-        placeholder="observations\ndim_produits"
+
+    # Sauvegarde dans la session (en nettoyant les lignes vides)
+    st.session_state.parameters = [
+        {
+            "name": str(row.get("name", "")).strip(),
+            "type": row.get("type") or "string",
+            "required": bool(row.get("required", True)),
+            "balise_ppt": str(row.get("balise_ppt", "")).strip()
+        }
+        for _, row in param_editor.iterrows()
+        if str(row.get("name", "")).strip() and str(row.get("balise_ppt", "")).strip()
+    ]
+
+
+    st.divider()
+
+# ===== ÉTAPE 4 : Boucles =====
+if show_loops:
+    st.header("4️⃣ Boucles (édition en tableau)")
+    st.markdown("`slides` doit être une liste de codes séparés par des virgules (ex: A001, A002)")
+
+    # Convertit les boucles actuelles en DF
+    loops_norm = []
+    for loop in (st.session_state.loops or []):
+        loops_norm.append({
+            "loop_id": loop.get("loop_id", ""),
+            "slides": ", ".join(loop.get("slides", [])) if isinstance(loop.get("slides"), list) else str(loop.get("slides", "")),
+            "sheet_name": loop.get("sheet_name", "Boucles"),
+        })
+    loops_df = pd.DataFrame(loops_norm or [{"loop_id": "", "slides": "", "sheet_name": "Boucles"}])
+
+    loops_editor = st.data_editor(
+        loops_df,
+        num_rows="dynamic",
+        width="stretch",
+        column_config={
+            "loop_id": st.column_config.TextColumn("ID boucle", help="Identifiant utilisé côté code"),
+            "slides": st.column_config.TextColumn("Slides (A001, A002, ...)"),
+            "sheet_name": st.column_config.TextColumn("Feuille Excel Loop", help="Par défaut: Boucles"),
+        }
     )
-    tables_list = [t.strip() for t in required_tables.split('\n') if t.strip()]
 
-st.divider()
+    # Sauvegarde dans la session en listifiant slides
+    def _split_slides(s: str) -> list[str]:
+        return [x.strip() for x in str(s or "").split(",") if x.strip()]
 
-# ===== ÉTAPE 5 : Boucles =====
-st.header("5️⃣ Boucles (édition en tableau)")
-st.markdown("`slides` doit être une liste de codes séparés par des virgules (ex: A001, A002)")
-
-# Convertit les boucles actuelles en DF
-loops_norm = []
-for loop in (st.session_state.loops or []):
-    loops_norm.append({
-        "loop_id": loop.get("loop_id", ""),
-        "slides": ", ".join(loop.get("slides", [])) if isinstance(loop.get("slides"), list) else str(loop.get("slides", "")),
-        "sheet_name": loop.get("sheet_name", "Boucles"),
-    })
-loops_df = pd.DataFrame(loops_norm or [{"loop_id": "", "slides": "", "sheet_name": "Boucles"}])
-
-loops_editor = st.data_editor(
-    loops_df,
-    num_rows="dynamic",
-    width="stretch",
-    column_config={
-        "loop_id": st.column_config.TextColumn("ID boucle", help="Identifiant utilisé côté code"),
-        "slides": st.column_config.TextColumn("Slides (A001, A002, ...)"),
-        "sheet_name": st.column_config.TextColumn("Feuille Excel Loop", help="Par défaut: Boucles"),
-    }
-)
-
-# Sauvegarde dans la session en listifiant slides
-def _split_slides(s: str) -> list[str]:
-    return [x.strip() for x in str(s or "").split(",") if x.strip()]
-
-st.session_state.loops = [
-    {
-        "loop_id": str(row.get("loop_id", "")).strip(),
-        "slides": _split_slides(row.get("slides", "")),
-        "sheet_name": str(row.get("sheet_name", "") or "Boucles").strip(),
-    }
-    for _, row in loops_editor.iterrows()
-    if str(row.get("loop_id", "")).strip()
-]
+    st.session_state.loops = [
+        {
+            "loop_id": str(row.get("loop_id", "")).strip(),
+            "slides": _split_slides(row.get("slides", "")),
+            "sheet_name": str(row.get("sheet_name", "") or "Boucles").strip(),
+        }
+        for _, row in loops_editor.iterrows()
+        if str(row.get("loop_id", "")).strip()
+    ]
 
 
-st.divider()
+    st.divider()
 
-# ===== ÉTAPE 6 : Configuration des images =====
-st.header("6️⃣ Configuration des images dynamiques")
+# ===== ÉTAPE 5 : Configuration des images =====
+if show_images:
+    st.header("5️⃣ Configuration des images dynamiques")
 
-st.markdown("""
-Configurez les images à injecter dynamiquement dans les slides (logos, photos produits, fonds...).
-""")
+    st.markdown("""
+    Configurez les images à injecter dynamiquement dans les slides (logos, photos produits, fonds...).
+    """)
 
-with st.expander("➕ Ajouter une configuration d'image"):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        img_slide_id = st.text_input("Slide ID", placeholder="ex: A001", key="new_img_slide")
-        img_type = st.text_input("Type d'image", placeholder="ex: product_image", key="new_img_type")
-        img_pattern = st.text_input("Pattern du chemin", placeholder="assets/{Marque}/{Produit}.png", key="new_img_pattern")
-    
-    with col2:
-        img_default = st.text_input("Image par défaut (optionnel)", key="new_img_default")
-        img_background = st.checkbox("Placer en arrière-plan", key="new_img_bg")
-        img_loop = st.checkbox("Dépend d'une boucle", key="new_img_loop")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        img_left = st.number_input("Position Left", value=10, key="new_img_left")
-    with col2:
-        img_top = st.number_input("Position Top", value=10, key="new_img_top")
-    with col3:
-        img_max_width = st.number_input("Largeur max", value=100, key="new_img_width")
-    with col4:
-        img_max_height = st.number_input("Hauteur max", value=100, key="new_img_height")
-    
-    if st.button("➕ Ajouter cette image"):
-        if img_slide_id and img_pattern:
-            if img_slide_id not in st.session_state.images:
-                st.session_state.images[img_slide_id] = []
-            
-            st.session_state.images[img_slide_id].append({
-                "type": img_type,
-                "pattern": img_pattern,
-                "default_path": img_default if img_default else None,
-                "position": {"left": img_left, "top": img_top},
-                "size": {"max_width": img_max_width, "max_height": img_max_height},
-                "background": img_background,
-                "loop_dependent": img_loop
-            })
-            st.rerun()
+    with st.expander("➕ Ajouter une configuration d'image"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            img_slide_id = st.text_input("Slide ID", placeholder="ex: A001", key="new_img_slide")
+            img_type = st.text_input("Type d'image", placeholder="ex: product_image", key="new_img_type")
+            img_pattern = st.text_input("Pattern du chemin", placeholder="assets/{Marque}/{Produit}.png", key="new_img_pattern")
+        
+        with col2:
+            img_default = st.text_input("Image par défaut (optionnel)", key="new_img_default")
+            img_background = st.checkbox("Placer en arrière-plan", key="new_img_bg")
+            img_loop = st.checkbox("Dépend d'une boucle", key="new_img_loop")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            img_left = st.number_input("Position Left", value=10, key="new_img_left")
+        with col2:
+            img_top = st.number_input("Position Top", value=10, key="new_img_top")
+        with col3:
+            img_max_width = st.number_input("Largeur max", value=100, key="new_img_width")
+        with col4:
+            img_max_height = st.number_input("Hauteur max", value=100, key="new_img_height")
+        
+        if st.button("➕ Ajouter cette image"):
+            if img_slide_id and img_pattern:
+                if img_slide_id not in st.session_state.images:
+                    st.session_state.images[img_slide_id] = []
+                
+                st.session_state.images[img_slide_id].append({
+                    "type": img_type,
+                    "pattern": img_pattern,
+                    "default_path": img_default if img_default else None,
+                    "position": {"left": img_left, "top": img_top},
+                    "size": {"max_width": img_max_width, "max_height": img_max_height},
+                    "background": img_background,
+                    "loop_dependent": img_loop
+                })
+                st.rerun()
 
-# Afficher les images
-if st.session_state.images:
-    st.markdown("**Images configurées :**")
-    for slide_id, images in st.session_state.images.items():
-        with st.expander(f"Slide {slide_id} ({len(images)} image(s))"):
-            for idx, img in enumerate(images):
-                col1, col2 = st.columns([4, 1])
-                with col1:
-                    st.text(f"• {img['type']} : {img['pattern']}")
-                with col2:
-                    if st.button("🗑️", key=f"del_img_{slide_id}_{idx}"):
-                        st.session_state.images[slide_id].pop(idx)
-                        if not st.session_state.images[slide_id]:
-                            del st.session_state.images[slide_id]
-                        st.rerun()
+    # Afficher les images
+    if st.session_state.images:
+        st.markdown("**Images configurées :**")
+        for slide_id, images in st.session_state.images.items():
+            with st.expander(f"Slide {slide_id} ({len(images)} image(s))"):
+                for idx, img in enumerate(images):
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.text(f"• {img['type']} : {img['pattern']}")
+                    with col2:
+                        if st.button("🗑️", key=f"del_img_{slide_id}_{idx}"):
+                            st.session_state.images[slide_id].pop(idx)
+                            if not st.session_state.images[slide_id]:
+                                del st.session_state.images[slide_id]
+                            st.rerun()
 
-st.divider()
+    st.divider()
 
-# ===== ÉTAPE 7 : Mappings =====
-st.header("7️⃣ Mappings (édition en tableau)")
+# ===== ÉTAPE 6 : Mappings =====
+if show_mappings:
+    st.header("6️⃣ Mappings (édition en tableau)")
 
-mappings_df = pd.DataFrame(st.session_state.mappings or [],
-                           columns=["slide_id", "sheet_name", "excel_range", "has_header"])
+    mappings_df = pd.DataFrame(st.session_state.mappings or [],
+                            columns=["slide_id", "sheet_name", "excel_range", "has_header"])
 
-if mappings_df.empty:
-    mappings_df = pd.DataFrame([{"slide_id": "", "sheet_name": "Table", "excel_range": "A1:D10", "has_header": True}])
+    if mappings_df.empty:
+        mappings_df = pd.DataFrame([{"slide_id": "", "sheet_name": "Table", "excel_range": "A1:D10", "has_header": True}])
 
-mappings_editor = st.data_editor(
-    mappings_df,
-    num_rows="dynamic",
-    width="stretch",
-    column_config={
-        "slide_id": st.column_config.TextColumn("Slide ID", help="ex: A001"),
-        "sheet_name": st.column_config.TextColumn("Feuille Excel", help="ex: Table"),
-        "excel_range": st.column_config.TextColumn("Plage", help="ex: A1:D10"),
-        "has_header": st.column_config.CheckboxColumn("En-tête"),
-    }
-)
-st.session_state.mappings = [
-    {
-        "slide_id": str(row.get("slide_id", "")).strip(),
-        "sheet_name": str(row.get("sheet_name", "") or "Table").strip(),
-        "excel_range": str(row.get("excel_range", "") or "A1:D10").strip(),
-        "has_header": bool(row.get("has_header", True)),
-    }
-    for _, row in mappings_editor.iterrows()
-    if str(row.get("slide_id", "")).strip() and str(row.get("excel_range", "")).strip()
-]
+    mappings_editor = st.data_editor(
+        mappings_df,
+        num_rows="dynamic",
+        width="stretch",
+        column_config={
+            "slide_id": st.column_config.TextColumn("Slide ID", help="ex: A001"),
+            "sheet_name": st.column_config.TextColumn("Feuille Excel", help="ex: Table"),
+            "excel_range": st.column_config.TextColumn("Plage", help="ex: A1:D10"),
+            "has_header": st.column_config.CheckboxColumn("En-tête"),
+        }
+    )
+    st.session_state.mappings = [
+        {
+            "slide_id": str(row.get("slide_id", "")).strip(),
+            "sheet_name": str(row.get("sheet_name", "") or "Table").strip(),
+            "excel_range": str(row.get("excel_range", "") or "A1:D10").strip(),
+            "has_header": bool(row.get("has_header", True)),
+        }
+        for _, row in mappings_editor.iterrows()
+        if str(row.get("slide_id", "")).strip() and str(row.get("excel_range", "")).strip()
+    ]
 
 
-st.divider()
+    st.divider()
 
 # ===== BOUTON DE GÉNÉRATION =====
 button_label = "💾 Mettre à jour le template" if edit_mode else "🚀 Créer le template"
@@ -434,8 +450,8 @@ if st.button(button_label, type="primary", use_container_width=True):
                 description=description,
                 parameters=[ParameterConfig(**p) for p in st.session_state.parameters],
                 data_source=DataSourceConfig(
-                    type=data_source_type,
-                    required_tables=tables_list
+                    type="excel",  # Valeur par défaut
+                    required_tables=[]  # Liste vide
                 ),
                 loops=[LoopConfig(**loop) for loop in st.session_state.loops],
                 image_injections={

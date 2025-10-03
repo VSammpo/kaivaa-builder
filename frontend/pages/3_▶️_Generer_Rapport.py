@@ -13,6 +13,11 @@ from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
 from backend.services.report_service import ReportService
 from backend.database.models import ExecutionJob
+from backend.database.models import Template
+from datetime import datetime, timezone
+import zoneinfo
+LOCAL_TZ = datetime.now().astimezone().tzinfo  # fuseau local de la machine
+
 
 st.set_page_config(page_title="Générer Rapport", page_icon="▶️", layout="wide")
 
@@ -156,22 +161,34 @@ with col2:
                     # Mettre à jour le job
                     with DatabaseService.get_session() as db:
                         job = db.query(ExecutionJob).filter_by(id=job_id).first()
+                        template_row = db.query(Template).filter_by(id=template_id).first()
+
                         if result['success']:
+                            # ✅ champs qui existent vraiment dans le modèle
                             job.status = 'completed'
-                            job.output_file_path = result['pptx_path']
+                            job.output_ppt_path = result['pptx_path']
+                            job.output_excel_path = result['excel_path']
                             job.execution_time_seconds = result['execution_time_seconds']
-                            
+                            job.completed_at = datetime.now(timezone.utc)
+
+
+                            # stats du template
+                            if template_row:
+                                template_row.execution_count = (template_row.execution_count or 0) + 1
+                                template_row.last_executed = datetime.now(timezone.utc)
+
+                            db.commit()
+
                             st.success(f"✅ Rapport généré avec succès en {result['execution_time_seconds']:.1f}s")
-                            
-                            # Afficher les fichiers générés
+
+                            # Fichiers générés
                             st.markdown("**Fichiers générés :**")
                             st.code(result['pptx_path'])
                             st.code(result['excel_path'])
-                            
-                            # Boutons de téléchargement
-                            col1, col2 = st.columns(2)
-                            
-                            with col1:
+
+                            # Téléchargements
+                            c1, c2 = st.columns(2)
+                            with c1:
                                 with open(result['pptx_path'], 'rb') as f:
                                     st.download_button(
                                         "📥 Télécharger PowerPoint",
@@ -179,8 +196,7 @@ with col2:
                                         file_name=Path(result['pptx_path']).name,
                                         mime="application/vnd.openxmlformats-officedocument.presentationml.presentation"
                                     )
-                            
-                            with col2:
+                            with c2:
                                 with open(result['excel_path'], 'rb') as f:
                                     st.download_button(
                                         "📥 Télécharger Excel",
@@ -188,26 +204,30 @@ with col2:
                                         file_name=Path(result['excel_path']).name,
                                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                                     )
-                            
+
                             st.balloons()
+
                         else:
                             job.status = 'failed'
                             job.error_message = result['error']
                             job.execution_time_seconds = result['execution_time_seconds']
-                            
+                            job.completed_at = datetime.now(timezone.utc)
+
+                            db.commit()
+
                             st.error(f"❌ Erreur lors de la génération : {result['error']}")
-                        
-                        db.commit()
                 
                 except Exception as e:
                     st.error(f"❌ Erreur critique : {e}")
-                    
-                    # Mettre à jour le job
                     with DatabaseService.get_session() as db:
                         job = db.query(ExecutionJob).filter_by(id=job_id).first()
-                        job.status = 'failed'
-                        job.error_message = str(e)
-                        db.commit()
+                        if job:
+                            job.status = 'failed'
+                            job.error_message = str(e)
+                            job.completed_at = datetime.now(timezone.utc)
+
+                            db.commit()
+
 
 st.divider()
 
@@ -227,7 +247,14 @@ with DatabaseService.get_session() as db:
                 'running': '⏳'
             }.get(job.status, '❓')
             
-            with st.expander(f"{status_icon} {job.created_at.strftime('%d/%m/%Y %H:%M')} - {job.status}"):
+            dt = job.created_at
+            # Si la date en base est naïve (sans tz), on l’interprète comme UTC puis on convertit en local
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt_local = dt.astimezone(LOCAL_TZ)
+
+            with st.expander(f"{status_icon} {dt_local.strftime('%d/%m/%Y %H:%M')} - {job.status}"):
+
                 st.json(job.parameters)
                 if job.execution_time_seconds:
                     st.text(f"Durée : {job.execution_time_seconds:.1f}s")

@@ -77,6 +77,11 @@ else:
                         st.markdown(f"### {template['name']}")
                         st.caption(f"Version {template['version']}")
                         
+                        # --- affichage image de carte avec lien cliquable ---
+                        if st.button("", key=f"card_click_{template['id']}", use_container_width=True):
+                            st.session_state.selected_template_detail = template['id']
+                            st.switch_page("pages/4_📊_Detail_Livrable.py")
+
                         # --- affichage image de carte, normalisée 16:9 ---
                         default_image = project_root / "assets" / "background" / "card" / "default.png"
 
