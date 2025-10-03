@@ -68,9 +68,11 @@ class ReportService:
             
             logger.info("Étape 3/6 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
-            
+
+            logger.info("Conversion des graphiques statiques")
+            self._convert_static_charts(ppt_path, excel_path)  
+
             logger.info("Étape 4/6 : Application des boucles")
-            # C'est ici que les graphiques sont rafraîchis et convertis
             self._apply_loops(ppt_path, excel_path)
             
             logger.info("Étape 5/6 : Injection des tableaux")
@@ -813,18 +815,75 @@ class ReportService:
             presentation.Save()
         return relinked
 
-def _log_chart_sources(self, ppt_path: Path) -> None:
-    from backend.core.ppt_handler import powerpoint_app_context
-    with powerpoint_app_context(str(ppt_path), visible=False) as (ppt_app, presentation):
-        for slide in presentation.Slides:
-            for shape in slide.Shapes:
-                if hasattr(shape, "HasChart") and shape.HasChart:
-                    try:
-                        chart = shape.Chart
-                        # Selon les cas, on peut accéder au classeur
-                        wb = chart.ChartData.Workbook
-                        if hasattr(wb, "FullName"):
-                            from loguru import logger
-                            logger.debug(f"Slide {slide.SlideIndex} chart uses workbook: {wb.FullName}")
-                    except Exception:
-                        pass
+    def _log_chart_sources(self, ppt_path: Path) -> None:
+        from backend.core.ppt_handler import powerpoint_app_context
+        with powerpoint_app_context(str(ppt_path), visible=False) as (ppt_app, presentation):
+            for slide in presentation.Slides:
+                for shape in slide.Shapes:
+                    if hasattr(shape, "HasChart") and shape.HasChart:
+                        try:
+                            chart = shape.Chart
+                            # Selon les cas, on peut accéder au classeur
+                            wb = chart.ChartData.Workbook
+                            if hasattr(wb, "FullName"):
+                                from loguru import logger
+                                logger.debug(f"Slide {slide.SlideIndex} chart uses workbook: {wb.FullName}")
+                        except Exception:
+                            pass
+
+    def _convert_static_charts(self, ppt_path: Path, excel_path: Path) -> None:
+        """Rafraîchit puis convertit les graphiques des slides statiques en images"""
+        if not self.config.loops:
+            logger.info("Aucune boucle configurée, conversion de tous les graphiques")
+            loop_slide_ids = set()
+        else:
+            loop_slide_ids = set()
+            for loop in self.config.loops:
+                loop_slide_ids.update(loop.slides)
+        
+        logger.info(f"Rafraîchissement et conversion des graphiques statiques (slides loop ignorées : {loop_slide_ids})")
+        
+        # Ouvrir Excel ET PowerPoint simultanément pour le rafraîchissement
+        with excel_app_context(str(excel_path)) as (excel_app, excel_wb):
+            with powerpoint_app_context(str(ppt_path), visible=True) as (ppt_app, presentation):
+                converted_count = 0
+                
+                for slide in presentation.Slides:
+                    # Vérifier si la slide contient un ID de loop
+                    is_loop_slide = False
+                    for shape in slide.Shapes:
+                        if hasattr(shape, 'HasTextFrame') and shape.HasTextFrame:
+                            try:
+                                text = shape.TextFrame2.TextRange.Text
+                                for slide_id in loop_slide_ids:
+                                    if slide_id in text:
+                                        is_loop_slide = True
+                                        break
+                            except:
+                                continue
+                        if is_loop_slide:
+                            break
+                    
+                    if not is_loop_slide:
+                        # 1. Rafraîchir les graphiques de cette slide
+                        charts_refreshed = 0
+                        for shape in slide.Shapes:
+                            if hasattr(shape, 'HasChart') and shape.HasChart:
+                                try:
+                                    chart = shape.Chart
+                                    chart.ChartData.Activate()
+                                    chart.Refresh()
+                                    charts_refreshed += 1
+                                except Exception as e:
+                                    logger.debug(f"Erreur rafraîchissement graphique : {e}")
+                                    continue
+                        
+                        if charts_refreshed > 0:
+                            logger.debug(f"Slide {slide.SlideIndex} : {charts_refreshed} graphique(s) rafraîchi(s)")
+                        
+                        # 2. Convertir les graphiques en images
+                        self._convert_charts_in_slide(slide)
+                        converted_count += 1
+                
+                logger.info(f"{converted_count} slides statiques avec graphiques rafraîchis et convertis")
+                presentation.Save()

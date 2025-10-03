@@ -23,8 +23,6 @@ from backend.models.template_config import (
 
 st.set_page_config(page_title="Nouveau Template", page_icon="➕", layout="wide")
 
-st.title("➕ Créer un nouveau template")
-
 # Initialiser les états de session
 if 'parameters' not in st.session_state:
     st.session_state.parameters = []
@@ -35,17 +33,111 @@ if 'images' not in st.session_state:
 if 'mappings' not in st.session_state:
     st.session_state.mappings = []
 
+# Mode édition : charger un template existant
+edit_mode = False
+template_id_to_edit = None
+template_config = None
+template_db = None
+
+if 'selected_template' in st.session_state and st.session_state.selected_template:
+    edit_mode = True
+    template_id_to_edit = st.session_state.selected_template
+    
+    # Charger les données du template
+    with DatabaseService.get_session() as db:
+        service = TemplateService(db)
+        template_config = service.load_template_config(template_id_to_edit)
+        template_db = service.get_template(template_id_to_edit)
+        
+        # EXTRAIRE les données AVANT de sortir du contexte
+        template_name = template_db.name
+        template_version = template_db.version
+        template_description = template_db.description
+    
+    # Pré-remplir les états si c'est la première fois
+    if not st.session_state.get('_template_loaded'):
+        st.session_state.parameters = [
+            {
+                "name": p.name,
+                "type": p.type,
+                "required": p.required,
+                "balise_ppt": p.balise_ppt
+            }
+            for p in template_config.parameters
+        ]
+        
+        st.session_state.loops = [
+            {
+                "loop_id": loop.loop_id,
+                "slides": loop.slides,
+                "sheet_name": loop.sheet_name
+            }
+            for loop in template_config.loops
+        ]
+        
+        st.session_state.images = {
+            slide_id: [
+                {
+                    "type": img.type,
+                    "pattern": img.pattern,
+                    "default_path": img.default_path,
+                    "position": img.position,
+                    "size": img.size,
+                    "background": img.background,
+                    "loop_dependent": img.loop_dependent
+                }
+                for img in images
+            ]
+            for slide_id, images in template_config.image_injections.items()
+        }
+        
+        st.session_state.mappings = [
+            {
+                "slide_id": m.slide_id,
+                "sheet_name": m.sheet_name,
+                "excel_range": m.excel_range,
+                "has_header": m.has_header
+            }
+            for m in template_config.slide_mappings
+        ]
+        
+        st.session_state._template_loaded = True
+    
+    # Réinitialiser après navigation
+    if st.button("🔙 Retour à la bibliothèque"):
+        del st.session_state.selected_template
+        del st.session_state._template_loaded
+        st.switch_page("pages/1_📚_Bibliotheque.py")
+
+# TITRE (maintenant edit_mode et template_name sont définis)
+if edit_mode:
+    st.title(f"✏️ Modifier le template '{template_name}'")
+else:
+    st.title("➕ Créer un nouveau template")
+
 # ===== ÉTAPE 1 : Informations générales =====
 st.header("1️⃣ Informations générales")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    name = st.text_input("Nom du template*", placeholder="ex: BCE_INSEE")
-    version = st.text_input("Version", value="1.0")
+    name = st.text_input(
+        "Nom du template*", 
+        value=template_name if edit_mode else "",  # Utiliser template_name extrait
+        placeholder="ex: BCE_INSEE",
+        disabled=edit_mode
+    )
+    version = st.text_input(
+        "Version", 
+        value=template_version if edit_mode else "1.0"  # Utiliser template_version extrait
+    )
 
 with col2:
-    description = st.text_area("Description", placeholder="Description du template...")
+    description = st.text_area(
+        "Description", 
+        value=template_description if edit_mode and template_description else "",  # Utiliser template_description extrait
+        placeholder="Description du template..."
+    )
 
 st.divider()
 
@@ -115,20 +207,22 @@ st.header("4️⃣ Source de données")
 
 data_source_type = st.selectbox(
     "Type de source",
-    ["excel", "postgresql", "mysql", "csv"]
+    ["excel", "postgresql", "mysql", "csv"],
+    index=["excel", "postgresql", "mysql", "csv"].index(template_config.data_source.type) if edit_mode else 0
 )
 
 if data_source_type == "excel":
     st.info("💡 Les tableaux structurés du fichier Excel seront utilisés comme source")
     table_names = st.text_input(
         "Noms des tableaux Excel",
-        value="Performance",
+        value=", ".join(template_config.data_source.required_tables) if edit_mode else "Performance",
         help="Noms des tableaux structurés (séparés par des virgules)"
     )
     tables_list = [t.strip() for t in table_names.split(',') if t.strip()]
 else:
     required_tables = st.text_area(
         "Tables requises (une par ligne)",
+        value="\n".join(template_config.data_source.required_tables) if edit_mode else "",
         placeholder="observations\ndim_produits"
     )
     tables_list = [t.strip() for t in required_tables.split('\n') if t.strip()]
@@ -284,7 +378,9 @@ if st.session_state.mappings:
 st.divider()
 
 # ===== BOUTON DE GÉNÉRATION =====
-if st.button("🚀 Créer le template", type="primary", use_container_width=True):
+button_label = "💾 Mettre à jour le template" if edit_mode else "🚀 Créer le template"
+
+if st.button(button_label, type="primary", use_container_width=True):
     if not name:
         st.error("Le nom du template est obligatoire")
     elif not st.session_state.parameters:
