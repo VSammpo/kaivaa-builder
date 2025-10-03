@@ -12,6 +12,7 @@ from backend.config import DatabaseConfig, PathConfig
 from backend.database.models import Template, User, TemplateVersion
 from backend.models.template_config import TemplateConfig
 from backend.generator.template_generator import TemplateGenerator
+import re
 
 
 class TemplateService:
@@ -159,7 +160,7 @@ class TemplateService:
         logger.info(f"Mise à jour du template '{template.name}'")
         
         # Champs autorisés à la mise à jour
-        allowed_fields = ['description', 'version', 'config', 'is_public']
+        allowed_fields = ['description', 'version', 'config', 'is_public', 'card_image_path']
         
         change_description = []
         for field, value in updates.items():
@@ -307,3 +308,56 @@ class TemplateService:
             raise ValueError(f"Template {template_id} non trouvé")
         
         return TemplateConfig(**template.config)
+    
+    def _slugify(self, text: str) -> str:
+        """Transforme un nom en slug 'propre' pour le nom de fichier."""
+        import re as _re
+        text = (text or "").lower()
+        text = _re.sub(r'[^a-z0-9]+', '-', text).strip('-')
+        return text or 'image'
+
+    def save_card_image(self, template_id: int, file_bytes: bytes, original_filename: str) -> str:
+        """
+        Enregistre physiquement l'image de carte dans assets/background/card/
+        et met à jour template.card_image_path en base.
+        Retourne le chemin ABSOLU enregistré.
+        """
+        from pathlib import Path as _Path
+        from datetime import datetime as _dt
+
+        # 1) Récupérer le template
+        template = self.get_template(template_id)
+        if not template:
+            raise ValueError(f"Template {template_id} non trouvé")
+
+        # 2) Trouver la racine du projet
+        #    a) si PathConfig.ROOT existe, on l'utilise
+        #    b) sinon, on remonte depuis ce fichier: .../backend/services/template_service.py -> racine = parents[2]
+        try:
+            from backend.config import PathConfig  # optionnel
+            project_root = _Path(PathConfig.ROOT)
+        except Exception:
+            project_root = _Path(__file__).resolve().parents[2]
+
+        # 3) Dossier de sortie
+        assets_dir = project_root / "assets" / "background" / "card"
+        assets_dir.mkdir(parents=True, exist_ok=True)
+
+        # 4) Nom de fichier propre et unique
+        stem = self._slugify(template.name)
+        ext = _Path(original_filename).suffix.lower() or ".png"
+        fname = f"{stem}_{_dt.utcnow().strftime('%Y%m%d%H%M%S')}{ext}"
+        out_path = assets_dir / fname
+
+        # 5) Écriture du fichier
+        with open(out_path, "wb") as f:
+            f.write(file_bytes)
+
+        # 6) Mise à jour du chemin en base (chemin ABSOLU)
+        abs_path_str = str(out_path.resolve())
+        template.card_image_path = abs_path_str
+        template.updated_at = _dt.utcnow()
+        self.db.commit()
+        self.db.refresh(template)
+
+        return abs_path_str

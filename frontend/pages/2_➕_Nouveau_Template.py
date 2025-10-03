@@ -433,13 +433,22 @@ if st.button(button_label, type="primary", use_container_width=True):
                         updates=updates,
                         user_id=1
                     )
-                
+
+                    # --- enregistrer la nouvelle image de carte si fournie ---
+                    if card_image is not None:
+                        service.save_card_image(
+                            template_id=template_id_to_edit,
+                            file_bytes=card_image.getvalue(),
+                            original_filename=card_image.name
+                        )
+
                 st.success(f"✅ Template '{name}' mis à jour avec succès!")
-                st.info("💡 Les fichiers masters n'ont pas été modifiés. Pour changer les fichiers PPT/Excel, créez une nouvelle version.")
-                
-                # Réinitialiser le flag de chargement
+                st.info("💡 Les fichiers masters n'ont pas été modifiés. Pour changer les fichiers PPT/Excel, crée une nouvelle version.")
+
                 if '_template_loaded' in st.session_state:
                     del st.session_state._template_loaded
+
+
                 
             else:
                 # MODE CRÉATION

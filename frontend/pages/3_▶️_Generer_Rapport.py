@@ -35,8 +35,7 @@ if preselected_id:
     # Trouver le nom correspondant à l'ID
     preselected_name = next((name for name, tid in template_options.items() if tid == preselected_id), None)
     default_index = list(template_options.keys()).index(preselected_name) if preselected_name else 0
-    # Nettoyer après utilisation
-    del st.session_state.selected_template_for_generation
+
 else:
     default_index = 0
 
@@ -46,6 +45,7 @@ selected_template_name = st.selectbox(
     index=default_index
 )
 
+st.session_state['selected_template_for_generation'] = template_options[selected_template_name]
 template_id = template_options[selected_template_name]
 
 st.divider()
