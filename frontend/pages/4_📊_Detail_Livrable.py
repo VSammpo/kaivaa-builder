@@ -159,8 +159,8 @@ with col_right:
             for job in jobs_data:
                 
                 # Ligne principale avec boutons
-                col_status, col_date, col_excel, col_ppt = st.columns([1, 3, 2, 2])
-                
+                col_status, col_date, col_excel, col_ppt, col_actions = st.columns([1, 3, 2, 2, 1])
+
                 with col_status:
                     if job['status'] == 'running':
                         st.markdown("🔄")
@@ -168,27 +168,45 @@ with col_right:
                         st.markdown("✅")
                     else:
                         st.markdown("❌")
-                
+
                 with col_date:
-                    date_str = job['date'].strftime('%d/%m/%Y %H:%M')
+                    # Sécurise l'affichage même si la date est naive
+                    dt = job['date']
+                    if hasattr(dt, "tzinfo") and dt.tzinfo is not None:
+                        date_str = dt.astimezone().strftime('%d/%m/%Y %H:%M')
+                    else:
+                        date_str = dt.strftime('%d/%m/%Y %H:%M')
                     duration_str = f"- {job['duration']:.1f}s" if job['duration'] else ""
                     st.markdown(f"**{date_str}** {duration_str}")
-                
+
                 with col_excel:
                     excel_exists = job['excel_path'] and Path(job['excel_path']).exists()
-                    if st.button("📊 Excel", key=f"excel_{job['id']}", 
-                               disabled=not excel_exists or job['status'] != 'completed', 
-                               use_container_width=True):
+                    if st.button("📊 Excel", key=f"excel_{job['id']}",
+                                 disabled=not excel_exists or job['status'] != 'completed',
+                                 use_container_width=True):
                         if open_file(job['excel_path']):
                             st.toast("Excel ouvert")
-                
+
                 with col_ppt:
                     ppt_exists = job['ppt_path'] and Path(job['ppt_path']).exists()
-                    if st.button("📄 PPT", key=f"ppt_{job['id']}", 
-                               disabled=not ppt_exists or job['status'] != 'completed', 
-                               use_container_width=True):
+                    if st.button("📄 PPT", key=f"ppt_{job['id']}",
+                                 disabled=not ppt_exists or job['status'] != 'completed',
+                                 use_container_width=True):
                         if open_file(job['ppt_path']):
                             st.toast("PowerPoint ouvert")
+
+                with col_actions:
+                    if st.button("🗑️", key=f"del_{job['id']}", use_container_width=True,
+                                 help="Supprimer cette exécution (fichiers + KPI)"):
+                        with DatabaseService.get_session() as db_del:
+                           ok = DatabaseService.delete_job_and_files(db_del, job['id'])
+
+                        if ok:
+                            st.success("Exécution supprimée")
+                        else:
+                            st.warning("Exécution introuvable")
+                        st.rerun()
+
                 
                 # Expander pour détails
                 with st.expander("📋 Détails", expanded=False):

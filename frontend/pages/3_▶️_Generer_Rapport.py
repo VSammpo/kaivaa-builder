@@ -12,11 +12,12 @@ sys.path.insert(0, str(project_root))
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
 from backend.services.report_service import ReportService
-from backend.database.models import ExecutionJob
-from backend.database.models import Template
+from backend.database.models import Template, ExecutionJob  # <<— IMPORTANT
 from datetime import datetime, timezone
 import zoneinfo
+
 LOCAL_TZ = datetime.now().astimezone().tzinfo  # fuseau local de la machine
+
 
 
 st.set_page_config(page_title="Générer Rapport", page_icon="▶️", layout="wide")
