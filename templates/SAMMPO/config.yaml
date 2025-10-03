@@ -11,11 +11,11 @@ excel_template_path: null
 image_injections: {}
 loops:
 - loop_id: Concurrents
-  sheet_name: Charts_settings
+  sheet_name: Boucles
   slides:
   - A106
 - loop_id: Produits
-  sheet_name: Charts_settings
+  sheet_name: Boucles
   slides:
   - B010
   - C003
@@ -25,7 +25,7 @@ loops:
   - D007
   - D008
 - loop_id: Produit_cct
-  sheet_name: Charts_settings
+  sheet_name: Boucles
   slides:
   - C007
 name: SAMMPO

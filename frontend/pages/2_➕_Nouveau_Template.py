@@ -6,6 +6,10 @@ import streamlit as st
 from pathlib import Path
 import sys
 import json
+import pandas as pd
+from io import BytesIO
+from pathlib import Path
+
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -115,6 +119,35 @@ if edit_mode:
 else:
     st.title("➕ Créer un nouveau template")
 
+# --- Valeurs par défaut en mode création (pour éviter NameError dans la sidebar) ---
+if not edit_mode:
+    template_name = ""
+    template_version = "1.0"
+    template_description = ""
+
+
+# === Récap compact dans la sidebar ===
+with st.sidebar:
+    st.header("🧭 Récap")
+    st.write(f"**Mode** : {'Édition' if edit_mode else 'Création'}")
+    st.write(f"**Nom** : {template_name or '—'}")
+    st.write(f"**Version** : {template_version if edit_mode else '—'}")
+    st.write(f"**Source** : {template_config.data_source.type if edit_mode else '—'}")
+
+    # Aperçu image carte
+    if edit_mode and template_db and getattr(template_db, 'card_image_path', None):
+        try:
+            st.image(template_db.card_image_path, caption="Image actuelle", width="stretch")
+        except Exception:
+            st.caption("Aperçu indisponible.")
+
+    st.divider()
+    st.caption(f"Paramètres : {len(st.session_state.parameters)}")
+    st.caption(f"Boucles : {len(st.session_state.loops)}")
+    st.caption(f"Images dynamiques : {sum(len(v) for v in st.session_state.images.values())}")
+    st.caption(f"Mappings : {len(st.session_state.mappings)}")
+
+
 # ===== ÉTAPE 1 : Informations générales =====
 st.header("1️⃣ Informations générales")
 
@@ -175,41 +208,41 @@ if upload_mode == "Uploader des fichiers existants":
 st.divider()
 
 # ===== ÉTAPE 3 : Paramètres =====
-st.header("3️⃣ Paramètres")
+st.header("3️⃣ Paramètres (édition en tableau)")
+st.markdown("Ajoute/modifie directement dans le tableau. Les lignes vides sont ignorées.")
 
-with st.expander("➕ Ajouter un paramètre", expanded=len(st.session_state.parameters) == 0):
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        param_name = st.text_input("Nom du paramètre", key="new_param_name")
-    with col2:
-        param_type = st.selectbox("Type", ["string", "integer", "date", "list"], key="new_param_type")
-    with col3:
-        param_balise = st.text_input("Balise PPT", placeholder="[NomParametre]", key="new_param_balise")
-    
-    if st.button("➕ Ajouter ce paramètre"):
-        if param_name and param_balise:
-            st.session_state.parameters.append({
-                "name": param_name,
-                "type": param_type,
-                "required": True,
-                "balise_ppt": param_balise
-            })
-            st.rerun()
-        else:
-            st.error("Nom et balise obligatoires")
+# DataFrame source
+param_df = pd.DataFrame(st.session_state.parameters or [],
+                        columns=["name", "type", "required", "balise_ppt"])
 
-# Afficher les paramètres
-if st.session_state.parameters:
-    st.markdown("**Paramètres configurés :**")
-    for idx, param in enumerate(st.session_state.parameters):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.text(f"• {param['name']} ({param['type']}) → {param['balise_ppt']}")
-        with col2:
-            if st.button("🗑️", key=f"del_param_{idx}"):
-                st.session_state.parameters.pop(idx)
-                st.rerun()
+# Valeurs par défaut si vide
+if param_df.empty:
+    param_df = pd.DataFrame([{"name": "", "type": "string", "required": True, "balise_ppt": ""}])
+
+param_editor = st.data_editor(
+    param_df,
+    num_rows="dynamic",
+    width="stretch",
+    column_config={
+        "name": st.column_config.TextColumn("Nom", help="Nom interne du paramètre (ex: sous_marque)"),
+        "type": st.column_config.SelectboxColumn("Type", options=["string", "integer", "date", "list"]),
+        "required": st.column_config.CheckboxColumn("Obligatoire"),
+        "balise_ppt": st.column_config.TextColumn("Balise PPT", help="ex: [SousMarque]"),
+    }
+)
+
+# Sauvegarde dans la session (en nettoyant les lignes vides)
+st.session_state.parameters = [
+    {
+        "name": str(row.get("name", "")).strip(),
+        "type": row.get("type") or "string",
+        "required": bool(row.get("required", True)),
+        "balise_ppt": str(row.get("balise_ppt", "")).strip()
+    }
+    for _, row in param_editor.iterrows()
+    if str(row.get("name", "")).strip() and str(row.get("balise_ppt", "")).strip()
+]
+
 
 st.divider()
 
@@ -240,44 +273,45 @@ else:
 
 st.divider()
 
-# ===== ÉTAPE 5 : Configuration des boucles =====
-st.header("5️⃣ Configuration des boucles")
+# ===== ÉTAPE 5 : Boucles =====
+st.header("5️⃣ Boucles (édition en tableau)")
+st.markdown("`slides` doit être une liste de codes séparés par des virgules (ex: A001, A002)")
 
-st.markdown("""
-Les boucles permettent de dupliquer automatiquement des slides selon un tableau Loop dans Excel.
-""")
+# Convertit les boucles actuelles en DF
+loops_norm = []
+for loop in (st.session_state.loops or []):
+    loops_norm.append({
+        "loop_id": loop.get("loop_id", ""),
+        "slides": ", ".join(loop.get("slides", [])) if isinstance(loop.get("slides"), list) else str(loop.get("slides", "")),
+        "sheet_name": loop.get("sheet_name", "Boucles"),
+    })
+loops_df = pd.DataFrame(loops_norm or [{"loop_id": "", "slides": "", "sheet_name": "Boucles"}])
 
-with st.expander("➕ Ajouter une boucle", expanded=len(st.session_state.loops) == 0):
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        loop_id = st.text_input("ID de la boucle", placeholder="ex: Entreprise", key="new_loop_id")
-        loop_sheet = st.text_input("Feuille Excel", value="Charts_settings", key="new_loop_sheet")
-    
-    with col2:
-        loop_slides = st.text_input("Slides concernées (séparées par virgules)", placeholder="A001, A002", key="new_loop_slides")
-    
-    if st.button("➕ Ajouter cette boucle"):
-        if loop_id and loop_slides:
-            slides_list = [s.strip() for s in loop_slides.split(',')]
-            st.session_state.loops.append({
-                "loop_id": loop_id,
-                "slides": slides_list,
-                "sheet_name": loop_sheet
-            })
-            st.rerun()
+loops_editor = st.data_editor(
+    loops_df,
+    num_rows="dynamic",
+    width="stretch",
+    column_config={
+        "loop_id": st.column_config.TextColumn("ID boucle", help="Identifiant utilisé côté code"),
+        "slides": st.column_config.TextColumn("Slides (A001, A002, ...)"),
+        "sheet_name": st.column_config.TextColumn("Feuille Excel Loop", help="Par défaut: Boucles"),
+    }
+)
 
-# Afficher les boucles
-if st.session_state.loops:
-    st.markdown("**Boucles configurées :**")
-    for idx, loop in enumerate(st.session_state.loops):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.text(f"• {loop['loop_id']} → Slides: {', '.join(loop['slides'])}")
-        with col2:
-            if st.button("🗑️", key=f"del_loop_{idx}"):
-                st.session_state.loops.pop(idx)
-                st.rerun()
+# Sauvegarde dans la session en listifiant slides
+def _split_slides(s: str) -> list[str]:
+    return [x.strip() for x in str(s or "").split(",") if x.strip()]
+
+st.session_state.loops = [
+    {
+        "loop_id": str(row.get("loop_id", "")).strip(),
+        "slides": _split_slides(row.get("slides", "")),
+        "sheet_name": str(row.get("sheet_name", "") or "Boucles").strip(),
+    }
+    for _, row in loops_editor.iterrows()
+    if str(row.get("loop_id", "")).strip()
+]
+
 
 st.divider()
 
@@ -345,46 +379,37 @@ if st.session_state.images:
 
 st.divider()
 
-# ===== ÉTAPE 7 : Mapping des données =====
-st.header("7️⃣ Mapping des données (optionnel)")
+# ===== ÉTAPE 7 : Mappings =====
+st.header("7️⃣ Mappings (édition en tableau)")
 
-st.markdown("""
-Configurez quelles données Excel doivent être injectées dans quels tableaux PowerPoint.
-""")
+mappings_df = pd.DataFrame(st.session_state.mappings or [],
+                           columns=["slide_id", "sheet_name", "excel_range", "has_header"])
 
-with st.expander("➕ Ajouter un mapping de données"):
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        map_slide_id = st.text_input("Slide ID", placeholder="A001", key="new_map_slide")
-    with col2:
-        map_sheet = st.text_input("Feuille Excel", placeholder="Table", key="new_map_sheet")
-    with col3:
-        map_range = st.text_input("Plage Excel", placeholder="A1:D10", key="new_map_range")
-    
-    map_header = st.checkbox("Première ligne = en-tête", value=True, key="new_map_header")
-    
-    if st.button("➕ Ajouter ce mapping"):
-        if map_slide_id and map_sheet and map_range:
-            st.session_state.mappings.append({
-                "slide_id": map_slide_id,
-                "sheet_name": map_sheet,
-                "excel_range": map_range,
-                "has_header": map_header
-            })
-            st.rerun()
+if mappings_df.empty:
+    mappings_df = pd.DataFrame([{"slide_id": "", "sheet_name": "Table", "excel_range": "A1:D10", "has_header": True}])
 
-# Afficher les mappings
-if st.session_state.mappings:
-    st.markdown("**Mappings configurés :**")
-    for idx, mapping in enumerate(st.session_state.mappings):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.text(f"• {mapping['slide_id']} ← {mapping['sheet_name']}!{mapping['excel_range']}")
-        with col2:
-            if st.button("🗑️", key=f"del_map_{idx}"):
-                st.session_state.mappings.pop(idx)
-                st.rerun()
+mappings_editor = st.data_editor(
+    mappings_df,
+    num_rows="dynamic",
+    width="stretch",
+    column_config={
+        "slide_id": st.column_config.TextColumn("Slide ID", help="ex: A001"),
+        "sheet_name": st.column_config.TextColumn("Feuille Excel", help="ex: Table"),
+        "excel_range": st.column_config.TextColumn("Plage", help="ex: A1:D10"),
+        "has_header": st.column_config.CheckboxColumn("En-tête"),
+    }
+)
+st.session_state.mappings = [
+    {
+        "slide_id": str(row.get("slide_id", "")).strip(),
+        "sheet_name": str(row.get("sheet_name", "") or "Table").strip(),
+        "excel_range": str(row.get("excel_range", "") or "A1:D10").strip(),
+        "has_header": bool(row.get("has_header", True)),
+    }
+    for _, row in mappings_editor.iterrows()
+    if str(row.get("slide_id", "")).strip() and str(row.get("excel_range", "")).strip()
+]
+
 
 st.divider()
 
@@ -398,7 +423,11 @@ if st.button(button_label, type="primary", use_container_width=True):
         st.error("Uploadez les fichiers PowerPoint et Excel")
     else:
         try:
-            # Construire la config
+            # Normalisation avant TemplateConfig
+            for loop in st.session_state.loops:
+                if isinstance(loop.get("slides"), str):
+                    loop["slides"] = [x.strip() for x in loop["slides"].split(",") if x.strip()]
+
             config = TemplateConfig(
                 name=name,
                 version=version,
@@ -417,62 +446,71 @@ if st.button(button_label, type="primary", use_container_width=True):
             )
             
             if edit_mode:
-                # MODE MISE À JOUR
+                # ========== MODE MISE À JOUR ==========
                 with DatabaseService.get_session() as db:
                     service = TemplateService(db)
                     
-                    # Mettre à jour la config JSON
                     updates = {
                         'version': version,
                         'description': description,
                         'config': config.model_dump(mode='json')
                     }
                     
-                    updated_template = service.update_template(
+                    service.update_template(
                         template_id=template_id_to_edit,
                         updates=updates,
                         user_id=1
                     )
 
-                    # --- enregistrer la nouvelle image de carte si fournie ---
+                    # Enregistrer nouvelle image si fournie
                     if card_image is not None:
                         service.save_card_image(
                             template_id=template_id_to_edit,
                             file_bytes=card_image.getvalue(),
                             original_filename=card_image.name
                         )
-
-                st.success(f"✅ Template '{name}' mis à jour avec succès!")
-                st.info("💡 Les fichiers masters n'ont pas été modifiés. Pour changer les fichiers PPT/Excel, crée une nouvelle version.")
-
+                
+                st.success(f"✅ Template '{name}' mis à jour!")
+                st.info("💡 Fichiers masters inchangés. Pour modifier PPT/Excel, créez une nouvelle version.")
+                
                 if '_template_loaded' in st.session_state:
                     del st.session_state._template_loaded
-
-
-                
+            
             else:
-                # MODE CRÉATION
-                # Sauvegarder les fichiers uploadés
+                # ========== MODE CRÉATION ==========
                 import tempfile
                 from PIL import Image
-                import io
-                
+
                 temp_dir = Path(tempfile.gettempdir())
-                
                 ppt_path = None
                 excel_path = None
-                
-                if ppt_file:
-                    ppt_path = temp_dir / ppt_file.name
-                    with open(ppt_path, 'wb') as f:
-                        f.write(ppt_file.getbuffer())
-                
-                if excel_file:
-                    excel_path = temp_dir / excel_file.name
-                    with open(excel_path, 'wb') as f:
-                        f.write(excel_file.getbuffer())
-                
-                # Créer le template
+
+                if upload_mode == "Uploader des fichiers existants":
+                    if ppt_file:
+                        ppt_path = temp_dir / ppt_file.name
+                        with open(ppt_path, 'wb') as f:
+                            f.write(ppt_file.getbuffer())
+                    if excel_file:
+                        excel_path = temp_dir / excel_file.name
+                        with open(excel_path, 'wb') as f:
+                            f.write(excel_file.getbuffer())
+                else:
+                    # Fichiers vierges : utiliser masters par défaut
+                    master_excel_path = project_root / "assets" / "00_master" / "master_template.xlsx"
+                    master_ppt_path = project_root / "assets" / "00_master" / "master_template.pptx"
+                    
+                    if not master_excel_path.exists():
+                        st.error(f"Master Excel introuvable : {master_excel_path}")
+                        st.stop()
+                    
+                    if not master_ppt_path.exists():
+                        st.error(f"Master PowerPoint introuvable : {master_ppt_path}")
+                        st.stop()
+                    
+                    excel_path = master_excel_path
+                    ppt_path = master_ppt_path
+
+                # Création template
                 with DatabaseService.get_session() as db:
                     service = TemplateService(db)
                     template = service.create_template(
@@ -481,48 +519,37 @@ if st.button(button_label, type="primary", use_container_width=True):
                         ppt_source=ppt_path,
                         excel_source=excel_path
                     )
-                    template_name = template.name
                     template_id = template.id
-                    
-                    # Gérer l'image de carte
-                    assets_dir = project_root / "assets" / "background" / "card"
-                    assets_dir.mkdir(parents=True, exist_ok=True)
-                    
+
+                    # Gérer image de carte
                     if card_image:
-                        # Redimensionner et cropper l'image en 300x150
+                        assets_dir = project_root / "assets" / "background" / "card"
+                        assets_dir.mkdir(parents=True, exist_ok=True)
+
                         img = Image.open(card_image)
-                        
-                        # Calculer le ratio pour couvrir 300x150
                         target_width, target_height = 300, 150
                         img_ratio = img.width / img.height
                         target_ratio = target_width / target_height
-                        
+
                         if img_ratio > target_ratio:
-                            # Image plus large : on crop les côtés
                             new_height = img.height
                             new_width = int(new_height * target_ratio)
                             left = (img.width - new_width) // 2
                             img_cropped = img.crop((left, 0, left + new_width, new_height))
                         else:
-                            # Image plus haute : on crop haut/bas
                             new_width = img.width
                             new_height = int(new_width / target_ratio)
                             top = (img.height - new_height) // 2
                             img_cropped = img.crop((0, top, new_width, top + new_height))
-                        
-                        # Redimensionner à la taille exacte
+
                         img_final = img_cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
-                        
-                        # Sauvegarder
-                        image_filename = f"{template_name}.png"
-                        image_path = assets_dir / image_filename
+                        image_path = assets_dir / f"{name}.png"
                         img_final.save(image_path, "PNG")
-                        
-                        # Mettre à jour le template
+
                         template.card_image_path = str(image_path)
                         db.commit()
-                
-                st.success(f"✅ Template '{template_name}' créé avec succès! (ID: {template_id})")
+
+                st.success(f"✅ Template '{name}' créé! (ID: {template_id})")
                 st.balloons()
                 
                 # Réinitialiser
@@ -530,8 +557,8 @@ if st.button(button_label, type="primary", use_container_width=True):
                 st.session_state.loops = []
                 st.session_state.images = {}
                 st.session_state.mappings = []
-            
+        
         except Exception as e:
-            st.error(f"Erreur lors de {'la mise à jour' if edit_mode else 'la création'} : {e}")
+            st.error(f"Erreur : {e}")
             import traceback
             st.code(traceback.format_exc())

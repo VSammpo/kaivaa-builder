@@ -61,7 +61,7 @@ class LoopConfig(BaseModel):
     """Configuration d'une boucle sur slides"""
     loop_id: str = Field(..., description="ID de la boucle (ex: Produits, Concurrents)")
     slides: List[str] = Field(..., description="Liste des slide IDs concernés")
-    sheet_name: str = Field("Charts_settings", description="Feuille contenant le tableau Loop")
+    sheet_name: str = Field("Boucles", description="Feuille contenant le tableau Loop")
 
 
 class TemplateConfig(BaseModel):

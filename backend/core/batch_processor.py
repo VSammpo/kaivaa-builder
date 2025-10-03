@@ -27,7 +27,7 @@ class SlideAxis:
     name: str
     loop_id: str
     slides: List[str]
-    sheet_name: str = "Charts_settings"
+    sheet_name: str = "Itérations"
 
 
 @dataclass

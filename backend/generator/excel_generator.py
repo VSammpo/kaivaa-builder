@@ -53,7 +53,7 @@ class ExcelTemplateGenerator:
         
         # Créer les feuilles
         self._create_balises_sheet(wb)
-        self._create_charts_settings_sheet(wb)
+        self._create_Boucles_sheet(wb)
         self._create_table_sheet(wb)
         
         # Sauvegarder
@@ -101,9 +101,9 @@ class ExcelTemplateGenerator:
         ws.column_dimensions['C'].width = 20
         ws.column_dimensions['D'].width = 15
     
-    def _create_charts_settings_sheet(self, wb: openpyxl.Workbook) -> None:
-        """Crée la feuille Charts_settings"""
-        ws = wb.create_sheet("Charts_settings")
+    def _create_Boucles_sheet(self, wb: openpyxl.Workbook) -> None:
+        """Crée la feuille Boucles"""
+        ws = wb.create_sheet("Boucles")
         
         # Paramètres de filtrage
         ws['A1'] = "Paramètres de filtrage"
