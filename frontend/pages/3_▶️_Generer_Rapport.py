@@ -29,9 +29,21 @@ if not template_options:
     st.error("Aucun template disponible. Créez-en un d'abord.")
     st.stop()
 
+# Pré-sélectionner si venant de la bibliothèque
+preselected_id = st.session_state.get('selected_template_for_generation')
+if preselected_id:
+    # Trouver le nom correspondant à l'ID
+    preselected_name = next((name for name, tid in template_options.items() if tid == preselected_id), None)
+    default_index = list(template_options.keys()).index(preselected_name) if preselected_name else 0
+    # Nettoyer après utilisation
+    del st.session_state.selected_template_for_generation
+else:
+    default_index = 0
+
 selected_template_name = st.selectbox(
     "Template à utiliser",
-    options=list(template_options.keys())
+    options=list(template_options.keys()),
+    index=default_index
 )
 
 template_id = template_options[selected_template_name]

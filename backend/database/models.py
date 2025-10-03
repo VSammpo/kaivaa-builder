@@ -49,7 +49,8 @@ class Template(Base):
     config_file_path = Column(String(500))
     ppt_template_path = Column(String(500))
     excel_template_path = Column(String(500))
-    
+    card_image_path = Column(String(500), nullable=True) 
+        
     # Statistiques
     execution_count = Column(Integer, default=0)
     last_executed = Column(DateTime, nullable=True)

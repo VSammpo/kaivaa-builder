@@ -144,10 +144,21 @@ st.divider()
 # ===== ÉTAPE 2 : Fichiers sources =====
 st.header("2️⃣ Fichiers sources")
 
-upload_mode = st.radio(
-    "Mode de création",
-    ["Créer des fichiers vierges", "Uploader des fichiers existants"]
-)
+col1, col2 = st.columns(2)
+
+with col1:
+    upload_mode = st.radio(
+        "Mode de création",
+        ["Créer des fichiers vierges", "Uploader des fichiers existants"]
+    )
+
+with col2:
+    # Upload image de carte
+    card_image = st.file_uploader(
+        "🖼️ Image de carte (optionnelle)", 
+        type=['png', 'jpg', 'jpeg'],
+        help="Image affichée dans la bibliothèque. Si vide, une image par défaut sera utilisée."
+    )
 
 ppt_file = None
 excel_file = None
@@ -383,9 +394,7 @@ button_label = "💾 Mettre à jour le template" if edit_mode else "🚀 Créer 
 if st.button(button_label, type="primary", use_container_width=True):
     if not name:
         st.error("Le nom du template est obligatoire")
-    elif not st.session_state.parameters:
-        st.error("Ajoutez au moins un paramètre")
-    elif upload_mode == "Uploader des fichiers existants" and (not ppt_file or not excel_file):
+    elif upload_mode == "Uploader des fichiers existants" and (not ppt_file or not excel_file) and not edit_mode:
         st.error("Uploadez les fichiers PowerPoint et Excel")
     else:
         try:
@@ -407,48 +416,113 @@ if st.button(button_label, type="primary", use_container_width=True):
                 slide_mappings=[SlideMapping(**m) for m in st.session_state.mappings]
             )
             
-            # Sauvegarder les fichiers uploadés
-            import tempfile
-            temp_dir = Path(tempfile.gettempdir())
-            
-            ppt_path = None
-            excel_path = None
-            
-            if ppt_file:
-                ppt_path = temp_dir / ppt_file.name
-                with open(ppt_path, 'wb') as f:
-                    f.write(ppt_file.getbuffer())
-            
-            if excel_file:
-                excel_path = temp_dir / excel_file.name
-                with open(excel_path, 'wb') as f:
-                    f.write(excel_file.getbuffer())
-            
-            # Créer le template
-            template_name = None
-            template_id = None
-            
-            with DatabaseService.get_session() as db:
-                service = TemplateService(db)
-                template = service.create_template(
-                    config=config,
-                    user_id=1,
-                    ppt_source=ppt_path,
-                    excel_source=excel_path
-                )
-                template_name = template.name
-                template_id = template.id
-            
-            st.success(f"✅ Template '{template_name}' créé avec succès! (ID: {template_id})")
-            st.balloons()
-            
-            # Réinitialiser
-            st.session_state.parameters = []
-            st.session_state.loops = []
-            st.session_state.images = {}
-            st.session_state.mappings = []
+            if edit_mode:
+                # MODE MISE À JOUR
+                with DatabaseService.get_session() as db:
+                    service = TemplateService(db)
+                    
+                    # Mettre à jour la config JSON
+                    updates = {
+                        'version': version,
+                        'description': description,
+                        'config': config.model_dump(mode='json')
+                    }
+                    
+                    updated_template = service.update_template(
+                        template_id=template_id_to_edit,
+                        updates=updates,
+                        user_id=1
+                    )
+                
+                st.success(f"✅ Template '{name}' mis à jour avec succès!")
+                st.info("💡 Les fichiers masters n'ont pas été modifiés. Pour changer les fichiers PPT/Excel, créez une nouvelle version.")
+                
+                # Réinitialiser le flag de chargement
+                if '_template_loaded' in st.session_state:
+                    del st.session_state._template_loaded
+                
+            else:
+                # MODE CRÉATION
+                # Sauvegarder les fichiers uploadés
+                import tempfile
+                from PIL import Image
+                import io
+                
+                temp_dir = Path(tempfile.gettempdir())
+                
+                ppt_path = None
+                excel_path = None
+                
+                if ppt_file:
+                    ppt_path = temp_dir / ppt_file.name
+                    with open(ppt_path, 'wb') as f:
+                        f.write(ppt_file.getbuffer())
+                
+                if excel_file:
+                    excel_path = temp_dir / excel_file.name
+                    with open(excel_path, 'wb') as f:
+                        f.write(excel_file.getbuffer())
+                
+                # Créer le template
+                with DatabaseService.get_session() as db:
+                    service = TemplateService(db)
+                    template = service.create_template(
+                        config=config,
+                        user_id=1,
+                        ppt_source=ppt_path,
+                        excel_source=excel_path
+                    )
+                    template_name = template.name
+                    template_id = template.id
+                    
+                    # Gérer l'image de carte
+                    assets_dir = project_root / "assets" / "background" / "card"
+                    assets_dir.mkdir(parents=True, exist_ok=True)
+                    
+                    if card_image:
+                        # Redimensionner et cropper l'image en 300x150
+                        img = Image.open(card_image)
+                        
+                        # Calculer le ratio pour couvrir 300x150
+                        target_width, target_height = 300, 150
+                        img_ratio = img.width / img.height
+                        target_ratio = target_width / target_height
+                        
+                        if img_ratio > target_ratio:
+                            # Image plus large : on crop les côtés
+                            new_height = img.height
+                            new_width = int(new_height * target_ratio)
+                            left = (img.width - new_width) // 2
+                            img_cropped = img.crop((left, 0, left + new_width, new_height))
+                        else:
+                            # Image plus haute : on crop haut/bas
+                            new_width = img.width
+                            new_height = int(new_width / target_ratio)
+                            top = (img.height - new_height) // 2
+                            img_cropped = img.crop((0, top, new_width, top + new_height))
+                        
+                        # Redimensionner à la taille exacte
+                        img_final = img_cropped.resize((target_width, target_height), Image.Resampling.LANCZOS)
+                        
+                        # Sauvegarder
+                        image_filename = f"{template_name}.png"
+                        image_path = assets_dir / image_filename
+                        img_final.save(image_path, "PNG")
+                        
+                        # Mettre à jour le template
+                        template.card_image_path = str(image_path)
+                        db.commit()
+                
+                st.success(f"✅ Template '{template_name}' créé avec succès! (ID: {template_id})")
+                st.balloons()
+                
+                # Réinitialiser
+                st.session_state.parameters = []
+                st.session_state.loops = []
+                st.session_state.images = {}
+                st.session_state.mappings = []
             
         except Exception as e:
-            st.error(f"Erreur lors de la création : {e}")
+            st.error(f"Erreur lors de {'la mise à jour' if edit_mode else 'la création'} : {e}")
             import traceback
             st.code(traceback.format_exc())
