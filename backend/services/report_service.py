@@ -46,76 +46,76 @@ class ReportService:
         self,
         parameters: Dict[str, Any],
         output_name: Optional[str] = None,
-        project_id: Optional[str] = None,        # NEW
+        project_id: Optional[str] = None  # ← AJOUTER CE PARAMÈTRE
     ) -> Dict[str, Any]:
-        """Génère un rapport complet (option: injection via projet si project_id fourni)."""
+        """Génère un rapport complet."""
         logger.info(f"Génération du rapport '{self.config.name}'")
         logger.info(f"Paramètres : {parameters}")
-
+        
         self._validate_parameters(parameters)
-
+        
         # Nettoyage préventif
         from backend.utils.cleanup import cleanup_before_run
         cleanup_before_run()
-
+        
         output_paths = self._generate_output_paths(parameters, output_name)
         ensure_directories(output_paths['excel_path'], output_paths['pptx_path'])
-
+        
         start_time = self._now()
-        self.current_excel_path = None  # pour helpers d'injection
-
+        
         try:
             logger.info("Étape 1/6 : Préparation Excel")
             excel_path = self._prepare_excel(parameters, output_paths['excel_path'])
-            self.current_excel_path = excel_path
-
+            
+            # Stocker le chemin pour _inject_all_usages_from_project
+            self.current_excel_path = excel_path  # ← AJOUTER
+            
             logger.info("Étape 2/6 : Lecture des données")
             data = self._load_data(excel_path)
-
+            
             logger.info("Étape 3/6 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
 
             logger.info("Conversion des graphiques statiques")
             self._convert_static_charts(ppt_path, excel_path)
-
-            logger.info("Étape 4/6 : Application des boucles")
-            self._apply_loops(ppt_path, excel_path)
-
-            logger.info("Étape 5/6 : Injection des tableaux")
-            if project_id:
-                # NEW: injection via projet (tables demandées du template courant)
-                inj_summary = self._inject_all_usages_from_project(project_id)
-                logger.info(f"Injection via projet : {inj_summary}")
-            else:
-                # legacy (comportement existant si pas de projet)
+            
+            logger.info("Étape 4/6 : Injection des tableaux")
+            if project_id:  # ← MODE PROJET
+                injection_result = self._inject_all_usages_from_project(project_id)
+                logger.info(f"Injection via projet : {injection_result}")
+            else:  # ← MODE LEGACY (sans projet)
                 self._inject_tables_to_slides(ppt_path, excel_path)
-
+            
+            logger.info("Étape 5/6 : Application des boucles")
+            self._apply_loops(ppt_path, excel_path)
+            
             logger.info("Étape 6/6 : Injection des images")
             self._inject_images(ppt_path, excel_path)
-
+            
             execution_time = (self._now() - start_time).total_seconds()
+            
             result = {
                 "success": True,
                 "excel_path": str(excel_path),
                 "pptx_path": str(ppt_path),
                 "execution_time_seconds": execution_time,
-                "parameters": parameters,
-                "project_id": project_id,
+                "parameters": parameters
             }
+            
             logger.success(f"Rapport généré en {execution_time:.1f}s")
             return result
-
+        
         except Exception as e:
             logger.error(f"Erreur génération rapport : {e}")
             execution_time = (self._now() - start_time).total_seconds()
+            
             return {
                 "success": False,
                 "error": str(e),
                 "execution_time_seconds": execution_time,
-                "parameters": parameters,
-                "project_id": project_id,
+                "parameters": parameters
             }
-
+        
         finally:
             # Forcer fermeture Excel/PowerPoint
             try:
@@ -125,7 +125,6 @@ class ReportService:
                 logger.debug("Excel fermé en fin de génération")
             except:
                 pass
-
 
     def _validate_parameters(self, parameters: Dict[str, Any]) -> None:
         """Valide que tous les paramètres requis sont fournis"""
@@ -304,10 +303,19 @@ class ReportService:
                             # 1. Mettre à jour Excel (qui reste ouvert)
                             self._update_loop_iteration_with_wb(wb, loop_config, iteration)
                             time.sleep(0.5)
+                            try:
+                                balises_sheet = wb.sheets["Balises"]
+                                test_cell = balises_sheet.range("C2")  # ou une cellule contenant une formule
+                                logger.info(f"[DEBUG] Valeur cellule test : {test_cell.value}")
+                            except:
+                                pass
                             
                             # 2. Lire les balises APRÈS mise à jour
                             replacements = self._load_replacement_tags_from_wb(wb)
                             logger.debug(f"      Balises rechargées pour itération {iteration}")
+                            logger.info(f"      Balises rechargées : {list(replacements.keys())[:5]}...")  # 5 premières balises
+                            logger.info(f"      Exemple valeur : {list(replacements.values())[0] if replacements else 'VIDE'}")
+
                             
                             for slide_id, slide_info in source_slides.items():
                                 source_slide = slide_info['slide']
@@ -325,6 +333,8 @@ class ReportService:
                                     new_slide.MoveTo(target_position)
                                 
                                 logger.debug(f"      Slide {slide_id} créée à position {target_position}")
+                                logger.info(f"      Nombre de shapes dans la slide : {new_slide.Shapes.Count}")
+                                logger.info(f"      Nombre de graphiques : {sum(1 for s in new_slide.Shapes if hasattr(s, 'HasChart') and s.HasChart)}")
                                 
                                 # 5. Remplacer les balises sur la COPIE
                                 for shape in new_slide.Shapes:
@@ -904,13 +914,6 @@ class ReportService:
                 presentation.Save()
 
     def _inject_all_usages_from_project(self, project_id: str) -> dict:
-        """
-        Pour le template courant:
-        - parcourt les *tables demandées* (usages gabarit)
-        - construit les DF via ProjectService
-        - injecte en mode tolérant (warnings si colonnes manquantes)
-        Retourne un résumé {usage_key: {"rows":..., "warnings":...}, ...}
-        """
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
         from backend.services.project_service import ProjectService
@@ -940,19 +943,19 @@ class ReportService:
                 key = f"{gname}:{gver}"
 
                 try:
-                    # 1) dataframe depuis le pipeline projet (CSV + python)
                     df = ps.build_dataframe(project_id, gname, gver)
-
-                    # 2) injection tolérante (avec résolution des colonnes attendues)
                     res = self._inject_usage_dataframe(template_id, u, df)
-                    summary[key] = {"rows": res.get("rows", 0), "warnings": res.get("warnings", {})}
-                    logger.info(f"Injecté {key} : {res.get('rows', 0)} lignes (warnings: {res.get('warnings', {})})")
-
+                    summary[key] = {
+                        "rows": int(res.get("rows", 0)),
+                        "warnings": res.get("warnings", {}),
+                        "mode": res.get("mode", "range"),
+                    }
                 except Exception as e:
                     logger.warning(f"Injection échouée pour {key}: {e}")
                     summary[key] = {"error": str(e)}
 
         return summary
+
 
     def _inject_usage_dataframe(
         self,
@@ -960,18 +963,10 @@ class ReportService:
         usage: dict,
         df: "pd.DataFrame"
     ) -> dict:
-        """
-        Injection d'une table demandée (usage) en mode non bloquant:
-        - récupère les colonnes attendues (cochées + méthodes)
-        - aligne le df
-        - injecte dans sheet/table cible
-        Retour: dict avec warnings
-        """
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
         from backend.services.excel_injection_service import inject_dataframe
 
-        # Résoudre colonnes attendues via TemplateService
         DatabaseService.initialize()
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
@@ -981,14 +976,12 @@ class ReportService:
                 usage.get("gabarit_version", "v1")
             )
 
-        # Cible Excel
         target = usage.get("excel_target", {}) or {}
         sheet = (target.get("sheet") or "").strip()
         table = (target.get("table") or "").strip()
         if not sheet or not table:
             return {"skipped": True, "reason": "missing_target", "warnings": {}}
 
-        # Injection dans l'Excel courant (self.current_excel_path défini dans generate_report)
         return inject_dataframe(
             self.current_excel_path,
             sheet,

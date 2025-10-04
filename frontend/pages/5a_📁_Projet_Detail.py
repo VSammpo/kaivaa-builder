@@ -7,6 +7,8 @@ from backend.services.project_service import ProjectService
 from backend.services.template_service import TemplateService
 from backend.services.report_service import ReportService
 from frontend.utils.ui_helpers import page_header
+from backend.database.models import Template, ExecutionJob
+from datetime import datetime, timezone
 
 st.set_page_config(page_title="Détail Projet", page_icon="🗂️", layout="wide")
 st.session_state.setdefault("selected_project_id", None)
@@ -106,13 +108,16 @@ with DatabaseService.get_session() as db:
                     cols = st.columns([1, 1])
                     if cols[0].button("Valider", key=f"val_{gname}_{gver}", use_container_width=True):
                         res = ps.validate(pid, gname, gver)
-                        st.session_state[f"val_{gname}_{gver}"] = res
+                        st.session_state[f"valres_{gname}_{gver}"] = res   # <- renommé
+
                     last = p.get("last_validation_result")
                     if last:
                         cols[1].caption(f"Dernier résultat : {last}")
-                    live = st.session_state.get(f"val_{gname}_{gver}")
+
+                    live = st.session_state.get(f"valres_{gname}_{gver}")  # <- renommé
                     if live:
                         st.json(live)
+
 
     with tab5:
         st.subheader("Exécuter les livrables de ce projet")
@@ -127,13 +132,50 @@ with DatabaseService.get_session() as db:
                     if st.button("▶️ Lancer", key=f"run_{tid}", use_container_width=True):
                         try:
                             tpl_config = ts.load_template_config(t.id)
+
+                            # 1) Créer un job
+                            with DatabaseService.get_session() as db2:
+                                job = ExecutionJob(
+                                    template_id=t.id,
+                                    parameters={},   # à terme: paramètres projet/client si tu en as
+                                    status='running'
+                                )
+                                db2.add(job)
+                                db2.commit()
+                                job_id = job.id
+
+                            # 2) Exécuter
                             rs = ReportService(tpl_config)
                             result = rs.generate_report(parameters={}, project_id=pid)
-                            if result.get("success"):
-                                st.success("OK")
-                                st.code(result['excel_path'])
-                                st.code(result['pptx_path'])
-                            else:
-                                st.error(result.get("error", "Erreur inconnue"))
+
+                            # 3) Maj job + stats template
+                            with DatabaseService.get_session() as db3:
+                                job = db3.query(ExecutionJob).filter_by(id=job_id).first()
+                                template_row = db3.query(Template).filter_by(id=t.id).first()
+
+                                if result.get("success"):
+                                    job.status = 'completed'
+                                    job.output_ppt_path = result.get('pptx_path')
+                                    job.output_excel_path = result.get('excel_path')
+                                    job.execution_time_seconds = result.get('execution_time_seconds')
+                                    job.completed_at = datetime.now(timezone.utc)
+
+                                    if template_row:
+                                        template_row.execution_count = (template_row.execution_count or 0) + 1
+                                        template_row.last_executed = datetime.now(timezone.utc)
+
+                                    db3.commit()
+
+                                    st.success("OK")
+                                    st.code(result['excel_path'])
+                                    st.code(result['pptx_path'])
+                                else:
+                                    job.status = 'failed'
+                                    job.error_message = result.get("error","Erreur inconnue")
+                                    job.execution_time_seconds = result.get('execution_time_seconds')
+                                    job.completed_at = datetime.now(timezone.utc)
+                                    db3.commit()
+                                    st.error(result.get("error","Erreur inconnue"))
+
                         except Exception as e:
                             st.error(f"Erreur run : {e}")

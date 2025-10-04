@@ -1,7 +1,7 @@
 """
-Batch Processor - Gestion du traitement par batch pour les slides dynamiques
-Adapté de spirits_study pour KAIVAA Builder
+Traitement par batch des slides dynamiques (template livrable)
 """
+
 
 from typing import Dict, List, Optional, Any, Callable
 from dataclasses import dataclass

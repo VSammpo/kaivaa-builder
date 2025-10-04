@@ -23,6 +23,14 @@ LOCAL_TZ = datetime.now().astimezone().tzinfo  # fuseau local de la machine
 st.set_page_config(page_title="Générer Rapport", page_icon="▶️", layout="wide")
 
 st.title("▶️ Générer un Rapport")
+st.info("La génération directe d’un template est désactivée. \
+Utilise plutôt un **Projet** pour exécuter un livrable client (sources & pipelines par gabarit).")
+try:
+    st.page_link("pages/5_📁_Projets.py", label="Aller aux Projets", icon="📁")
+except Exception:
+    pass
+st.stop()
+
 
 # Sélection du template
 with DatabaseService.get_session() as db:

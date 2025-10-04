@@ -65,6 +65,10 @@ def fmt_paris(ts) -> str:
     return str(ts)
 
 st.set_page_config(page_title="Détail Livrable", page_icon="📊", layout="wide")
+if st.session_state.get("_flash_msg"):
+    st.toast(st.session_state["_flash_msg"])
+    del st.session_state["_flash_msg"]
+
 
 # Vérifier qu'un template est sélectionné
 if 'selected_template_detail' not in st.session_state:
@@ -186,7 +190,7 @@ with col_left:
 
             # Valeurs existantes si déjà attaché
             existing = ts.get_gabarit_usage(template_id, g.name, g.version)
-            default_enabled = existing.get("columns_enabled", []) if existing else []
+            default_enabled = existing.get("columns_enabled", []) if existing else all_cols[:]  # <- toutes par défaut
             default_sheet = existing.get("excel_target", {}).get("sheet", "D001") if existing else "D001"
             default_table = existing.get("excel_target", {}).get("table", "") if existing else ""
             default_methods = existing.get("methods", []) if existing else []
@@ -195,10 +199,10 @@ with col_left:
                 "Colonnes utilisées par CE livrable",
                 options=all_cols,
                 default=default_enabled,
-                help="Coche uniquement les colonnes nécessaires à ce livrable."
+                help="Coche uniquement les colonnes nécessaires à ce livrable. Par défaut : toutes."
             )
 
-            # Méthodes disponibles pour ce gabarit (via registre)
+            # Méthodes disponibles...
             methods_avail = _list_methods_for_gabarit(g.name, g.version)
             methods_selected = st.multiselect(
                 "Méthodes (facultatif)",
@@ -216,24 +220,27 @@ with col_left:
             c3, c4 = st.columns(2)
             with c3:
                 if st.button("💾 Enregistrer / Mettre à jour", key="gab_save"):
+                    # Ordre IMMUABLE : on respecte l’ordre du gabarit
+                    ordered = [c for c in all_cols if c in set(columns_enabled)]
                     ts.upsert_gabarit_usage(
                         template_id=template_id,
                         gabarit_name=g.name,
                         gabarit_version=g.version,
-                        columns_enabled=columns_enabled,
+                        columns_enabled=ordered,
                         excel_sheet=sheet,
                         excel_table=table,
-                        methods=methods_selected,  # <--- NOUVEAU
+                        methods=methods_selected,
                     )
-                    st.success(f"Gabarit {g.name} v{g.version} enregistré sur le livrable.")
+                    st.session_state["_flash_msg"] = f"Gabarit {g.name} v{g.version} enregistré sur le livrable."
                     st.rerun()
             with c4:
                 if existing and st.button("🗑️ Détacher ce gabarit", type="secondary", key="gab_delete"):
                     if ts.delete_gabarit_usage(template_id, g.name, g.version):
-                        st.success("Gabarit détaché.")
+                        st.session_state["_flash_msg"] = "Gabarit détaché."
                         st.rerun()
                     else:
                         st.warning("Aucune suppression effectuée.")
+
 
 
     col1, col2 = st.columns(2)

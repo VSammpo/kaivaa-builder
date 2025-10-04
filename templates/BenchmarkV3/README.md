@@ -1,11 +1,11 @@
-# Benchmark marché
+# BenchmarkV3
 
 **Version:** 1.0
 **Créé le:** 2025-10-04
 
 ## Description
 
-Fiche d'identité par entreprise avec la performance financière (CA, structure de la marge, évolution de la marge, etc.)
+Analyse des entreprises (id)
 
 ## Paramètres
 
@@ -19,7 +19,7 @@ Fiche d'identité par entreprise avec la performance financière (CA, structure 
 ## Structure des fichiers
 
 ```
-Benchmark marché/
+BenchmarkV3/
 ├── config.yaml           # Configuration du template livrable (tables demandées)
 ├── master.pptx          # Master PPT (facultatif)
 ├── master.xlsx          # Master Excel (obligatoire)
@@ -38,7 +38,7 @@ from backend.services.report_service import ReportService
 
 service = ReportService()
 result = service.generate_report(
-    template_name="Benchmark marché",
+    template_name="BenchmarkV3",
     parameters={
 
     }

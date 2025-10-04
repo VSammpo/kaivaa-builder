@@ -3,7 +3,7 @@
     {
       "name": "Benchmark",
       "version": "v1",
-      "description": "Performance financière des entreprises",
+      "description": "Base de données annuelle par entreprise (performance financière).",
       "columns": [
         {
           "name": "siren",

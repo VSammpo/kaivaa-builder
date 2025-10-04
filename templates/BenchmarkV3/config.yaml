@@ -1,11 +1,10 @@
-created_at: 2025-10-04 14:57:14.155974
+created_at: 2025-10-04 16:07:25.780550
 created_by: null
 data_source:
   connection_string: null
   required_tables: []
   type: excel
-description: Fiche d'identité par entreprise avec la performance financière (CA, structure
-  de la marge, évolution de la marge, etc.)
+description: Analyse des entreprises (id)
 estimated_generation_time: null
 excel_template_path: null
 image_injections:
@@ -19,14 +18,14 @@ image_injections:
       top: 0.0
     size:
       max_height: 216.0
-      max_width: 960.0
-    type: Background
+      max_width: 690.0
+    type: Back
 loops:
 - loop_id: Entreprise
   sheet_name: Charts_settings
   slides:
   - A001
-name: Benchmark marché
+name: BenchmarkV3
 parameters: []
 ppt_template_path: null
 slide_mappings: []
