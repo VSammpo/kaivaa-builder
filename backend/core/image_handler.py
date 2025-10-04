@@ -1,7 +1,7 @@
 """
-Image Handler - Gestion de l'injection d'images dans PowerPoint
-Adapté de spirits_study pour KAIVAA Builder
+Injection d’images dans le master/outputs PPT (template livrable)
 """
+
 
 import os
 import re

@@ -1,7 +1,7 @@
 """
-PowerPoint Handler - Gestion des opérations PowerPoint via win32com
-Adapté de spirits_study pour KAIVAA Builder
+Master PPT (template livrable) – opérations PowerPoint via win32com
 """
+
 
 import os
 import uuid

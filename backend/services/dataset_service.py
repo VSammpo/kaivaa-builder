@@ -29,3 +29,29 @@ def prepare_for_usage(df: pd.DataFrame, columns_enabled: List[str]) -> pd.DataFr
     # réordonner: colonnes demandées d'abord
     ordered = columns_enabled + [c for c in df.columns if c not in columns_enabled]
     return df[ordered]
+
+# === Alignement DataFrame ↔ colonnes attendues (non bloquant) ================
+
+from typing import List, Tuple, Dict, Any
+import pandas as pd
+
+def align_df_to_expected_columns(df: pd.DataFrame, expected_columns: List[str]) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    """
+    - Ajoute les colonnes manquantes (valeur NA)
+    - Conserve l'ordre: expected_columns d'abord, puis les colonnes extra
+    - Ne lève pas d'exception: retourne (df_aligne, warnings)
+    warnings = {"missing": [...], "extra": [...]}
+    """
+    expected = [c for c in (expected_columns or []) if isinstance(c, str) and c.strip()]
+    cur_cols = list(df.columns)
+
+    missing = [c for c in expected if c not in cur_cols]
+    for c in missing:
+        df[c] = pd.NA
+
+    ordered = expected + [c for c in df.columns if c not in expected]
+    aligned = df[ordered]
+
+    extra = [c for c in cur_cols if c not in expected]
+    warnings = {"missing": missing, "extra": extra}
+    return aligned, warnings

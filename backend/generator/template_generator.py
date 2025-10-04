@@ -15,7 +15,7 @@ from backend.generator.config_generator import ConfigGenerator
 
 class TemplateGenerator:
     """
-    Générateur principal qui orchestre la création d'un template complet.
+    Générateur principal de templates livrables.
     """
     
     def __init__(self, template_config: TemplateConfig):
@@ -45,7 +45,8 @@ class TemplateGenerator:
         Returns:
             Dict des chemins créés
         """
-        logger.info(f"Génération du template '{self.config.name}'")
+        logger.info(f"Création du template livrable '{self.config.name}' (masters + tables demandées)")
+
         
         # Création du dossier template
         self.template_dir.mkdir(parents=True, exist_ok=True)
@@ -193,31 +194,30 @@ ORDER BY created_at DESC;
             f.write(sql_content)
     
     def _generate_readme(self) -> Path:
-        """Génère un README pour le template"""
+        """Génère un README pour le template livrable (masters + tables demandées)"""
         readme_path = self.template_dir / "README.md"
-        
+
         params_list = "\n".join([
-            f"- **{p.name}** ({p.type}): {p.description or 'Pas de description'}" + 
-            (" - Obligatoire" if p.required else "") 
+            f"- **{p.name}** ({p.type}): {p.description or 'Pas de description'}" +
+            (" - Obligatoire" if p.required else "")
             for p in self.config.parameters
         ])
-        
+
         params_example = "\n".join([
-            f'        "{p.name}": "valeur",' 
+            f'        "{p.name}": "valeur",'
             for p in self.config.parameters
         ])
-        
-        # Construction du README sans utiliser de triples backticks dans la f-string
+
         readme_lines = [
             f"# {self.config.name}",
             "",
             f"**Version:** {self.config.version}",
             f"**Créé le:** {self.config.created_at.strftime('%Y-%m-%d')}",
         ]
-        
+
         if self.config.created_by:
             readme_lines.append(f"**Par:** {self.config.created_by}")
-        
+
         readme_lines.extend([
             "",
             "## Description",
@@ -228,18 +228,18 @@ ORDER BY created_at DESC;
             "",
             params_list,
             "",
-            "## Source de données",
+            "## Tables demandées",
             "",
             f"- Type: {self.config.data_source.type}",
-            f"- Tables requises: {', '.join(self.config.data_source.required_tables)}",
+            f"- Tables demandées (par gabarit): {', '.join(self.config.data_source.required_tables)}",
             "",
             "## Structure des fichiers",
             "",
             "```",
             f"{self.config.name}/",
-            "├── config.yaml           # Configuration du template",
-            "├── master.pptx          # Template PowerPoint",
-            "├── master.xlsx          # Template Excel",
+            "├── config.yaml           # Configuration du template livrable (tables demandées)",
+            "├── master.pptx          # Master PPT (facultatif)",
+            "├── master.xlsx          # Master Excel (obligatoire)",
             "├── queries/             # Requêtes SQL",
             "│   ├── table1.sql",
             "│   └── table2.sql",
@@ -262,10 +262,10 @@ ORDER BY created_at DESC;
             ")",
             "```"
         ])
-        
+
         readme_content = "\n".join(readme_lines)
-        
+
         with open(readme_path, 'w', encoding='utf-8') as f:
             f.write(readme_content)
-        
+
         return readme_path

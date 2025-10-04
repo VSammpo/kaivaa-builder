@@ -1,9 +1,9 @@
 {
   "gabarits": [
     {
-      "name": "benchmark_entreprises",
+      "name": "Benchmark",
       "version": "v1",
-      "description": "Analyse de la performance financière des entreprises selon la source INPI/BCE",
+      "description": "Performance financière des entreprises",
       "columns": [
         {
           "name": "siren",

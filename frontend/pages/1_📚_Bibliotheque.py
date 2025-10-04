@@ -166,3 +166,12 @@ else:
                                 else:
                                     st.session_state[f"confirm_del_{template['id']}"] = True
                                     st.warning("Cliquez à nouveau pour confirmer")
+
+# ----- Raccourcis (ajout) -----
+st.divider()
+st.caption("Nouveau : enchaîner plusieurs livrables via des **Projets** (sources/pipelines par gabarit).")
+
+try:
+    st.page_link("pages/5_📁_Projets.py", label="Aller aux Projets", icon="📁")
+except Exception:
+    st.info("📁 Projets : utilise le menu latéral si le lien n'apparaît pas.")

@@ -475,18 +475,38 @@ class TemplateService:
 
     def list_gabarit_usages(self, template_id: int) -> list[dict]:
         """
-        Liste des gabarits rattachés au livrable (dans templates.config['gabarit_usages']).
-        Chaque item :
+        Liste des *tables demandées* (usages de gabarit) rattachées au livrable
+        (templates.config['gabarit_usages']).
+
+        Chaque item est normalisé au format :
         {
         "gabarit_name": str,
         "gabarit_version": str,
         "columns_enabled": [str, ...],
-        "excel_target": {"sheet": str, "table": str}
+        "excel_target": {"sheet": str, "table": str},
+        "methods": [str, ...]                # NEW (MVP: noms symboliques)
         }
         """
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
-        return usages if isinstance(usages, list) else []
+        usages = usages if isinstance(usages, list) else []
+
+        # Normalisation rétrocompatible
+        norm: list[dict] = []
+        for u in usages:
+            if not isinstance(u, dict):
+                continue
+            norm.append({
+                "gabarit_name": (u.get("gabarit_name") or "").strip(),
+                "gabarit_version": (u.get("gabarit_version") or "v1").strip(),
+                "columns_enabled": [c.strip() for c in (u.get("columns_enabled") or []) if c and str(c).strip()],
+                "excel_target": {
+                    "sheet": (u.get("excel_target", {}).get("sheet") or "").strip(),
+                    "table": (u.get("excel_target", {}).get("table") or "").strip(),
+                },
+                "methods": [m.strip() for m in (u.get("methods") or []) if m and str(m).strip()],  # NEW
+            })
+        return norm
 
 
     def upsert_gabarit_usage(
@@ -497,9 +517,19 @@ class TemplateService:
         columns_enabled: list[str],
         excel_sheet: str,
         excel_table: str,
+        methods: Optional[list[str]] = None,   # NEW
     ) -> None:
         """
-        Crée/maj l'usage d'un gabarit pour ce livrable (clé: name+version).
+        Crée/MAJ une *table demandée* (usage de gabarit) pour ce livrable (clé: gabarit_name+version).
+
+        Args:
+            template_id: id du template livrable
+            gabarit_name: nom du gabarit
+            gabarit_version: version du gabarit (ex: 'v1')
+            columns_enabled: colonnes cochées pour ce livrable (sous-ensemble du gabarit)
+            excel_sheet: feuille Excel cible (ListObject)
+            excel_table: nom du ListObject Excel cible
+            methods: liste de méthodes à appliquer (noms symboliques)  # NEW
         """
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
@@ -510,7 +540,8 @@ class TemplateService:
         gabarit_version = (gabarit_version or "v1").strip()
         excel_sheet = (excel_sheet or "").strip()
         excel_table = (excel_table or "").strip()
-        columns_enabled = [c.strip() for c in (columns_enabled or []) if c and c.strip()]
+        columns_enabled = [c.strip() for c in (columns_enabled or []) if c and str(c).strip()]
+        methods = [m.strip() for m in (methods or []) if m and str(m).strip()]  # NEW
 
         # Remplacer si déjà présent (name+version)
         usages = [
@@ -522,6 +553,7 @@ class TemplateService:
             "gabarit_version": gabarit_version,
             "columns_enabled": columns_enabled,
             "excel_target": {"sheet": excel_sheet, "table": excel_table},
+            "methods": methods,  # NEW
         })
 
         cfg["gabarit_usages"] = usages
@@ -546,13 +578,124 @@ class TemplateService:
         self.update_config(template_id, cfg)
         return True
 
-
-    def get_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str):
+    def get_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str = "v1") -> dict | None:
         """
-        Retourne un usage précis (name+version), ou None.
+        Retourne l'usage (table demandée) pour (gabarit_name, gabarit_version) si présent,
+        sinon None.
         """
+        gabarit_name = (gabarit_name or "").strip()
+        gabarit_version = (gabarit_version or "v1").strip()
         for u in self.list_gabarit_usages(template_id):
             if u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version:
                 return u
         return None
+    
+    def set_usage_methods(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str,
+        methods: list[str],
+    ) -> None:
+        """
+        Remplace la liste des 'methods' pour une table demandée (usage).
+        """
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        if not isinstance(usages, list):
+            usages = []
 
+        gabarit_name = (gabarit_name or "").strip()
+        gabarit_version = (gabarit_version or "v1").strip()
+        methods = [m.strip() for m in (methods or []) if m and str(m).strip()]
+
+        new_usages = []
+        updated = False
+        for u in usages:
+            if u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version:
+                u = dict(u)
+                u["methods"] = methods
+                updated = True
+            new_usages.append(u)
+
+        if not updated:
+            # si l'usage n'existe pas, on le crée minimalement (colonnes et cible vides)
+            new_usages.append({
+                "gabarit_name": gabarit_name,
+                "gabarit_version": gabarit_version,
+                "columns_enabled": [],
+                "excel_target": {"sheet": "", "table": ""},
+                "methods": methods,
+            })
+
+        cfg["gabarit_usages"] = new_usages
+        self.update_config(template_id, cfg)
+
+
+    def add_method_to_usage(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str,
+        method_name: str,
+    ) -> None:
+        """
+        Ajoute une méthode (si absente) sur une table demandée.
+        """
+        method = (method_name or "").strip()
+        if not method:
+            return
+        usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version)
+        methods = (usage or {}).get("methods", [])
+        if method not in methods:
+            methods.append(method)
+        self.set_usage_methods(template_id, gabarit_name, gabarit_version, methods)
+
+
+    def remove_method_from_usage(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str,
+        method_name: str,
+    ) -> None:
+        """
+        Retire une méthode (si présente) d'une table demandée.
+        """
+        method = (method_name or "").strip()
+        usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version)
+        methods = [m for m in (usage or {}).get("methods", []) if m != method]
+        self.set_usage_methods(template_id, gabarit_name, gabarit_version, methods)
+
+    def get_tables_demandees(self, template_id: int) -> list[dict]:
+        """
+        Vue synthétique pour l'UI : tables demandées (usages normalisés).
+        """
+        return self.list_gabarit_usages(template_id)
+    
+    def resolve_usage_expected_columns(self, template_id: int, gabarit_name: str, gabarit_version: str = "v1") -> list[str]:
+        """
+        Colonnes 'attendues' pour une table demandée = colonnes cochées (columns_enabled)
+        ∪ colonnes exigées par les méthodes sélectionnées (get_method_requirements).
+        L'ordre conserve d'abord 'columns_enabled', puis on ajoute les manquantes.
+        """
+        usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version) or {}
+        enabled = [c for c in (usage.get("columns_enabled") or []) if isinstance(c, str) and c.strip()]
+        methods = [m for m in (usage.get("methods") or []) if isinstance(m, str) and m.strip()]
+
+        # dépendances de colonnes par méthodes
+        try:
+            from backend.services.gabarit_registry import get_method_requirements
+            required = get_method_requirements(gabarit_name, gabarit_version, methods) or []
+        except Exception:
+            required = []
+
+        # union ordonnée: cochées d'abord, puis exigences méthodes
+        out: list[str] = []
+        for c in enabled:
+            if c not in out:
+                out.append(c)
+        for c in required:
+            if c not in out:
+                out.append(c)
+        return out

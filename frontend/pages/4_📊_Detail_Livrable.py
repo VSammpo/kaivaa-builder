@@ -15,11 +15,33 @@ sys.path.insert(0, str(project_root))
 
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
-from backend.services.dataset_service import load_csv, prepare_for_usage
-from backend.services.excel_injection_service import inject_dataframe
-from backend.services.gabarit_registry import list_gabarits, get_gabarit
+from backend.services.gabarit_registry import list_gabarits, get_gabarit, load_registry
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
+def _list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[str]:
+    """
+    Retourne la liste des méthodes disponibles pour un gabarit/version
+    à partir du registre (tolérant si absent).
+    """
+    try:
+        reg = load_registry()
+        meta = (reg.get(gabarit_name) or {}).get("versions", {}).get(gabarit_version) \
+               or (reg.get(gabarit_name) or {}).get("versions", {}).get("v1") \
+               or {}
+        methods = meta.get("methods") or {}
+        if isinstance(methods, dict):
+            return sorted([k for k in methods.keys()])
+        elif isinstance(methods, list):
+            out = []
+            for m in methods:
+                if isinstance(m, dict) and m.get("name"):
+                    out.append(str(m["name"]))
+            return sorted(out)
+        return []
+    except Exception:
+        return []
+
 
 def fmt_paris(ts) -> str:
     """
@@ -125,8 +147,9 @@ with col_left:
             st.error(f"Erreur : {e}")
             return False
     
+
     def render_gabarits_section(template_id: int):
-        st.subheader("🧱 Gabarits rattachés au livrable")
+        st.subheader("🧱 Tables demandées (gabarits rattachés)")
 
         DatabaseService.initialize()
         with DatabaseService.get_session() as db:
@@ -140,18 +163,19 @@ with col_left:
                     "gabarit": f'{u.get("gabarit_name")} (v{u.get("gabarit_version")})',
                     "sheet": u.get("excel_target", {}).get("sheet", ""),
                     "table": u.get("excel_target", {}).get("table", ""),
-                    "n_cols_enabled": len(u.get("columns_enabled", []))
+                    "n_cols_enabled": len(u.get("columns_enabled", [])),
+                    "methods": ", ".join(u.get("methods") or [])
                 } for u in usages])
                 st.dataframe(df, use_container_width=True, hide_index=True)
             else:
-                st.caption("Aucun gabarit attaché pour l’instant.")
+                st.caption("Aucune table demandée pour l’instant.")
 
             st.divider()
 
             # Sélection d'un gabarit global
             gab_list = list_gabarits()
             if not gab_list:
-                st.info("Crée d’abord des gabarits dans la page « 0_🧱_Gabarits_de_table ».")  # page que tu as déjà
+                st.info("Crée d’abord des gabarits dans la page « 0_🧱_Gabarits_de_table ».")  # page déjà existante
                 return
 
             labels = [f"{g.name} (v{g.version})" for g in gab_list]
@@ -165,12 +189,22 @@ with col_left:
             default_enabled = existing.get("columns_enabled", []) if existing else []
             default_sheet = existing.get("excel_target", {}).get("sheet", "D001") if existing else "D001"
             default_table = existing.get("excel_target", {}).get("table", "") if existing else ""
+            default_methods = existing.get("methods", []) if existing else []
 
             columns_enabled = st.multiselect(
                 "Colonnes utilisées par CE livrable",
                 options=all_cols,
                 default=default_enabled,
                 help="Coche uniquement les colonnes nécessaires à ce livrable."
+            )
+
+            # Méthodes disponibles pour ce gabarit (via registre)
+            methods_avail = _list_methods_for_gabarit(g.name, g.version)
+            methods_selected = st.multiselect(
+                "Méthodes (facultatif)",
+                options=methods_avail,
+                default=default_methods,
+                help="Les méthodes peuvent forcer des colonnes requises à l’injection (non bloquant)."
             )
 
             c1, c2 = st.columns(2)
@@ -189,8 +223,9 @@ with col_left:
                         columns_enabled=columns_enabled,
                         excel_sheet=sheet,
                         excel_table=table,
+                        methods=methods_selected,  # <--- NOUVEAU
                     )
-                    st.success(f"Gabarit {g.name} v{g.version} attaché au livrable.")
+                    st.success(f"Gabarit {g.name} v{g.version} enregistré sur le livrable.")
                     st.rerun()
             with c4:
                 if existing and st.button("🗑️ Détacher ce gabarit", type="secondary", key="gab_delete"):
@@ -200,93 +235,7 @@ with col_left:
                     else:
                         st.warning("Aucune suppression effectuée.")
 
-    def render_sources_preview_section(template_id: int):
-        st.subheader("🔌 Sources & Preview (MVP CSV)")
 
-        DatabaseService.initialize()
-        with DatabaseService.get_session() as db:
-            ts = TemplateService(db)
-            usages = ts.list_gabarit_usages(template_id)
-            if not usages:
-                st.caption("Aucun gabarit attaché → rattache un gabarit dans la section au-dessus.")
-                return
-
-            for u in usages:
-                gab_label = f'{u.get("gabarit_name")} (v{u.get("gabarit_version")})'
-                with st.expander(f"Source pour {gab_label}", expanded=False):
-                    source_existing = ts.get_gabarit_source(template_id, u["gabarit_name"], u["gabarit_version"]) or {}
-                    c1, c2, c3 = st.columns([3,1,1])
-                    with c1:
-                        path = st.text_input("CSV path", value=source_existing.get("path",""), key=f"src_path_{gab_label}")
-                    with c2:
-                        sep = st.text_input("sep", value=source_existing.get("sep",";"), key=f"src_sep_{gab_label}")
-                    with c3:
-                        enc = st.text_input("encoding", value=source_existing.get("encoding","utf-8-sig"), key=f"src_enc_{gab_label}")
-
-                    colA, colB = st.columns(2)
-                    with colA:
-                        if st.button("💾 Enregistrer la source", key=f"save_src_{gab_label}"):
-                            ts.upsert_gabarit_source(
-                                template_id,
-                                u["gabarit_name"], u["gabarit_version"],
-                                {"type":"csv","path":path,"sep":sep,"encoding":enc}
-                            )
-                            st.success("Source enregistrée.")
-                            st.rerun()
-                    with colB:
-                        if path and st.button("👀 Preview 1000", key=f"preview_{gab_label}"):
-                            try:
-                                df = load_csv({"type":"csv","path":path,"sep":sep,"encoding":enc})
-                                df = df.head(1000)
-                                dfp = prepare_for_usage(df, u.get("columns_enabled", []))
-                                st.write("Shape:", dfp.shape)
-                                st.dataframe(dfp.head(30), use_container_width=True)
-                            except Exception as e:
-                                st.error(f"Erreur preview: {e}")
-
-
-    def render_validation_injection_section(template_id: int, excel_template_path: str):
-        st.subheader("✅ Validation & Injection (MVP)")
-
-        DatabaseService.initialize()
-        with DatabaseService.get_session() as db:
-            ts = TemplateService(db)
-            usages = ts.list_gabarit_usages(template_id)
-            if not usages:
-                st.caption("Aucun gabarit attaché.")
-                return
-
-            if not excel_template_path:
-                st.warning("Aucun Excel master trouvé pour ce livrable.")
-                return
-
-            if st.button("📥 Injecter TOUTES les tables dans l’Excel master"):
-                n_ok, n_err = 0, 0
-                for u in usages:
-                    try:
-                        src = ts.get_gabarit_source(template_id, u["gabarit_name"], u["gabarit_version"])
-                        if not src:
-                            st.warning(f"Pas de source pour {u['gabarit_name']} v{u['gabarit_version']}")
-                            continue
-
-                        df = load_csv(src)
-                        dfp = prepare_for_usage(df, u.get("columns_enabled", []))
-
-                        target = u.get("excel_target",{})
-                        inject_dataframe(
-                            excel_template_path,
-                            target.get("sheet","D001"),
-                            target.get("table",""),
-                            dfp[u.get("columns_enabled", [])] if u.get("columns_enabled") else dfp
-                        )
-                        n_ok += 1
-                    except Exception as e:
-                        n_err += 1
-                        st.error(f"[{u.get('gabarit_name')}] Injection KO: {e}")
-                st.success(f"Injections terminées: OK={n_ok}  KO={n_err}")
-
-
-    
     col1, col2 = st.columns(2)
     
     with col1:
@@ -302,8 +251,7 @@ with col_left:
     st.markdown("")
     
     render_gabarits_section(template_id)
-    render_sources_preview_section(template_id)
-    render_validation_injection_section(template_id, excel_template_path=excel_path)
+
     
     st.markdown("")
     

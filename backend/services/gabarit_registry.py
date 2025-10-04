@@ -52,3 +52,95 @@ def delete_gabarit(name: str, version: str = "v1") -> bool:
     _save_raw(data)
     logger.info(f"Gabarit supprimé: {name} v{version}")
     return True
+
+# === Méthodes & dépendances de colonnes (MVP) ================================
+
+from typing import Iterable, Set, Dict, Any, List
+
+def _safe_get(d: Dict[str, Any], *path, default=None):
+    cur = d
+    for p in path:
+        if not isinstance(cur, dict):
+            return default
+        cur = cur.get(p, {})
+    return cur if cur else default
+
+def _index_methods(meta: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """
+    Convertit la liste de méthodes d'un gabarit en dict indexé par nom.
+    Accepte au choix:
+      - {"methods": [{"name":"m1","requires":["A","B"]}, ...]}
+      - {"methods": {"m1":{"requires":["A","B"]}, ...}}
+    """
+    methods = meta.get("methods") or {}
+    if isinstance(methods, dict):
+        return {k: (v or {}) for k, v in methods.items()}
+    if isinstance(methods, list):
+        out = {}
+        for m in methods:
+            if isinstance(m, dict) and m.get("name"):
+                out[str(m["name"])] = m
+        return out
+    return {}
+
+def get_method_requirements(gabarit_name: str, gabarit_version: str, methods: Iterable[str]) -> List[str]:
+    """
+    Retourne la liste triée des colonnes requises par l'ensemble des 'methods' demandées
+    pour un gabarit/version. Tolérant si la méthode n'existe pas dans le registre.
+    """
+    reg = load_registry()
+    g_meta = (reg.get(gabarit_name) or {})
+    # on cherche d'abord la version demandée, sinon v1 par défaut
+    v_meta = _safe_get(g_meta, "versions", gabarit_version, default=g_meta.get("versions", {}).get("v1", {})) or {}
+    idx = _index_methods(v_meta)
+
+    req: Set[str] = set()
+    for m in (methods or []):
+        m = (m or "").strip()
+        if not m:
+            continue
+        mi = idx.get(m, {})
+        cols = mi.get("requires") or []
+        for c in cols:
+            if isinstance(c, str) and c.strip():
+                req.add(c.strip())
+    return sorted(req)
+
+# === Index global du registre (accès par nom/version) ========================
+
+def load_registry() -> Dict[str, Dict[str, Any]]:
+    """
+    Construit un index mémoire des gabarits:
+    {
+      "<gabarit_name>": {
+        "versions": {
+          "<version>": { ... métadonnées du gabarit (model_dump) ... }
+        }
+      },
+      ...
+    }
+    """
+    reg: Dict[str, Dict[str, Any]] = {}
+    try:
+        items = list_gabarits()  # -> List[TableGabarit]
+        for g in items:
+            try:
+                g_name = getattr(g, "name", None) or ""
+                g_ver  = getattr(g, "version", None) or "v1"
+                if not g_name:
+                    continue
+                if g_name not in reg:
+                    reg[g_name] = {"versions": {}}
+                meta = g.model_dump(mode="json") if hasattr(g, "model_dump") else {}
+                reg[g_name]["versions"][g_ver] = meta or {}
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"Impossible de charger le registre des gabarits: {e}")
+    return reg
+
+# Exports explicites (évitent des surprises avec des imports partiels)
+__all__ = [
+    "list_gabarits", "get_gabarit", "upsert_gabarit", "delete_gabarit",
+    "get_method_requirements", "load_registry"
+]

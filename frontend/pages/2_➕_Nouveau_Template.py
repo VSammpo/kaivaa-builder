@@ -217,7 +217,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     show_params = st.checkbox(
         "Paramètres d'utilisation",
-        value=True,
+        value=False,
         help="Variables à renseigner lors de chaque génération (ex: période, enseigne, segment)"
     )
 

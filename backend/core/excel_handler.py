@@ -1,7 +1,7 @@
 """
-Excel Handler - Gestion des opérations Excel via xlwings
-Adapté de spirits_study pour KAIVAA Builder
+Master Excel (template livrable) – opérations Excel via xlwings
 """
+
 
 import os
 from pathlib import Path

@@ -8,6 +8,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Optional
 from loguru import logger
+from zoneinfo import ZoneInfo
 
 
 def get_output_paths(
@@ -67,25 +68,16 @@ def get_output_paths(
     }
 
 
+
 def generate_batch_id(prefix: str = "") -> str:
     """
     Génère un identifiant de batch unique.
-    
-    Args:
-        prefix: Préfixe optionnel
-        
-    Returns:
-        ID au format [prefix_]YYYYMMDD_HHmm
-        
-    Example:
-        generate_batch_id("test")  # "test_20251001_1430"
+    Format: [prefix_]YYYYMMDD_HHmm (Europe/Paris)
     """
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-    
+    timestamp = datetime.now(ZoneInfo("Europe/Paris")).strftime("%Y%m%d_%H%M")
     if prefix:
         prefix_clean = clean_filename(prefix)
         return f"{prefix_clean}_{timestamp}"
-    
     return timestamp
 
 

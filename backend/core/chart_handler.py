@@ -1,6 +1,7 @@
 """
-Chart Handler - Conversion de graphiques Excel en images
+Conversion de graphiques du master Excel (template livrable) en images
 """
+
 
 import os
 from pathlib import Path

@@ -1,5 +1,5 @@
 """
-Générateur de fichiers config.yaml
+Générateur de config.yaml (template livrable : masters + tables demandées)
 """
 
 from pathlib import Path

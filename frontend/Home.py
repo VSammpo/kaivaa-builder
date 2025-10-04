@@ -76,3 +76,23 @@ st.markdown("""
 # Footer
 st.divider()
 st.caption("KAIVAA Builder v0.1.0 - Développé pour SAMMPO")
+
+# ----- Raccourcis (ajout) -----
+st.divider()
+st.subheader("Raccourcis")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    # Streamlit ≥ 1.31 : page_link
+    try:
+        st.page_link("pages/5_📁_Projets.py", label="📁 Aller aux Projets", icon="📁")
+    except Exception:
+        # fallback si page_link indisponible
+        st.info("📁 Projets : ouvre via le menu latéral.")
+
+with col2:
+    try:
+        st.page_link("pages/6_🕘_Historique.py", label="🕘 Historique", icon="🕘")
+    except Exception:
+        st.info("🕘 Historique : ouvre via le menu latéral.")

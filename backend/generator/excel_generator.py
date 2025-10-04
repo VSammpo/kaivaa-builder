@@ -1,5 +1,5 @@
 """
-Générateur de templates Excel
+Générateur du master Excel (template livrable)
 """
 
 from pathlib import Path
@@ -25,42 +25,43 @@ class ExcelTemplateGenerator:
         create_new: bool = False
     ) -> Path:
         """
-        Génère un template Excel.
-        
+        Génère le master Excel du template livrable (pour injection des tables demandées).
+
         Args:
             source_file: Fichier Excel source (ou None)
             output_dir: Dossier de sortie
             create_new: Créer un nouveau fichier même si source fournie
-            
+
         Returns:
             Chemin du fichier généré
         """
         output_path = output_dir / "master.xlsx"
-        
+
         if not create_new and source_file and source_file.exists():
             logger.info(f"Copie du fichier Excel source : {source_file}")
             import shutil
             shutil.copy2(source_file, output_path)
             return output_path
-        
-        logger.info("Création d'un nouveau template Excel")
-        
+
+        logger.info("Création d'un nouveau master Excel")
+
         wb = openpyxl.Workbook()
-        
+
         # Supprimer la feuille par défaut
         if "Sheet" in wb.sheetnames:
             wb.remove(wb["Sheet"])
-        
+
         # Créer les feuilles
         self._create_balises_sheet(wb)
         self._create_Boucles_sheet(wb)
         self._create_table_sheet(wb)
-        
+
         # Sauvegarder
         wb.save(output_path)
-        logger.success(f"Template Excel créé : {output_path}")
-        
+        logger.success(f"Master Excel créé : {output_path}")
+
         return output_path
+
     
     def _create_balises_sheet(self, wb: openpyxl.Workbook) -> None:
         """Crée la feuille Balises avec les paramètres"""
