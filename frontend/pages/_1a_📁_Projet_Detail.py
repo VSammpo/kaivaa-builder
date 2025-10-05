@@ -1,3 +1,6 @@
+# frontend/pages/1a_📁_Projet_Detail.py
+# CHANGEMENTS: Navigation mise à jour ligne 10-11
+
 import streamlit as st
 import pandas as pd
 from loguru import logger
@@ -21,11 +24,11 @@ def _goto(page_path: str):
 
 pid = st.session_state.get("selected_project_id")
 if not pid:
-    page_header("Détail du projet", icon=None, crumbs=[("Projets", "5_📁_Projets"), ("Détail du projet", "")])
-    st.warning("Aucun projet sélectionné. Ouvre d’abord « Projets ».") 
+    page_header("Détail du projet", icon=None, crumbs=[("Projets", "1_📁_Projets"), ("Détail du projet", "")])
+    st.warning("Aucun projet sélectionné. Ouvre d'abord « Projets ».")
     st.stop()
 
-page_header("Détail du projet", icon=None, crumbs=[("Projets", "5_📁_Projets"), ("Détail du projet", "")])
+page_header("Détail du projet", icon=None, crumbs=[("Projets", "1_📁_Projets"), ("Détail du projet", "")])
 
 DatabaseService.initialize()
 with DatabaseService.get_session() as db:
@@ -54,7 +57,7 @@ with DatabaseService.get_session() as db:
 
         st.divider()
         if not attached_ids:
-            st.info("Aucun template attaché pour l’instant.")
+            st.info("Aucun template attaché pour l'instant.")
         else:
             for t in all_tpl:
                 if t.id not in attached_ids:
@@ -69,7 +72,7 @@ with DatabaseService.get_session() as db:
 
     with tab2:
         st.subheader("Union colonnes (par gabarit)")
-        if st.button("Recalculer l’union", type="primary"):
+        if st.button("Recalculer l'union", type="primary"):
             ps.compute_union(pid)
             st.success("Union recalculée.")
             proj = ps.load_project(pid)
@@ -84,7 +87,7 @@ with DatabaseService.get_session() as db:
         st.subheader("Pipelines par gabarit")
         union = proj.get("gabarit_union") or []
         if not union:
-            st.info("Rien à configurer : recalcule d’abord l’union.")
+            st.info("Rien à configurer : recalcule d'abord l'union.")
         else:
             for u in union:
                 key = f"{u['gabarit_name']}__{u['gabarit_version']}"
@@ -93,7 +96,7 @@ with DatabaseService.get_session() as db:
                     st.caption(f"{len(u.get('columns_required', []))} colonnes requises")
                     if st.button("Configurer le pipeline", key=f"cfg_{key}", use_container_width=True):
                         st.session_state["selected_pipeline_gab"] = (u["gabarit_name"], u["gabarit_version"])
-                        _goto("pages/5b_🔧_Pipeline_Gabarit.py")
+                        _goto("pages/_1b_🔧_Pipeline_Gabarit.py")
 
     with tab4:
         st.subheader("Validation (non bloquante)")
@@ -108,13 +111,13 @@ with DatabaseService.get_session() as db:
                     cols = st.columns([1, 1])
                     if cols[0].button("Valider", key=f"val_{gname}_{gver}", use_container_width=True):
                         res = ps.validate(pid, gname, gver)
-                        st.session_state[f"valres_{gname}_{gver}"] = res   # <- renommé
+                        st.session_state[f"valres_{gname}_{gver}"] = res
 
                     last = p.get("last_validation_result")
                     if last:
                         cols[1].caption(f"Dernier résultat : {last}")
 
-                    live = st.session_state.get(f"valres_{gname}_{gver}")  # <- renommé
+                    live = st.session_state.get(f"valres_{gname}_{gver}")
                     if live:
                         st.json(live)
 
@@ -137,7 +140,7 @@ with DatabaseService.get_session() as db:
                             with DatabaseService.get_session() as db2:
                                 job = ExecutionJob(
                                     template_id=t.id,
-                                    parameters={},   # à terme: paramètres projet/client si tu en as
+                                    parameters={},
                                     status='running'
                                 )
                                 db2.add(job)

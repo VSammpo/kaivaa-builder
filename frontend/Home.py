@@ -1,98 +1,35 @@
-"""
-Page d'accueil de KAIVAA Builder
-"""
-
+# frontend/Home.py
 import streamlit as st
-from pathlib import Path
-import sys
 
-# Ajouter le backend au path
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+st.set_page_config(page_title="KAIVAA", page_icon="🧩", layout="wide")
 
-from backend.services.database_service import DatabaseService
-from backend.database.models import Template
-
-# Configuration de la page
-st.set_page_config(
-    page_title="KAIVAA Builder",
-    page_icon="🎯",
-    layout="wide"
+# Router : on enregistre toutes les pages, mais on cache le menu natif
+nav = st.navigation(
+    {
+        "Main": [
+            st.Page("pages/1_📁_Projets.py",       title="Projets",      icon="📁", default=True),
+            st.Page("pages/2_📚_Bibliotheque.py",  title="Bibliothèque", icon="📚"),
+            st.Page("pages/3_🧱_Gabarits.py",      title="Gabarits",     icon="🧱"),
+            st.Page("pages/4_🕘_Historique.py",    title="Historique",   icon="🕘"),
+        ],
+        # Pages secondaires “cachées” (ne s’affichent pas dans la nav)
+        "Hidden": [
+            st.Page("pages/_1a_📁_Projet_Detail.py",    title=None),
+            st.Page("pages/_1b_🔧_Pipeline_Gabarit.py", title=None),
+            st.Page("pages/_2a_📊_Detail_Livrable.py",  title=None),
+            st.Page("pages/_2b_➕_Form_Template.py",     title=None),
+            st.Page("pages/_3a_🧱_Detail_Gabarit.py",    title=None),
+            st.Page("pages/_3b_➕_Form_Gabarit.py",      title=None),
+        ],
+    },
+    position="hidden",  # masque la nav Streamlit par défaut
 )
 
-# Initialiser la base de données
-DatabaseService.create_tables()
+# Ta sidebar “maison” : n’affiche que les pages principales
+with st.sidebar:
+    st.page_link("pages/1_📁_Projets.py",       label="Projets",      icon="📁")
+    st.page_link("pages/2_📚_Bibliotheque.py",  label="Bibliothèque", icon="📚")
+    st.page_link("pages/3_🧱_Gabarits.py",      label="Gabarits",     icon="🧱")
+    st.page_link("pages/4_🕘_Historique.py",    label="Historique",   icon="🕘")
 
-# En-tête
-st.title("🎯 KAIVAA Builder")
-st.markdown("**Template Builder pour génération automatisée de présentations**")
-
-st.divider()
-
-# Stats globales
-with DatabaseService.get_session() as db:
-    total_templates = db.query(Template).count()
-    active_templates = db.query(Template).filter_by(is_active=True).count()
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.metric("Templates créés", total_templates)
-
-with col2:
-    st.metric("Templates actifs", active_templates)
-
-with col3:
-    st.metric("En développement", "Phase 3")
-
-st.divider()
-
-# Guide rapide
-st.header("Guide rapide")
-
-st.markdown("""
-### 🚀 Commencer
-
-1. **📚 Bibliothèque** : Consultez vos templates existants
-2. **➕ Nouveau Template** : Créez un nouveau template
-3. **▶️ Générer Rapport** : Lancez une génération
-
-### 🎨 Fonctionnalités
-
-- ✅ Génération automatique de templates Excel/PowerPoint
-- ✅ Configuration via interface web
-- ✅ Support multi-sources de données (PostgreSQL, Excel, CSV)
-- ✅ Gestion des boucles et répétitions de slides
-- ✅ Injection d'images dynamiques
-- 🚧 Custom tables SQL + Python (en cours)
-- 🚧 Générateur de rapports par batch
-
-### 📖 Documentation
-
-- [GitHub](https://github.com/votre-username/kaivaa-builder)
-- [Documentation API](https://docs.kaivaa-builder.com)
-""")
-
-# Footer
-st.divider()
-st.caption("KAIVAA Builder v0.1.0 - Développé pour SAMMPO")
-
-# ----- Raccourcis (ajout) -----
-st.divider()
-st.subheader("Raccourcis")
-
-col1, col2 = st.columns(2)
-
-with col1:
-    # Streamlit ≥ 1.31 : page_link
-    try:
-        st.page_link("pages/5_📁_Projets.py", label="📁 Aller aux Projets", icon="📁")
-    except Exception:
-        # fallback si page_link indisponible
-        st.info("📁 Projets : ouvre via le menu latéral.")
-
-with col2:
-    try:
-        st.page_link("pages/6_🕘_Historique.py", label="🕘 Historique", icon="🕘")
-    except Exception:
-        st.info("🕘 Historique : ouvre via le menu latéral.")
+nav.run()

@@ -1,3 +1,9 @@
+# frontend/pages/2_📚_Bibliotheque.py
+# (Ancien: 1_📚_Bibliotheque.py)
+# CHANGEMENTS: 
+# - Numérotation 2 au lieu de 1
+# - Navigation mise à jour vers nouvelles pages
+
 """
 Page de la bibliothèque de templates
 """
@@ -44,7 +50,7 @@ with DatabaseService.get_session() as db:
             'version': t.version,
             'description': t.description,
             'ppt_path': t.ppt_template_path,
-            'card_image_path': t.card_image_path,  # AJOUTER
+            'card_image_path': t.card_image_path,
             'is_active': t.is_active
         })
 
@@ -54,9 +60,20 @@ if search:
 
 # Affichage
 if not templates_data:
-    st.info("Aucun template trouvé. Créez-en un dans l'onglet 'Nouveau Template'.")
+    st.info("Aucun template trouvé. Créez-en un pour démarrer.")
+    if st.button("➕ Nouveau template", type="primary", use_container_width=True):
+        st.session_state.selected_template = None
+        st.switch_page("pages/_2b_➕_Form_Template.py")
 else:
-    st.markdown(f"**{len(templates_data)} template(s) trouvé(s)**")
+    # Action en haut
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.markdown(f"**{len(templates_data)} template(s) trouvé(s)**")
+    with col2:
+        if st.button("➕ Nouveau template", type="primary", use_container_width=True):
+            st.session_state.selected_template = None
+            st.switch_page("pages/_2b_➕_Form_Template.py")
+    
     st.markdown("")
     
     # Grille de cartes (3 par ligne)
@@ -77,12 +94,7 @@ else:
                         st.markdown(f"### {template['name']}")
                         st.caption(f"Version {template['version']}")
                         
-                        # --- affichage image de carte avec lien cliquable ---
-                        if st.button("", key=f"card_click_{template['id']}", use_container_width=True):
-                            st.session_state.selected_template_detail = template['id']
-                            st.switch_page("pages/4_📊_Detail_Livrable.py")
-
-                        # --- affichage image de carte, normalisée 16:9 ---
+                        # Image de carte
                         default_image = project_root / "assets" / "background" / "card" / "default.png"
 
                         image_to_show = None
@@ -92,16 +104,12 @@ else:
                             image_to_show = str(default_image)
 
                         def afficher_image_carte(path: str, ratio: float = 16/9, radius_px: int = 8):
-                            """
-                            Cadre à ratio fixe + object-fit:cover.
-                            Empêche l'effet 'miniature' de st.image() au refresh.
-                            """
                             try:
                                 p = Path(path)
                                 if not p.exists():
                                     p = default_image
                                 b64 = base64.b64encode(p.read_bytes()).decode("ascii")
-                                padding_pct = 100 / ratio  # 56.25% pour 16:9
+                                padding_pct = 100 / ratio
                                 st.markdown(f"""
                                 <div style="position:relative;width:100%;padding-top:{padding_pct}%;
                                             overflow:hidden;border-radius:{radius_px}px;background:#10182014;">
@@ -111,8 +119,6 @@ else:
                                 </div>
                                 """, unsafe_allow_html=True)
                             except Exception as e:
-                                st.caption(f"🖼️ Image illisible ({e})")
-                                # Fallback sûr sur l'image par défaut
                                 try:
                                     b64 = base64.b64encode(Path(default_image).read_bytes()).decode("ascii")
                                     st.markdown(f"""
@@ -126,12 +132,10 @@ else:
                                 except:
                                     st.markdown("🖼️ *Aucune image*")
 
-                        # --- à l'endroit où tu affiches l'image de la carte ---
                         if image_to_show:
                             afficher_image_carte(image_to_show, ratio=16/9)
                         else:
                             st.markdown("🖼️ *Aucune image*")
-
 
                         
                         # Description (limitée à 100 caractères)
@@ -143,35 +147,22 @@ else:
                         st.markdown("")
                         
                         # Boutons
-                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+                        col_btn1, col_btn2 = st.columns(2)
                         
                         with col_btn1:
-                            if st.button("▶️", key=f"gen_{template['id']}", help="Générer", use_container_width=True):
-                                st.session_state.selected_template_for_generation = template['id']
-                                st.switch_page("pages/3_▶️_Generer_Rapport.py")
+                            if st.button("📊 Ouvrir", key=f"open_{template['id']}", use_container_width=True):
+                                st.session_state.selected_template_detail = template['id']
+                                st.switch_page("pages/_2a_📊_Detail_Livrable.py")
                         
                         with col_btn2:
-                            if st.button("✏️", key=f"edit_{template['id']}", help="Éditer", use_container_width=True):
+                            if st.button("✏️ Éditer", key=f"edit_{template['id']}", use_container_width=True):
                                 st.session_state.selected_template = template['id']
-                                st.switch_page("pages/2_➕_Nouveau_Template.py")
-                        
-                        with col_btn3:
-                            if st.button("🗑️", key=f"del_{template['id']}", help="Supprimer", use_container_width=True):
-                                if st.session_state.get(f"confirm_del_{template['id']}"):
-                                    with DatabaseService.get_session() as db:
-                                        service = TemplateService(db)
-                                        service.delete_template(template['id'], hard_delete=False)
-                                    st.success(f"Template '{template['name']}' désactivé")
-                                    st.rerun()
-                                else:
-                                    st.session_state[f"confirm_del_{template['id']}"] = True
-                                    st.warning("Cliquez à nouveau pour confirmer")
+                                st.switch_page("pages/_2b_➕_Form_Template.py")
 
-# ----- Raccourcis (ajout) -----
 st.divider()
-st.caption("Nouveau : enchaîner plusieurs livrables via des **Projets** (sources/pipelines par gabarit).")
+st.caption("💡 Créez des projets pour orchestrer plusieurs livrables avec des pipelines data configurés")
 
 try:
-    st.page_link("pages/5_📁_Projets.py", label="Aller aux Projets", icon="📁")
+    st.page_link("pages/1_📁_Projets.py", label="Aller aux Projets", icon="📁")
 except Exception:
-    st.info("📁 Projets : utilise le menu latéral si le lien n'apparaît pas.")
+    st.info("📁 Projets : utilise le menu latéral")

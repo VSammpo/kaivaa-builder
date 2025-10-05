@@ -1,3 +1,6 @@
+# frontend/pages/1b_🔧_Pipeline_Gabarit.py
+# CHANGEMENTS: Mise à jour des liens dans breadcrumbs ligne 20-23
+
 import streamlit as st
 import pandas as pd
 from loguru import logger
@@ -5,20 +8,6 @@ from loguru import logger
 from backend.services.database_service import DatabaseService
 from backend.services.project_service import ProjectService
 from frontend.utils.ui_helpers import page_header
-# Bandeau d'actions
-st.markdown(
-    """
-    <div style="display:flex; gap:.5rem; margin:.5rem 0 1rem 0;">
-      <a href="?page=5_📁_Projets" style="text-decoration:none;">
-        <button>⟵ Retour Projets</button>
-      </a>
-      <a href="?page=5a_📁_Projet_Detail" style="text-decoration:none;">
-        <button>⟵ Retour Détail projet</button>
-      </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
 
 st.set_page_config(page_title="Pipeline Gabarit", page_icon="🧪", layout="wide")
 st.session_state.setdefault("selected_project_id", None)
@@ -28,13 +17,13 @@ pid = st.session_state.get("selected_project_id")
 gab = st.session_state.get("selected_pipeline_gab")
 
 page_header("Pipeline gabarit", icon=None, crumbs=[
-    ("Projets", "5_📁_Projets"),
-    ("Détail du projet", "5a_📁_Projet_Detail"),
+    ("Projets", "1_📁_Projets"),
+    ("Détail du projet", "1a_📁_Projet_Detail"),
     ("Pipeline gabarit", "")
 ])
 
 if not pid or not gab:
-    st.warning("Projet ou gabarit non défini. Ouvre d’abord « Détail du projet ».") 
+    st.warning("Projet ou gabarit non défini. Ouvre d'abord « Détail du projet ».")
     st.stop()
 
 gname, gver = gab
@@ -87,23 +76,3 @@ with DatabaseService.get_session() as db:
             st.json(res)
         except Exception as e:
             st.error(f"Erreur validation : {e}")
-
-# Barre flottante
-st.markdown(
-    """
-    <div style="
-      position:fixed; bottom:12px; left:12px; 
-      display:flex; gap:.5rem; 
-      background:rgba(255,255,255,.85);
-      border:1px solid #e5e5e5; 
-      padding:.5rem .75rem; border-radius:.75rem;">
-      <a href="?page=5_📁_Projets" style="text-decoration:none;">
-        <button>⟵ Projets</button>
-      </a>
-      <a href="?page=5a_📁_Projet_Detail" style="text-decoration:none;">
-        <button>⟵ Détail projet</button>
-      </a>
-    </div>
-    """,
-    unsafe_allow_html=True
-)

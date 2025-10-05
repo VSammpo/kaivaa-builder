@@ -1,3 +1,10 @@
+# frontend/pages/2a_📊_Detail_Livrable.py
+# (Ancien: 4_📊_Detail_Livrable.py)
+# CHANGEMENTS:
+# - Numérotation 2a
+# - SUPPRESSION du bouton "▶️ Générer" (ligne 88-91)
+# - Navigation mise à jour
+
 """
 Page de détail d'un livrable - Version optimisée
 """
@@ -20,10 +27,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 def _list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[str]:
-    """
-    Retourne la liste des méthodes disponibles pour un gabarit/version
-    à partir du registre (tolérant si absent).
-    """
     try:
         reg = load_registry()
         meta = (reg.get(gabarit_name) or {}).get("versions", {}).get(gabarit_version) \
@@ -44,12 +47,6 @@ def _list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[s
 
 
 def fmt_paris(ts) -> str:
-    """
-    Affiche un datetime en Europe/Paris.
-    - si tz-aware: convertit en Europe/Paris
-    - si naïf: le considère déjà comme heure locale et le formate
-    - si str ISO: essaie de parser
-    """
     if ts is None:
         return "—"
     if isinstance(ts, str):
@@ -60,7 +57,6 @@ def fmt_paris(ts) -> str:
     if isinstance(ts, datetime):
         if ts.tzinfo is not None:
             ts = ts.astimezone(ZoneInfo("Europe/Paris"))
-        # sinon on suppose déjà local
         return ts.strftime("%d/%m/%Y %H:%M")
     return str(ts)
 
@@ -74,7 +70,7 @@ if st.session_state.get("_flash_msg"):
 if 'selected_template_detail' not in st.session_state:
     st.error("Aucun template sélectionné")
     if st.button("Retour à la bibliothèque"):
-        st.switch_page("pages/1_📚_Bibliotheque.py")
+        st.switch_page("pages/2_📚_Bibliotheque.py")
     st.stop()
 
 template_id = st.session_state.selected_template_detail
@@ -101,7 +97,7 @@ with DatabaseService.get_session() as db:
 # En-tête cliquable
 if st.button(f"📊 {template_name} (v{template_version})", key="header_deselect", use_container_width=True):
     del st.session_state.selected_template_detail
-    st.switch_page("pages/1_📚_Bibliotheque.py")
+    st.switch_page("pages/2_📚_Bibliotheque.py")
 
 st.caption("Cliquez sur le titre pour retourner à la bibliothèque")
 
@@ -116,19 +112,17 @@ col_left, col_right = st.columns([1, 1])
 with col_left:
     st.subheader("Actions")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
+    
+    # ⚠️ SUPPRESSION DU BOUTON "▶️ Générer" (ancien col1)
+    # Les rapports se génèrent uniquement depuis les Projets
     
     with col1:
-        if st.button("▶️ Générer", use_container_width=True, type="primary"):
-            st.session_state.selected_template_for_generation = template_id
-            st.switch_page("pages/3_▶️_Generer_Rapport.py")
+        if st.button("✏️ Éditer", use_container_width=True, type="primary"):
+            st.session_state.selected_template = template_id
+            st.switch_page("pages/_2b_➕_Form_Template.py")
     
     with col2:
-        if st.button("✏️ Éditer", use_container_width=True):
-            st.session_state.selected_template = template_id
-            st.switch_page("pages/2_➕_Nouveau_Template.py")
-    
-    with col3:
         if st.button("🗑️ Supprimer", use_container_width=True):
             st.session_state.show_delete_modal = True
             st.rerun()
@@ -172,14 +166,14 @@ with col_left:
                 } for u in usages])
                 st.dataframe(df, use_container_width=True, hide_index=True)
             else:
-                st.caption("Aucune table demandée pour l’instant.")
+                st.caption("Aucune table demandée pour l'instant.")
 
             st.divider()
 
             # Sélection d'un gabarit global
             gab_list = list_gabarits()
             if not gab_list:
-                st.info("Crée d’abord des gabarits dans la page « 0_🧱_Gabarits_de_table ».")  # page déjà existante
+                st.info("Crée d'abord des gabarits dans la page « 3_🧱_Gabarits ».")
                 return
 
             labels = [f"{g.name} (v{g.version})" for g in gab_list]
@@ -190,7 +184,7 @@ with col_left:
 
             # Valeurs existantes si déjà attaché
             existing = ts.get_gabarit_usage(template_id, g.name, g.version)
-            default_enabled = existing.get("columns_enabled", []) if existing else all_cols[:]  # <- toutes par défaut
+            default_enabled = existing.get("columns_enabled", []) if existing else all_cols[:]
             default_sheet = existing.get("excel_target", {}).get("sheet", "D001") if existing else "D001"
             default_table = existing.get("excel_target", {}).get("table", "") if existing else ""
             default_methods = existing.get("methods", []) if existing else []
@@ -202,13 +196,13 @@ with col_left:
                 help="Coche uniquement les colonnes nécessaires à ce livrable. Par défaut : toutes."
             )
 
-            # Méthodes disponibles...
+            # Méthodes disponibles
             methods_avail = _list_methods_for_gabarit(g.name, g.version)
             methods_selected = st.multiselect(
                 "Méthodes (facultatif)",
                 options=methods_avail,
                 default=default_methods,
-                help="Les méthodes peuvent forcer des colonnes requises à l’injection (non bloquant)."
+                help="Les méthodes peuvent forcer des colonnes requises à l'injection (non bloquant)."
             )
 
             c1, c2 = st.columns(2)
@@ -220,7 +214,6 @@ with col_left:
             c3, c4 = st.columns(2)
             with c3:
                 if st.button("💾 Enregistrer / Mettre à jour", key="gab_save"):
-                    # Ordre IMMUABLE : on respecte l’ordre du gabarit
                     ordered = [c for c in all_cols if c in set(columns_enabled)]
                     ts.upsert_gabarit_usage(
                         template_id=template_id,
@@ -314,7 +307,6 @@ with col_right:
                         st.markdown("❌")
 
                 with col_date:
-                    # Affichage heure locale (Europe/Paris)
                     date_str = fmt_paris(job['date'])
                     duration_str = f" - {job['duration']:.1f}s" if job['duration'] else ""
                     st.markdown(f"**{date_str}**{duration_str}")
@@ -400,7 +392,7 @@ if st.session_state.get('show_delete_modal'):
                     st.success(f"Template '{template_name}' désactivé")
                     st.session_state.show_delete_modal = False
                     del st.session_state.selected_template_detail
-                    st.switch_page("pages/1_📚_Bibliotheque.py")
+                    st.switch_page("pages/2_📚_Bibliotheque.py")
                 else:
                     st.error("Le nom ne correspond pas")
     
