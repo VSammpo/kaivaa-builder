@@ -78,14 +78,14 @@ class DatabaseService:
     @staticmethod
     def _move_to_trash(file_path: Optional[str]) -> Optional[str]:
         """
-        Déplace un fichier vers le dossier '00 - Supr' (même dossier que le fichier source).
+        Déplace un fichier vers le dossier '00_Trash' (même dossier que le fichier source).
         Retourne le chemin de destination si déplacement OK, sinon None.
         """
         if not file_path or not os.path.isfile(file_path):
             return None
         try:
             template_dir = os.path.dirname(file_path)
-            trash_dir = os.path.join(template_dir, "00 - Supr")
+            trash_dir = os.path.join(template_dir, "00_Trash")
             os.makedirs(trash_dir, exist_ok=True)
 
             base = os.path.basename(file_path)
@@ -104,7 +104,7 @@ class DatabaseService:
     def delete_job_and_files(db: Session, job_id: int) -> bool:
         """
         Supprime une exécution :
-        - Déplace les fichiers Excel/PPT associés vers '00 - Supr' (soft delete)
+        - Déplace les fichiers Excel/PPT associés vers '00_Trash' (soft delete)
         - Supprime la ligne d'historique en base
         Retourne True si une ligne a été supprimée, False sinon.
         """

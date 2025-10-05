@@ -112,7 +112,7 @@ if 'selected_template' in st.session_state and st.session_state.selected_templat
     if st.button("🔙 Retour à la bibliothèque"):
         del st.session_state.selected_template
         del st.session_state._template_loaded
-        st.switch_page("pages/1_📚_Bibliotheque.py")
+        st.switch_page("pages/2_📚_Bibliotheque.py")
 
 # TITRE (maintenant edit_mode et template_name sont définis)
 if edit_mode:
@@ -512,8 +512,8 @@ if st.button(button_label, type="primary", use_container_width=True):
                             f.write(excel_file.getbuffer())
                 else:
                     # Fichiers vierges : utiliser masters par défaut
-                    master_excel_path = project_root / "assets" / "00_master" / "master_template.xlsx"
-                    master_ppt_path = project_root / "assets" / "00_master" / "master_template.pptx"
+                    master_excel_path = project_root / "assets" / "master" / "master_template.xlsx"
+                    master_ppt_path = project_root / "assets" / "master" / "master_template.pptx"
                     
                     if not master_excel_path.exists():
                         st.error(f"Master Excel introuvable : {master_excel_path}")

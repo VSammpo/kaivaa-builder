@@ -47,4 +47,16 @@ with DatabaseService.get_session() as db:
                         st.session_state["selected_project_id"] = p["project_id"]
                         st.switch_page("pages/_1a_📁_Projet_Detail.py")  # ← AJOUTER UNDERSCORE
                     
-                    c2.button("Supprimer (à venir)", key=f"del_{p['project_id']}", disabled=True, use_container_width=True)
+                    with c2.popover("Supprimer", use_container_width=True):
+                        st.warning(
+                            "Cette action retire le projet de la liste et déplace son fichier JSON dans "
+                            "`assets/projects/00_Trash/`. Vous pourrez le restaurer plus tard.",
+                            icon="🗑️",
+                        )
+                        cc1, cc2 = st.columns(2)
+                        if cc1.button("Confirmer", key=f"confirm_del_{p['project_id']}", type="primary", use_container_width=True):
+                            ps.soft_delete(p["project_id"])  # ← déplace vers assets/projects/00_Trash/
+                            st.toast(f"Projet « {p.get('name','(sans nom)')} » déplacé dans la corbeille.", icon="✅")
+                            st.rerun()
+                        if cc2.button("Annuler", key=f"cancel_del_{p['project_id']}", use_container_width=True):
+                            pass

@@ -20,7 +20,7 @@ col1, col2 = st.columns([3, 1])
 with col2:
     if st.button("➕ Nouveau gabarit", type="primary", use_container_width=True):
         st.session_state.selected_gabarit = None  # Mode création
-        st.switch_page("pages/3b_➕_Form_Gabarit.py")
+        st.switch_page("pages/_3b_➕_Form_Gabarit.py")
 
 st.divider()
 
