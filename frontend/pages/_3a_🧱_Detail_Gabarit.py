@@ -7,7 +7,9 @@ import sys
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from backend.services.gabarit_registry import get_gabarit, delete_gabarit
+from backend.services.gabarit_registry import get_gabarit
+from backend.services.gabarit_registry import get_relations, get_role
+from backend.services.gabarit_registry import count_links, soft_delete_gabarit
 
 st.set_page_config(page_title="Détail Gabarit", page_icon="🧱", layout="wide")
 
@@ -42,6 +44,23 @@ col_left, col_right = st.columns([1, 1])
 
 with col_left:
     st.subheader("Actions")
+    st.subheader("Rôle")
+    role = get_role(gabarit.name, gabarit.version) or "mixed"
+    st.markdown(f"**{role.upper()}**")
+
+    st.markdown("")
+    st.subheader("Relations (catalogue)")
+    rels = get_relations(gabarit.name, gabarit.version)
+    if not rels:
+        st.caption("Aucune relation déclarée.")
+    else:
+        with st.container(height=200):
+            for r in rels:
+                st.markdown(
+                    f"- `{r['left_key']}` = `{r['right_key']}` → "
+                    f"**{r['to_gabarit']}[{r.get('to_version','v1')}]**"
+                )
+
     
     col1, col2 = st.columns(2)
     
@@ -100,32 +119,36 @@ with col_right:
 
 # Modal suppression
 if st.session_state.get('show_delete_modal_gabarit'):
-    
+
     @st.dialog("Confirmer la suppression")
     def delete_confirmation():
-        st.warning(f"Suppression du gabarit **{gabarit.name}**")
+        links = count_links(gabarit.name, gabarit.version)
+        st.warning(
+            f"Attention, ce gabarit est lié à **{links}** autre(s) gabarit(s). "
+            "En le supprimant, **tous ces liens seront supprimés**.",
+            icon="⚠️",
+        )
         st.markdown("Tapez le nom exact pour confirmer :")
-        
         confirmation = st.text_input("Nom du gabarit", key="delete_confirm_gabarit")
-        
+
         col1, col2 = st.columns(2)
-        
         with col1:
             if st.button("Annuler", use_container_width=True):
                 st.session_state.show_delete_modal_gabarit = False
                 st.rerun()
-        
         with col2:
             if st.button("Supprimer", type="primary", use_container_width=True):
-                if confirmation == gabarit.name:
-                    if delete_gabarit(gabarit.name, gabarit.version):
-                        st.success(f"Gabarit '{gabarit.name}' supprimé")
-                        st.session_state.show_delete_modal_gabarit = False
-                        del st.session_state.selected_gabarit
-                        st.switch_page("pages/3_🧱_Gabarits.py")
-                    else:
-                        st.error("Échec de la suppression")
-                else:
+                if confirmation != gabarit.name:
                     st.error("Le nom ne correspond pas")
-    
+                    return
+                out = soft_delete_gabarit(gabarit.name, gabarit.version)
+                st.success(
+                    f"Gabarit supprimé. Archivé sous **{out['new_name']}**. "
+                    f"Relations supprimées : **{out['removed_relations']}**."
+                )
+                st.session_state.show_delete_modal_gabarit = False
+                if 'selected_gabarit' in st.session_state:
+                    del st.session_state.selected_gabarit
+                st.switch_page("pages/3_🧱_Gabarits.py")
+
     delete_confirmation()

@@ -137,9 +137,11 @@ class ProjectService:
             "parameters": parameters or {},
             "gabarit_union": [],
             "gabarit_pipelines": [],
+            "joins": [],  
             "created_at": _now_paris_iso(),
             "updated_at": _now_paris_iso(),
         }
+
         self.save_project(data)
         logger.success(f"Projet créé: {pid}")
         return data
@@ -177,26 +179,66 @@ class ProjectService:
     # ---------- Soft delete / Restore / Corbeille -----------------------------------
 
     def soft_delete(self, project_id: str) -> None:
-        """
-        Suppression “soft” = déplacement du JSON dans assets/projects/00_Trash.
-        - Si le fichier existe déjà en corbeille, on suffixe par un timestamp pour ne rien écraser.
-        - Si le projet est déjà en corbeille, on ne fait rien.
-        """
         src = _project_path(project_id)
         if not src.exists():
-            # Déjà en corbeille ?
-            if list(TRASH_DIR.glob(f"{project_id}*.json")):
-                logger.info(f"Projet '{project_id}' déjà en corbeille — aucune action.")
+            # déjà en corbeille ?
+            if list(TRASH_DIR.glob(f"{project_id}__Supr_n*.json")):
                 return
             raise FileNotFoundError(f"Projet introuvable: {project_id}")
 
-        dst = _trash_path_unique(project_id)
+        # Charger pour changer son 'name' avant archivage
+        with open(src, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        new_display_name = self._next_supr_name_for_project(data.get("name") or project_id)
+        
+        data["name"] = new_display_name
+        # MAJ updated_at
+        data["updated_at"] = _now_paris_iso()
+
+        # Ecrire dans la corbeille sous un NOM UNIQUE
+        dst = self._next_trash_name(project_id)
         dst.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            src.rename(dst)  # move atomique sur le même volume
-        except OSError:
-            shutil.move(str(src), str(dst))  # fallback inter-volume
-        logger.success(f"Projet '{project_id}' déplacé en corbeille: {dst.name}")
+        with open(dst, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        # Supprimer l'actif
+        src.unlink()
+    
+    @staticmethod
+    def _next_trash_name(base_project_id: str) -> Path:
+        """
+        Dans TRASH_DIR, on cherche 'base__Supr_nXXXX.json' et on incrémente.
+        """
+        pattern = f"{base_project_id}__Supr_n*.json"
+        nums = []
+        for p in TRASH_DIR.glob(pattern):
+            tail = p.stem.split("__Supr_n")[-1]
+            try:
+                nums.append(int(tail))
+            except Exception:
+                pass
+        k = (max(nums) + 1) if nums else 1
+        return TRASH_DIR / f"{base_project_id}__Supr_n{str(k).zfill(4)}.json"
+    
+    @staticmethod
+    def _next_supr_name_for_project(base: str) -> str:
+        """
+        Renvoie 'Nom_Supr_n0001', etc. (on se base sur les fichiers déjà en corbeille).
+        """
+        prefix = f"{base}_Supr_n"
+        nums = []
+        for p in TRASH_DIR.glob("*.json"):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                nm = d.get("name") or ""
+                if nm.startswith(prefix):
+                    nums.append(int(nm.split(prefix)[1]))
+            except Exception:
+                continue
+        k = (max(nums) + 1) if nums else 1
+        return f"{base}_Supr_n{str(k).zfill(4)}"
 
     def restore(self, project_id: str) -> None:
         """
@@ -330,6 +372,125 @@ class ProjectService:
             if p.get("gabarit_name") == gabarit_name and p.get("gabarit_version") == gabarit_version:
                 return p
         return None
+    
+    def list_joins(self, project_id: str) -> List[Dict[str, Any]]:
+        proj = self.load_project(project_id)
+        joins = proj.get("joins", [])
+        return joins if isinstance(joins, list) else []
+
+    def add_join_by_relation(self, project_id: str, *, template_id: int, relation_id: str,
+                             join_type: str = "left", enabled: bool = True) -> Dict[str, Any]:
+        """
+        Active une jointure au niveau PROJET à partir d'une relation déclarée dans le GABARIT.
+        -> pas de clés saisies ici ; on se base sur le relation_id du gabarit.
+        """
+        join_type = (join_type or "left").lower()
+        assert join_type in {"left","inner","right","outer"}, "join_type invalide"
+
+        # Vérifier que la relation existe bien dans le catalogue
+        rel = self.ts.get_relation_by_id(template_id, relation_id)
+        if not rel:
+            raise ValueError(f"Relation inconnue dans le gabarit (template_id={template_id}, relation_id={relation_id})")
+
+        item = {
+            "template_id": int(template_id),
+            "relation_id": rel["relation_id"],
+            # Pour affichage rapide côté UI (dérivés non éditables)
+            "from_gabarit": rel["from_gabarit"],
+            "from_version": rel.get("from_version","v1"),
+            "to_gabarit": rel["to_gabarit"],
+            "to_version": rel.get("to_version","v1"),
+            "left_key": rel["left_key"],
+            "right_key": rel["right_key"],
+            # Choix projet :
+            "join_type": join_type,  # "left" par défaut, "inner" possible
+            "enabled": bool(enabled),
+            "suffixes": ["_x","_y"],  # collisions éventuelles
+        }
+
+        proj = self.load_project(project_id)
+        joins = proj.get("joins", [])
+        if not isinstance(joins, list):
+            joins = []
+
+        # anti-dup (même relation_id)
+        if any(j.get("relation_id")==item["relation_id"] and j.get("template_id")==item["template_id"] for j in joins):
+            # remplace le join_type/enabled si déjà présent
+            new_joins = []
+            for j in joins:
+                if j.get("relation_id")==item["relation_id"] and j.get("template_id")==item["template_id"]:
+                    j["join_type"] = item["join_type"]
+                    j["enabled"] = item["enabled"]
+                    new_joins.append(j)
+                else:
+                    new_joins.append(j)
+            proj["joins"] = new_joins
+            self.save_project(proj)
+            return item
+
+        joins.append(item)
+        proj["joins"] = joins
+        self.save_project(proj)
+        return item
+
+    def remove_join_by_relation(self, project_id: str, *, template_id: int, relation_id: str) -> bool:
+        proj = self.load_project(project_id)
+        joins = proj.get("joins", [])
+        if not isinstance(joins, list):
+            return False
+        new_joins = [j for j in joins if not (j.get("template_id")==int(template_id) and j.get("relation_id")==relation_id)]
+        changed = len(new_joins) != len(joins)
+        if changed:
+            proj["joins"] = new_joins
+            self.save_project(proj)
+        return changed
+
+    def toggle_join(self, project_id: str, idx: int, enabled: bool) -> None:
+        proj = self.load_project(project_id)
+        joins = proj.get("joins", [])
+        if not isinstance(joins, list) or idx < 0 or idx >= len(joins):
+            return
+        joins[idx]["enabled"] = bool(enabled)
+        proj["joins"] = joins
+        self.save_project(proj)
+
+    def build_with_joins(self, project_id: str, fact_gabarit: str, fact_version: str="v1") -> pd.DataFrame:
+        """
+        Construit le DF du 'fact' puis applique, dans l'ordre, les jointures activées
+        référencées par relation_id (les clés viennent du gabarit).
+        """
+        df = self.build_dataframe(project_id, fact_gabarit, fact_version)
+
+        proj = self.load_project(project_id)
+        joins = [j for j in (proj.get("joins") or []) if j.get("enabled")]
+
+        for j in joins:
+            # On ne joint que si la relation source correspond au fact choisi
+            if j.get("from_gabarit")!=fact_gabarit or (j.get("from_version") or "v1")!=fact_version:
+                continue
+
+            tgt_name = j["to_gabarit"]
+            tgt_ver  = j.get("to_version") or "v1"
+            left_key = j["left_key"]
+            right_key= j["right_key"]
+            how      = j.get("join_type","left")
+            suffixes = tuple(j.get("suffixes") or ["_x","_y"])
+
+            dim = self.build_dataframe(project_id, tgt_name, tgt_ver)
+
+            # Harmonisation de type simple
+            if left_key in df.columns and right_key in dim.columns:
+                if df[left_key].dtype != dim[right_key].dtype:
+                    try:
+                        dim[right_key] = dim[right_key].astype(df[left_key].dtype)
+                    except Exception:
+                        df[left_key] = df[left_key].astype("string")
+                        dim[right_key] = dim[right_key].astype("string")
+
+            df = df.merge(dim, how=how, left_on=left_key, right_on=right_key, suffixes=suffixes)
+
+        return df
+
 
     # -------------------- Preview / Validation -------------------------------------
 

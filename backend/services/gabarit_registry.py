@@ -23,6 +23,98 @@ def _save_raw(data: Dict[str, Any]) -> None:
     _ensure_storage()
     _REG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
+def _normalize(data: dict) -> dict:
+    data.setdefault("gabarits", [])
+    data.setdefault("roles", [])
+    data.setdefault("relations", [])
+    data.setdefault("trash", {"gabarits": []})
+    return data
+
+def _load_raw() -> dict:
+    _ensure_storage()
+    data = json.loads(_REG_FILE.read_text(encoding="utf-8"))
+    return _normalize(data)
+
+def _save_raw(data: dict) -> None:
+    _ensure_storage()
+    data = _normalize(data)
+    _REG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def _next_supr_suffix(existing_names: list[str], base: str) -> str:
+    # renvoie "Nom_Supr_n0001" (ou n0002, etc.)
+    base_prefix = f"{base}_Supr_n"
+    nums = []
+    for n in existing_names:
+        if n.startswith(base_prefix):
+            try:
+                nums.append(int(n.split(base_prefix, 1)[1]))
+            except Exception:
+                pass
+    k = (max(nums) + 1) if nums else 1
+    return f"{base}_Supr_n{str(k).zfill(4)}"
+
+def count_links(gabarit_name: str, gabarit_version: str) -> int:
+    data = _load_raw()
+    v = (gabarit_version or "v1").strip()
+    rels = data.get("relations", [])
+    n = 0
+    for r in rels:
+        if (r.get("from_gabarit")==gabarit_name and (r.get("from_version") or "v1")==v) or \
+           (r.get("to_gabarit")==gabarit_name and (r.get("to_version") or "v1")==v):
+            n += 1
+    return n
+
+def soft_delete_gabarit(gabarit_name: str, gabarit_version: str) -> dict:
+    """
+    Supprime 'logiquement' un gabarit:
+      - retire le gabarit actif
+      - enlève son rôle
+      - supprime toutes les relations (from/to) qui le mentionnent
+      - déplace une copie dans trash.gabarits avec un nom renommé 'Nom_Supr_nXXXX'
+    Retourne {"old_name":..., "new_name":..., "removed_relations": N}
+    """
+    data = _load_raw()
+    v = (gabarit_version or "v1").strip()
+
+    # 1) récupérer l'objet gabarit
+    gabs = data.get("gabarits", [])
+    idx = None
+    for i, g in enumerate(gabs):
+        if g.get("name")==gabarit_name and (g.get("version") or "v1")==v:
+            idx = i
+            break
+    if idx is None:
+        raise FileNotFoundError("Gabarit introuvable")
+
+    gab = gabs.pop(idx)  # retirer de la liste active
+
+    # 2) retirer le rôle
+    roles = [r for r in data.get("roles", []) if not (r.get("gabarit_name")==gabarit_name and (r.get("gabarit_version") or "v1")==v)]
+    data["roles"] = roles
+
+    # 3) retirer toutes les relations (from/to) qui le mentionnent
+    rels = data.get("relations", [])
+    before = len(rels)
+    rels = [r for r in rels if not (
+        (r.get("from_gabarit")==gabarit_name and (r.get("from_version") or "v1")==v) or
+        (r.get("to_gabarit")==gabarit_name and (r.get("to_version") or "v1")==v)
+    )]
+    removed = before - len(rels)
+    data["relations"] = rels
+
+    # 4) renommer et pousser dans la trash
+    trash_list = data.setdefault("trash", {}).setdefault("gabarits", [])
+    active_names = [x.get("name") for x in trash_list if x.get("name", "").startswith(f"{gabarit_name}_Supr_n")]
+    new_name = _next_supr_suffix(active_names, gabarit_name)
+
+    gab["name"] = new_name
+    trash_list.append(gab)
+
+    data["gabarits"] = gabs
+    _save_raw(data)
+
+    return {"old_name": gabarit_name, "new_name": new_name, "removed_relations": removed}
+
 def list_gabarits() -> List[TableGabarit]:
     data = _load_raw()
     return [TableGabarit(**g) for g in data.get("gabarits", [])]
@@ -144,3 +236,98 @@ __all__ = [
     "list_gabarits", "get_gabarit", "upsert_gabarit", "delete_gabarit",
     "get_method_requirements", "load_registry"
 ]
+
+def set_role(gabarit_name: str, gabarit_version: str, role: str) -> None:
+    """
+    role ∈ {'fact','dimension','mixed'} – stocké dans le registre (clé: name+version)
+    """
+    role = (role or "").strip().lower()
+    assert role in {"fact", "dimension", "mixed"}, "role invalide"
+
+    data = _load_raw()
+    roles = data.get("roles", [])
+    # on remplace l'existant pour (name, version)
+    roles = [r for r in roles
+             if not (r.get("gabarit_name") == gabarit_name and (r.get("gabarit_version") or "v1") == (gabarit_version or "v1"))]
+    roles.append({
+        "gabarit_name": gabarit_name,
+        "gabarit_version": gabarit_version or "v1",
+        "role": role,
+    })
+    data["roles"] = roles
+    _save_raw(data)
+
+
+def get_role(gabarit_name: str, gabarit_version: str) -> str | None:
+    data = _load_raw()
+    for r in data.get("roles", []):
+        if r.get("gabarit_name") == gabarit_name and (r.get("gabarit_version") or "v1") == (gabarit_version or "v1"):
+            return r.get("role")
+    return None
+
+
+def add_relation(from_gabarit: str, from_version: str,
+                 to_gabarit: str, to_version: str,
+                 left_key: str, right_key: str) -> dict:
+    """
+    Enregistre une relation (clé↔clé) au niveau 'catalogue'.
+    Retourne l'item créé, avec 'relation_id' stable.
+    """
+    item = {
+        "from_gabarit": (from_gabarit or "").strip(),
+        "from_version": (from_version or "v1").strip(),
+        "to_gabarit": (to_gabarit or "").strip(),
+        "to_version": (to_version or "v1").strip(),
+        "left_key": (left_key or "").strip(),
+        "right_key": (right_key or "").strip(),
+    }
+    # id stable
+    item["relation_id"] = (
+        f"{item['from_gabarit']}|{item['from_version']}->"
+        f"{item['to_gabarit']}|{item['to_version']}::"
+        f"{item['left_key']}={item['right_key']}"
+    )
+
+    data = _load_raw()
+    rels = data.get("relations", [])
+
+    # anti-dup EXACT
+    if not any(r == item for r in rels):
+        rels.append(item)
+        data["relations"] = rels
+        _save_raw(data)
+    return item
+
+
+def delete_relation(from_gabarit: str, from_version: str,
+                    to_gabarit: str, to_version: str,
+                    left_key: str, right_key: str) -> bool:
+    data = _load_raw()
+    rels = data.get("relations", [])
+    before = len(rels)
+    rels = [r for r in rels if not (
+        r.get("from_gabarit") == (from_gabarit or "").strip()
+        and (r.get("from_version") or "v1") == (from_version or "v1").strip()
+        and r.get("to_gabarit") == (to_gabarit or "").strip()
+        and (r.get("to_version") or "v1") == (to_version or "v1").strip()
+        and r.get("left_key") == (left_key or "").strip()
+        and r.get("right_key") == (right_key or "").strip()
+    )]
+    changed = len(rels) != before
+    if changed:
+        data["relations"] = rels
+        _save_raw(data)
+    return changed
+
+
+def get_relations(gabarit_name: str, gabarit_version: str) -> list[dict]:
+    """
+    Relations SORTANTES (FROM = ce gabarit).
+    """
+    data = _load_raw()
+    rels = data.get("relations", [])
+    return [
+        r for r in rels
+        if r.get("from_gabarit") == (gabarit_name or "").strip()
+        and (r.get("from_version") or "v1") == (gabarit_version or "v1").strip()
+    ]

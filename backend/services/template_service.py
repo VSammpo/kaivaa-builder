@@ -381,8 +381,18 @@ class TemplateService:
         # Clés MVP: usages & sources de gabarits par livrable
         if "gabarit_usages" not in cfg or not isinstance(cfg["gabarit_usages"], list):
             cfg["gabarit_usages"] = []
+        
         if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
             cfg["gabarit_sources"] = []
+        
+        # Rôles de tables (fact/dimension/mixed) par gabarit
+        if "gabarit_roles" not in cfg or not isinstance(cfg["gabarit_roles"], list):
+            cfg["gabarit_roles"] = []  # [{gabarit_name, gabarit_version, table_role}]
+
+        # Relations autorisées (catalogue) entre gabarits (sans type de jointure)
+        if "gabarit_relations" not in cfg or not isinstance(cfg["gabarit_relations"], list):
+            cfg["gabarit_relations"] = []  # [{from_gabarit, from_version, to_gabarit, to_version, left_key, right_key, cardinality?}]
+
 
         return cfg
 
@@ -404,6 +414,15 @@ class TemplateService:
             cfg["gabarit_usages"] = []
         if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
             cfg["gabarit_sources"] = []
+
+        # Rôles de tables (fact/dimension/mixed) par gabarit
+        if "gabarit_roles" not in cfg or not isinstance(cfg["gabarit_roles"], list):
+            cfg["gabarit_roles"] = []  # [{gabarit_name, gabarit_version, table_role}]
+
+        # Relations autorisées (catalogue) entre gabarits (sans type de jointure)
+        if "gabarit_relations" not in cfg or not isinstance(cfg["gabarit_relations"], list):
+            cfg["gabarit_relations"] = []  # [{from_gabarit, from_version, to_gabarit, to_version, left_key, right_key, cardinality?}]
+
 
         tpl = self.db.query(Template).get(template_id)
         tpl.config = cfg
@@ -699,3 +718,122 @@ class TemplateService:
             if c not in out:
                 out.append(c)
         return out
+
+
+        # ---------- RÔLE DE TABLE (catalogue) ---------------------------------
+
+    def set_table_role(self, template_id: int, gabarit_name: str, gabarit_version: str, table_role: str) -> None:
+        """
+        table_role ∈ {"fact","dimension","mixed"}
+        """
+        table_role = (table_role or "").strip().lower()
+        assert table_role in {"fact", "dimension", "mixed"}, "table_role invalide"
+
+        cfg = self.get_config(template_id)
+        roles = cfg.get("gabarit_roles", [])
+        if not isinstance(roles, list):
+            roles = []
+
+        gname = (gabarit_name or "").strip()
+        gver = (gabarit_version or "v1").strip()
+
+        # replace if exists
+        roles = [r for r in roles if not (r.get("gabarit_name")==gname and r.get("gabarit_version")==gver)]
+        roles.append({"gabarit_name": gname, "gabarit_version": gver, "table_role": table_role})
+
+        cfg["gabarit_roles"] = roles
+        self.update_config(template_id, cfg)
+
+    def get_table_role(self, template_id: int, gabarit_name: str, gabarit_version: str="v1") -> str | None:
+        cfg = self.get_config(template_id)
+        for r in (cfg.get("gabarit_roles") or []):
+            if r.get("gabarit_name")==gabarit_name and r.get("gabarit_version")==gabarit_version:
+                return r.get("table_role")
+        return None
+
+    # ---------- RELATIONS (catalogue) -------------------------------------
+
+    def list_relations(self, template_id: int, from_gabarit: str | None=None, from_version: str | None=None) -> list[dict]:
+        """
+        Retourne la liste des relations autorisées (sans type de jointure).
+        Si from_gabarit est fourni, filtre sur les relations sortantes depuis ce gabarit.
+        """
+        cfg = self.get_config(template_id)
+        rels = cfg.get("gabarit_relations", [])
+        rels = rels if isinstance(rels, list) else []
+        if from_gabarit:
+            fv = (from_version or "v1").strip()
+            return [r for r in rels if r.get("from_gabarit")==from_gabarit and (r.get("from_version") or "v1")==fv]
+        return rels
+    
+    def get_relation_by_id(self, template_id: int, relation_id: str) -> dict | None:
+        cfg = self.get_config(template_id)
+        for r in (cfg.get("gabarit_relations") or []):
+            if r.get("relation_id") == relation_id:
+                return r
+        return None
+
+
+    def add_relation(self, template_id: int,
+                     from_gabarit: str, from_version: str,
+                     to_gabarit: str, to_version: str,
+                     left_key: str, right_key: str,
+                     cardinality: str | None=None) -> None:
+        """
+        Déclare une relation autorisée entre 2 gabarits (clé ↔ clé).
+        """
+        cfg = self.get_config(template_id)
+        rels = cfg.get("gabarit_relations", [])
+        if not isinstance(rels, list):
+            rels = []
+
+        item = {
+            "from_gabarit": (from_gabarit or "").strip(),
+            "from_version": (from_version or "v1").strip(),
+            "to_gabarit": (to_gabarit or "").strip(),
+            "to_version": (to_version or "v1").strip(),
+            "left_key": (left_key or "").strip(),
+            "right_key": (right_key or "").strip(),
+        }
+        # id stable (évite ambiguïtés si plusieurs relations similaires)
+        rid = (
+            f"{item['from_gabarit']}|{item['from_version']}->"
+            f"{item['to_gabarit']}|{item['to_version']}::"
+            f"{item['left_key']}={item['right_key']}"
+        )
+        item["relation_id"] = rid
+        if cardinality:
+            item["cardinality"] = cardinality
+
+        if cardinality:
+            item["cardinality"] = cardinality
+
+        # anti-duplication exacte
+        dup = [r for r in rels if r == item]
+        if not dup:
+            rels.append(item)
+
+        cfg["gabarit_relations"] = rels
+        self.update_config(template_id, cfg)
+
+    def delete_relation(self, template_id: int,
+                        from_gabarit: str, from_version: str,
+                        to_gabarit: str, to_version: str,
+                        left_key: str, right_key: str) -> bool:
+        cfg = self.get_config(template_id)
+        rels = cfg.get("gabarit_relations", [])
+        if not isinstance(rels, list):
+            rels = []
+        new_rels = [
+            r for r in rels
+            if not (
+                r.get("from_gabarit")==from_gabarit and (r.get("from_version") or "v1")==from_version
+                and r.get("to_gabarit")==to_gabarit and (r.get("to_version") or "v1")==to_version
+                and r.get("left_key")==left_key and r.get("right_key")==right_key
+            )
+        ]
+        if len(new_rels)==len(rels):
+            return False
+        cfg["gabarit_relations"] = new_rels
+        self.update_config(template_id, cfg)
+        return True

@@ -98,6 +98,73 @@ with DatabaseService.get_session() as db:
                         st.session_state["selected_pipeline_gab"] = (u["gabarit_name"], u["gabarit_version"])
                         _goto("pages/_1b_🔧_Pipeline_Gabarit.py")
 
+                st.divider()
+        st.divider()
+st.subheader("Jointures (activées au niveau projet)")
+
+# Liste des joins déjà activés
+joins = ps.list_joins(pid)
+if joins:
+    for i, j in enumerate(joins):
+        with st.container(border=True):
+            st.markdown(
+                f"**{j['from_gabarit']}** ⟶ **{j['to_gabarit']}** "
+                f"· `{j['left_key']} = {j['right_key']}` · type: `{j.get('join_type','left')}`"
+            )
+            colj1, colj2, colj3 = st.columns([1,1,2])
+            enabled = colj1.toggle("Actif", value=bool(j.get('enabled', True)), key=f"join_on_{i}")
+            if enabled != j.get("enabled", True):
+                ps.toggle_join(pid, i, enabled)
+                st.rerun()
+            if colj2.button("Supprimer", key=f"join_del_{i}"):
+                ps.remove_join_by_relation(pid, template_id=int(j["template_id"]), relation_id=j["relation_id"])
+                st.rerun()
+else:
+    st.info("Aucune jointure activée pour ce projet.")
+
+with st.expander("➕ Activer une relation de gabarit"):
+    # 1) choisir le gabarit 'fact' (source) présent dans l'union
+    union = proj.get("gabarit_union") or []
+    gabs = [f"{u['gabarit_name']}|{u['gabarit_version']}" for u in union]
+    src = st.selectbox("Table de FAIT (source)", gabs, index=0) if gabs else None
+
+    # 2) choisir un template (catalogue) dans lequel les relations sont déclarées
+    #    → selon ton modèle, c’est souvent le template où vivent ces gabarits
+    #    on propose les templates attachés au projet
+    attached_template_ids = proj.get("template_ids") or []
+    tmpl_label = {tid: f"Template #{tid}" for tid in attached_template_ids}  # tu peux améliorer l'intitulé
+    selected_tid = st.selectbox("Catalogue (template) contenant la relation", attached_template_ids) if attached_template_ids else None
+
+    rel_choice = None
+    if src and selected_tid:
+        s_name, s_ver = src.split("|")
+        # 3) on récupère les relations depuis le CATALOGUE pour ce 'from_gabarit'
+        rels = ts.list_relations(int(selected_tid), from_gabarit=s_name, from_version=s_ver)
+        if not rels:
+            st.warning("Aucune relation déclarée dans ce template pour ce gabarit.")
+        else:
+            # affichage lisible
+            rel_lbl = [
+                f"{r['from_gabarit']}[{r.get('from_version','v1')}] "
+                f"— {r['left_key']} = {r['right_key']} —> "
+                f"{r['to_gabarit']}[{r.get('to_version','v1')}]"
+            for r in rels]
+            idx = st.selectbox("Relation de gabarit", list(range(len(rels))), format_func=lambda i: rel_lbl[i])
+
+            join_type = st.selectbox("Type de jointure", ["left","inner"], index=0)
+
+            if st.button("Activer la relation", type="primary", use_container_width=True):
+                ps.add_join_by_relation(
+                    pid,
+                    template_id=int(selected_tid),
+                    relation_id=rels[idx]["relation_id"],
+                    join_type=join_type,
+                    enabled=True,
+                )
+                st.success("Relation activée pour ce projet.")
+                st.rerun()
+
+
     with tab4:
         st.subheader("Validation (non bloquante)")
         pipes = proj.get("gabarit_pipelines") or []
