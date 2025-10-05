@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+from backend.services.gabarit_registry import get_role
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -56,6 +57,15 @@ else:
                 
                 with col:
                     with st.container(border=True):
+                        role = (get_role(gab.name, gab.version) or "mixed").lower()
+                        color = {"fact":"#f63b44", "dimension":"#0b9ea3", "mixed":"#6b7280"}.get(role, "#6b7280")
+                        st.markdown(
+                            f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{color};margin-right:6px"></span>'
+                            f'<span style="color:{color};font-weight:600;text-transform:uppercase">{role}</span>',
+                            unsafe_allow_html=True,
+                        )
+
+
                         # Nom + version
                         st.markdown(f"### {gab.name}")
                         st.caption(f"Version {gab.version}")

@@ -12,6 +12,7 @@ from backend.services.report_service import ReportService
 from frontend.utils.ui_helpers import page_header
 from backend.database.models import Template, ExecutionJob
 from datetime import datetime, timezone
+from backend.services.gabarit_registry import get_default_source
 
 st.set_page_config(page_title="Détail Projet", page_icon="🗂️", layout="wide")
 st.session_state.setdefault("selected_project_id", None)
@@ -97,6 +98,22 @@ with DatabaseService.get_session() as db:
                     if st.button("Configurer le pipeline", key=f"cfg_{key}", use_container_width=True):
                         st.session_state["selected_pipeline_gab"] = (u["gabarit_name"], u["gabarit_version"])
                         _goto("pages/_1b_🔧_Pipeline_Gabarit.py")
+
+                # ➜ Option rapide : utiliser la donnée par défaut du gabarit (si elle existe)
+                default_src = get_default_source(u['gabarit_name'], u['gabarit_version'])
+                if default_src:
+                    if st.button("Utiliser la donnée par défaut", key=f"default_{key}", use_container_width=True):
+                        ps.set_pipeline(
+                            pid,
+                            u['gabarit_name'],
+                            u['gabarit_version'],
+                            source=default_src,  # type, path, sep, encoding
+                        )
+                        st.success("Pipeline défini avec la donnée par défaut du gabarit.")
+                        st.rerun()
+                else:
+                    st.caption("Aucune donnée par défaut définie pour ce gabarit.")
+
 
                 st.divider()
         st.divider()

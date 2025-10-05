@@ -7,6 +7,7 @@ import sys
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+from backend.services.gabarit_registry import get_default_source, set_default_source, clear_default_source
 from backend.models.gabarits import TableGabarit, GabaritColumn
 from backend.services.gabarit_registry import (
     get_gabarit, upsert_gabarit, list_gabarits,
@@ -220,3 +221,73 @@ else:
                     st.rerun()
     else:
         st.info("Aucune relation déclarée pour ce gabarit.")
+
+# ==============================================================================
+# DONNÉE PAR DÉFAUT (catalogue) 
+# ==============================================================================
+st.divider()
+st.subheader("Donnée par défaut (optionnelle)")
+
+if not edit_mode:
+    st.info("Enregistrez d'abord le gabarit pour définir une donnée par défaut.")
+else:
+    # On recharge pour être sûr d'avoir les colonnes / infos à jour
+    gab = get_gabarit(gabarit.name, gabarit.version)
+    current_default = get_default_source(gab.name, gab.version)
+
+    with st.expander("Configurer la donnée par défaut"):
+        # Simple: support CSV (tu pourras étendre plus tard)
+        use_default = st.checkbox("Activer une donnée par défaut", value=bool(current_default))
+
+        if use_default:
+            # On supporte CSV (classique) et PARQUET (grosses tables)
+            colF1, colF2 = st.columns([1, 2])
+            with colF1:
+                fmt = st.selectbox("Format", ["csv", "parquet"], index=0 if (current_default or {}).get("type","csv")=="csv" else 1)
+            with colF2:
+                path_val = (current_default or {}).get("path", "")
+                path = st.text_input(
+                    "Chemin du fichier (local ou réseau)",
+                    value=path_val,
+                    placeholder=r"Ex: C:\data\sources\siren.csv  ou  /data/sources/siren.parquet",
+                    help="Indique un chemin accessible par le serveur Streamlit. Aucun upload n'est effectué."
+                )
+
+            if fmt == "csv":
+                colC1, colC2 = st.columns(2)
+                with colC1:
+                    sep = st.text_input("Séparateur", value=(current_default or {}).get("sep", ";"))
+                with colC2:
+                    enc = st.text_input("Encodage", value=(current_default or {}).get("encoding", "utf-8-sig"))
+            else:
+                sep, enc = None, None  # non utilisé en parquet
+
+            # Validation simple du chemin
+            path_ok = False
+            if path:
+                try:
+                    p = Path(path)
+                    path_ok = p.exists() and p.is_file()
+                    if not path_ok:
+                        st.warning("Le chemin indiqué n'existe pas (ou n'est pas un fichier).")
+                except Exception as e:
+                    st.error(f"Chemin invalide : {e}")
+
+            if st.button("💾 Enregistrer la donnée par défaut", disabled=not (use_default and path_ok)):
+                src = {"type": fmt, "path": str(Path(path).resolve())}
+                if fmt == "csv":
+                    src["sep"] = sep or ";"
+                    src["encoding"] = enc or "utf-8-sig"
+                set_default_source(gab.name, gab.version, src)
+                st.success("Donnée par défaut enregistrée (référence par chemin).")
+                st.rerun()
+
+            if current_default and st.button("🧹 Retirer la donnée par défaut"):
+                clear_default_source(gab.name, gab.version)
+                st.success("Donnée par défaut retirée.")
+                st.rerun()
+        else:
+            # Si on décoche alors qu'il y en avait une, on la retire
+            if current_default:
+                clear_default_source(gab.name, gab.version)
+                st.rerun()

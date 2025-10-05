@@ -27,6 +27,7 @@ def _normalize(data: dict) -> dict:
     data.setdefault("gabarits", [])
     data.setdefault("roles", [])
     data.setdefault("relations", [])
+    data.setdefault("defaults", [])
     data.setdefault("trash", {"gabarits": []})
     return data
 
@@ -39,6 +40,35 @@ def _save_raw(data: dict) -> None:
     _ensure_storage()
     data = _normalize(data)
     _REG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+def set_default_source(gabarit_name: str, gabarit_version: str, source: dict | None) -> None:
+    """
+    source: ex. {"type":"csv","path":"/abs/path/file.csv","sep":";","encoding":"utf-8-sig"}
+    Passer None pour la retirer.
+    """
+    data = _load_raw()
+    defs = data.get("defaults", [])
+    key = (gabarit_name, gabarit_version or "v1")
+    defs = [d for d in defs if not (d.get("gabarit_name")==key[0] and (d.get("gabarit_version") or "v1")==key[1])]
+    if source:
+        defs.append({
+            "gabarit_name": key[0],
+            "gabarit_version": key[1],
+            "source": source,
+        })
+    data["defaults"] = defs
+    _save_raw(data)
+
+def get_default_source(gabarit_name: str, gabarit_version: str) -> dict | None:
+    data = _load_raw()
+    for d in data.get("defaults", []):
+        if d.get("gabarit_name")==gabarit_name and (d.get("gabarit_version") or "v1")==(gabarit_version or "v1"):
+            return d.get("source") or None
+    return None
+
+def clear_default_source(gabarit_name: str, gabarit_version: str) -> None:
+    set_default_source(gabarit_name, gabarit_version, None)
+
 
 def _next_supr_suffix(existing_names: list[str], base: str) -> str:
     # renvoie "Nom_Supr_n0001" (ou n0002, etc.)
