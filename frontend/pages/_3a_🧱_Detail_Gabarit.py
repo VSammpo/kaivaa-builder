@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+from backend.services.gabarit_registry import get_default_source, get_default_preview
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -152,3 +153,30 @@ if st.session_state.get('show_delete_modal_gabarit'):
                 st.switch_page("pages/3_🧱_Gabarits.py")
 
     delete_confirmation()
+
+st.divider()
+st.subheader("Donnée par défaut")
+
+src = get_default_source(gabarit.name, gabarit.version)
+preview = get_default_preview(gabarit.name, gabarit.version)
+
+if not src:
+    st.caption("Aucune donnée par défaut mémorisée.")
+else:
+    # Affiche un rappel de la source
+    t = src.get("type", "?")
+    path_info = src.get("path", "")
+    st.markdown(f"**Source :** `{t}` · `{path_info}`")
+
+    # Mini tableau (persistant)
+    if preview and preview.get("rows"):
+        rows = preview.get("rows") or []
+        cols = preview.get("columns") or []
+        df_preview = pd.DataFrame(rows)
+        # Respecte l'ordre des colonnes sauvegardé
+        if cols:
+            df_preview = df_preview[[c for c in cols if c in df_preview.columns]]
+        st.caption("Aperçu persistant (20 lignes max)")
+        st.dataframe(df_preview, use_container_width=True, height=260)
+    else:
+        st.caption("Aucun aperçu persistant enregistré pour cette source.")

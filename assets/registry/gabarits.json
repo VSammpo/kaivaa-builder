@@ -123,6 +123,48 @@
       ]
     },
     {
+      "name": "NACE_REV_2",
+      "version": "v1",
+      "description": "Secteurs d'activités en france (code NACE)",
+      "columns": [
+        {
+          "name": "Code",
+          "type": "text",
+          "is_key": true
+        },
+        {
+          "name": "Code_Lvl4",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "NIV5",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "NIV4",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "NIV3",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "NIV2",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "NIV1",
+          "type": "text",
+          "is_key": false
+        }
+      ]
+    },
+    {
       "name": "SIREN",
       "version": "v1",
       "description": "Base des entreprises SIREN en france.",
@@ -138,8 +180,18 @@
           "is_key": false
         },
         {
-          "name": "Nom_entreprise",
+          "name": "Nom_Entreprise",
           "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Latitude",
+          "type": "integer",
+          "is_key": false
+        },
+        {
+          "name": "Longitude",
+          "type": "integer",
           "is_key": false
         }
       ]
@@ -152,9 +204,14 @@
       "role": "fact"
     },
     {
+      "gabarit_name": "NACE_REV_2",
+      "gabarit_version": "v1",
+      "role": "dimension"
+    },
+    {
       "gabarit_name": "SIREN",
       "gabarit_version": "v1",
-      "role": "mixed"
+      "role": "dimension"
     }
   ],
   "relations": [
@@ -166,6 +223,15 @@
       "left_key": "siren",
       "right_key": "SIREN",
       "relation_id": "Ratios Financiers (BCE/INPI)|v1->SIREN|v1::siren=SIREN"
+    },
+    {
+      "from_gabarit": "SIREN",
+      "from_version": "v1",
+      "to_gabarit": "NACE_REV_2",
+      "to_version": "v1",
+      "left_key": "NACE_REV_2",
+      "right_key": "Code",
+      "relation_id": "SIREN|v1->NACE_REV_2|v1::NACE_REV_2=Code"
     }
   ],
   "trash": {
@@ -318,6 +384,364 @@
         "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\StockUniteLegale_utf8.csv",
         "sep": ";",
         "encoding": "utf-8-sig"
+      }
+    },
+    {
+      "gabarit_name": "NACE_REV_2",
+      "gabarit_version": "v1",
+      "source": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\00 - Old\\NACE_REV_2.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig"
+      },
+      "preview": {
+        "columns": [
+          "Code",
+          "Code_Lvl4",
+          "NIV5",
+          "NIV4",
+          "NIV3",
+          "NIV2",
+          "NIV1"
+        ],
+        "rows": [
+          {
+            "Code": "01.11Z",
+            "Code_Lvl4": 111,
+            "NIV5": "Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",
+            "NIV4": "Culture de céréales (à l'exception du riz), de légumineuses et de graines oléagineuses",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.12Z",
+            "Code_Lvl4": 112,
+            "NIV5": "Culture du riz",
+            "NIV4": "Culture du riz",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.13Z",
+            "Code_Lvl4": 113,
+            "NIV5": "Culture de légumes, de melons, de racines et de tubercules",
+            "NIV4": "Culture de légumes, de melons, de racines et de tubercules",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.14Z",
+            "Code_Lvl4": 114,
+            "NIV5": "Culture de la canne à sucre",
+            "NIV4": "Culture de la canne à sucre",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.15Z",
+            "Code_Lvl4": 115,
+            "NIV5": "Culture du tabac",
+            "NIV4": "Culture du tabac",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.16Z",
+            "Code_Lvl4": 116,
+            "NIV5": "Culture de plantes à fibres",
+            "NIV4": "Culture de plantes à fibres",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.19Z",
+            "Code_Lvl4": 119,
+            "NIV5": "Autres cultures non permanentes",
+            "NIV4": "Autres cultures non permanentes",
+            "NIV3": "Cultures non permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.21Z",
+            "Code_Lvl4": 121,
+            "NIV5": "Culture de la vigne",
+            "NIV4": "Culture de la vigne",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.22Z",
+            "Code_Lvl4": 122,
+            "NIV5": "Culture de fruits tropicaux et subtropicaux",
+            "NIV4": "Culture de fruits tropicaux et subtropicaux",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.23Z",
+            "Code_Lvl4": 123,
+            "NIV5": "Culture d'agrumes",
+            "NIV4": "Culture d'agrumes",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.24Z",
+            "Code_Lvl4": 124,
+            "NIV5": "Culture de fruits à pépins et à noyau",
+            "NIV4": "Culture de fruits à pépins et à noyau",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.25Z",
+            "Code_Lvl4": 125,
+            "NIV5": "Culture d'autres fruits d'arbres ou d'arbustes et de fruits à coque",
+            "NIV4": "Culture d'autres fruits d'arbres ou d'arbustes et de fruits à coque",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.26Z",
+            "Code_Lvl4": 126,
+            "NIV5": "Culture de fruits oléagineux",
+            "NIV4": "Culture de fruits oléagineux",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.27Z",
+            "Code_Lvl4": 127,
+            "NIV5": "Culture de plantes à boissons",
+            "NIV4": "Culture de plantes à boissons",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.28Z",
+            "Code_Lvl4": 128,
+            "NIV5": "Culture de plantes à épices, aromatiques, médicinales et pharmaceutiques",
+            "NIV4": "Culture de plantes à épices, aromatiques, médicinales et pharmaceutiques",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.29Z",
+            "Code_Lvl4": 129,
+            "NIV5": "Autres cultures permanentes",
+            "NIV4": "Autres cultures permanentes",
+            "NIV3": "Cultures permanentes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.30Z",
+            "Code_Lvl4": 130,
+            "NIV5": "Reproduction de plantes",
+            "NIV4": "Reproduction de plantes",
+            "NIV3": "Reproduction de plantes",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.41Z",
+            "Code_Lvl4": 141,
+            "NIV5": "Élevage de vaches laitières",
+            "NIV4": "Élevage de vaches laitières",
+            "NIV3": "Production animale",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.42Z",
+            "Code_Lvl4": 142,
+            "NIV5": "Élevage d'autres bovins et de buffles",
+            "NIV4": "Élevage d'autres bovins et de buffles",
+            "NIV3": "Production animale",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          },
+          {
+            "Code": "01.43Z",
+            "Code_Lvl4": 143,
+            "NIV5": "Élevage de chevaux et d'autres équidés",
+            "NIV4": "Élevage de chevaux et d'autres équidés",
+            "NIV3": "Production animale",
+            "NIV2": "Culture et production animale, chasse et services annexes",
+            "NIV1": "AGRICULTURE, SYLVICULTURE ET PÊCHE"
+          }
+        ]
+      }
+    },
+    {
+      "gabarit_name": "SIREN",
+      "gabarit_version": "v1",
+      "source": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\entreprises_manufacture.csv",
+        "sep": ";",
+        "encoding": "utf-8-sig",
+        "python": "# 1. Filtrer les lignes où 'Dénomination de l'unité légale' n'est pas None\ndf = df[df['Dénomination de l\\'unité légale'].notna()]\n\n# 2. Garder les colonnes nécessaires et dédupliquer sur SIREN\ndf = df[['SIREN', 'Dénomination de l\\'unité légale', 'Activité principale de l\\'établissement.1', 'Géolocalisation de l\\'établissement']].drop_duplicates(subset='SIREN', keep='first')\n\n# 3. Split la colonne Géolocalisation en Latitude et Longitude\ndf[['Latitude', 'Longitude']] = df['Géolocalisation de l\\'établissement'].str.split(',', expand=True)\n\n# 4. Convertir Latitude et Longitude en numérique\ndf['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce')\ndf['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce')\n\n# 5. Renommer les colonnes et supprimer la colonne Géolocalisation\ndf = df.rename(columns={\n    'Dénomination de l\\'unité légale': 'Nom_Entreprise',\n    'Activité principale de l\\'établissement.1': 'NACE_REV_2'\n})\n\ndf = df[['SIREN', 'NACE_REV_2', 'Nom_Entreprise', 'Latitude', 'Longitude']]"
+      },
+      "preview": {
+        "columns": [
+          "SIREN",
+          "NACE_REV_2",
+          "Nom_Entreprise",
+          "Latitude",
+          "Longitude"
+        ],
+        "rows": [
+          {
+            "SIREN": 808694772,
+            "NACE_REV_2": "26.40Z",
+            "Nom_Entreprise": "TEQOYA",
+            "Latitude": 44.453208,
+            "Longitude": -0.369968
+          },
+          {
+            "SIREN": 423915032,
+            "NACE_REV_2": "18.13Z",
+            "Nom_Entreprise": "E.B.C.D SARL",
+            "Latitude": 45.577089,
+            "Longitude": -0.612369
+          },
+          {
+            "SIREN": 513478693,
+            "NACE_REV_2": "25.99B",
+            "Nom_Entreprise": "ALU GOUTTIERES INNOVATION",
+            "Latitude": 43.508833,
+            "Longitude": 6.477832
+          },
+          {
+            "SIREN": 953922317,
+            "NACE_REV_2": "10.71C",
+            "Nom_Entreprise": "CAJMC",
+            "Latitude": 49.505866,
+            "Longitude": 4.362991
+          },
+          {
+            "SIREN": 351490560,
+            "NACE_REV_2": "28.22Z",
+            "Nom_Entreprise": "INGERSOLL RAND EQUIPEMENTS DE PRODUCTION",
+            "Latitude": 50.363141,
+            "Longitude": 3.099279
+          },
+          {
+            "SIREN": 341713592,
+            "NACE_REV_2": "32.50B",
+            "Nom_Entreprise": "NAJA",
+            "Latitude": 46.606889,
+            "Longitude": 5.904641
+          },
+          {
+            "SIREN": 498808393,
+            "NACE_REV_2": "25.12Z",
+            "Nom_Entreprise": "SOLS INDUSTRIELS FRANCAIS PRODUCTION",
+            "Latitude": 48.354085,
+            "Longitude": 7.579559
+          },
+          {
+            "SIREN": 499251916,
+            "NACE_REV_2": "33.20B",
+            "Nom_Entreprise": "VENTIL 72",
+            "Latitude": 47.979195,
+            "Longitude": 0.171284
+          },
+          {
+            "SIREN": 408481992,
+            "NACE_REV_2": "20.16Z",
+            "Nom_Entreprise": "GALLOO PLASTICS",
+            "Latitude": 50.790067,
+            "Longitude": 3.109778
+          },
+          {
+            "SIREN": 320218100,
+            "NACE_REV_2": "27.12Z",
+            "Nom_Entreprise": "GROUPE SYSELEC",
+            "Latitude": 43.563033,
+            "Longitude": 2.268219
+          },
+          {
+            "SIREN": 504725839,
+            "NACE_REV_2": "25.61Z",
+            "Nom_Entreprise": "ENCAPSULIX",
+            "Latitude": 43.436527,
+            "Longitude": 5.44297
+          },
+          {
+            "SIREN": 819300997,
+            "NACE_REV_2": "31.09B",
+            "Nom_Entreprise": "ATELIER MC",
+            "Latitude": 48.868586,
+            "Longitude": 2.402662
+          },
+          {
+            "SIREN": 918859398,
+            "NACE_REV_2": "33.20A",
+            "Nom_Entreprise": "VAUCHE & CO",
+            "Latitude": 45.257664,
+            "Longitude": 4.258349
+          },
+          {
+            "SIREN": 912097359,
+            "NACE_REV_2": "10.61A",
+            "Nom_Entreprise": "MOULIN BIOVEZOU",
+            "Latitude": 44.291586,
+            "Longitude": 2.710407
+          },
+          {
+            "SIREN": 884241563,
+            "NACE_REV_2": "28.12Z",
+            "Nom_Entreprise": "DANFOSS POWER SOLUTIONS II",
+            "Latitude": 46.204202,
+            "Longitude": 6.270402
+          },
+          {
+            "SIREN": 918947284,
+            "NACE_REV_2": "14.13Z",
+            "Nom_Entreprise": "LA BOITE A BOUTONS",
+            "Latitude": 44.161846,
+            "Longitude": 4.622056
+          },
+          {
+            "SIREN": 794911909,
+            "NACE_REV_2": "10.71C",
+            "Nom_Entreprise": "SLFAMILY",
+            "Latitude": 44.065636,
+            "Longitude": 1.097668
+          },
+          {
+            "SIREN": 811540202,
+            "NACE_REV_2": "33.20C",
+            "Nom_Entreprise": "ARNAUD SERVICES INDUSTRIELS MAINTENANCE TECHNIQUE EQUIPEMENT",
+            "Latitude": 45.813059,
+            "Longitude": 0.443674
+          },
+          {
+            "SIREN": 392342804,
+            "NACE_REV_2": "33.20D",
+            "Nom_Entreprise": "CODICOM",
+            "Latitude": 48.598933,
+            "Longitude": -2.82508
+          }
+        ]
       }
     }
   ]

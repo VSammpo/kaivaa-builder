@@ -43,21 +43,86 @@ def _save_raw(data: dict) -> None:
 
 def set_default_source(gabarit_name: str, gabarit_version: str, source: dict | None) -> None:
     """
-    source: ex. {"type":"csv","path":"/abs/path/file.csv","sep":";","encoding":"utf-8-sig"}
-    Passer None pour la retirer.
+    Enregistre (ou retire) la source par défaut pour un gabarit.
+    Si source is None -> supprime aussi l'éventuel preview mémorisé.
     """
     data = _load_raw()
     defs = data.get("defaults", [])
     key = (gabarit_name, gabarit_version or "v1")
-    defs = [d for d in defs if not (d.get("gabarit_name")==key[0] and (d.get("gabarit_version") or "v1")==key[1])]
-    if source:
+
+    # Filtrer l'entrée existante
+    new_defs = []
+    existing_preview = None
+    for d in defs:
+        if d.get("gabarit_name") == key[0] and (d.get("gabarit_version") or "v1") == key[1]:
+            existing_preview = d.get("preview")  # on le garde si on réécrit la source
+            continue
+        new_defs.append(d)
+
+    # Si on retire la source -> on retire aussi le preview
+    if source is None:
+        data["defaults"] = new_defs
+        _save_raw(data)
+        return
+
+    # On réinsère l'entrée, en conservant le preview existant si présent
+    entry = {
+        "gabarit_name": key[0],
+        "gabarit_version": key[1],
+        "source": source,
+    }
+    if existing_preview:
+        entry["preview"] = existing_preview
+
+    new_defs.append(entry)
+    data["defaults"] = new_defs
+    _save_raw(data)
+
+def set_default_preview(gabarit_name: str, gabarit_version: str, rows: list[dict], columns: list[str]) -> None:
+    """
+    Mémorise un mini-apercu (rows max 20) pour la donnée par défaut du gabarit.
+    Crée l'entrée si elle n'existe pas encore (avec source vide).
+    """
+    data = _load_raw()
+    defs = data.get("defaults", [])
+    v = (gabarit_version or "v1")
+
+    found = False
+    for d in defs:
+        if d.get("gabarit_name") == gabarit_name and (d.get("gabarit_version") or "v1") == v:
+            d["preview"] = {
+                "columns": list(columns or []),
+                "rows": list(rows or [])[:20],
+            }
+            found = True
+            break
+
+    if not found:
         defs.append({
-            "gabarit_name": key[0],
-            "gabarit_version": key[1],
-            "source": source,
+            "gabarit_name": gabarit_name,
+            "gabarit_version": v,
+            "source": {},
+            "preview": {
+                "columns": list(columns or []),
+                "rows": list(rows or [])[:20],
+            }
         })
+
     data["defaults"] = defs
     _save_raw(data)
+
+
+def get_default_preview(gabarit_name: str, gabarit_version: str) -> dict | None:
+    """
+    Retourne un dict {"columns": [...], "rows": [...]} ou None si absent.
+    """
+    data = _load_raw()
+    v = (gabarit_version or "v1")
+    for d in data.get("defaults", []):
+        if d.get("gabarit_name") == gabarit_name and (d.get("gabarit_version") or "v1") == v:
+            return d.get("preview") or None
+    return None
+
 
 def get_default_source(gabarit_name: str, gabarit_version: str) -> dict | None:
     data = _load_raw()
