@@ -20,8 +20,9 @@ st.caption("Structures de tables réutilisables pour vos projets")
 col1, col2 = st.columns([3, 1])
 with col2:
     if st.button("➕ Nouveau gabarit", type="primary", use_container_width=True):
-        st.session_state.selected_gabarit = None  # Mode création
-        st.switch_page("pages/_3b_➕_Form_Gabarit.py")
+        st.session_state.selected_gabarit = None
+        st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+
 
 st.divider()
 
