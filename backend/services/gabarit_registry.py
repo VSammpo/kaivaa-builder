@@ -426,3 +426,282 @@ def get_relations(gabarit_name: str, gabarit_version: str) -> list[dict]:
         if r.get("from_gabarit") == (gabarit_name or "").strip()
         and (r.get("from_version") or "v1") == (gabarit_version or "v1").strip()
     ]
+
+# ====== MÉTHODES DE GABARIT ==================================================
+# Stockage dans le même registre JSON, sous clés:
+#  - "methods": [ { "id", "name", "description", "output_column", "param_schema": [...], "required_columns": [...], "code" } ]
+#  - "gabarit_method_links": [ { "gabarit_name", "gabarit_version", "method_id", "order", "enabled": bool } ]
+
+import uuid
+
+def _ensure_methods_keys(data: dict) -> dict:
+    if "methods" not in data:
+        data["methods"] = []
+    if "gabarit_method_links" not in data:
+        data["gabarit_method_links"] = []
+    return data
+
+def list_methods() -> list[dict]:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    return data.get("methods", [])
+
+def get_method(method_id: str) -> dict | None:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    for m in data["methods"]:
+        if m.get("id") == method_id:
+            return m
+    return None
+
+def upsert_method(
+    name: str,
+    description: str,
+    param_schema: list[dict],
+    required_columns: list[str],
+    code: str,
+    output_column: str | None = None,
+    method_id: str | None = None,
+) -> dict:
+    """
+    Méthode = colonne calculée.
+    - output_column: nom de la colonne à créer/écraser
+    - code: snippet Python qui doit définir une variable 'value'
+            (Series/array/scalar) qui sera assignée à df[output_column]
+    - param_schema: liste d'objets:
+        - name: str
+        - type: "text"|"number"|"boolean"|"select"|"select_from_column"
+        - default: any (optionnel)
+        - options: list[str] (si type == "select")
+        - source_column: str (si type == "select_from_column")
+        - label: str (optionnel)
+    """
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    methods = data["methods"]
+
+    payload = {
+        "name": name,
+        "description": description,
+        "output_column": (output_column or "").strip(),
+        "param_schema": param_schema or [],
+        "required_columns": required_columns or [],
+        "code": code or "",
+    }
+
+    if method_id:
+        # update
+        found = False
+        for i, m in enumerate(methods):
+            if m.get("id") == method_id:
+                payload["id"] = method_id
+                methods[i] = payload
+                found = True
+                break
+        if not found:
+            raise ValueError(f"Method not found: {method_id}")
+        data["methods"] = methods
+        _save_raw(data)
+        return methods[i]
+    else:
+        mid = str(uuid.uuid4())
+        payload["id"] = mid
+        methods.append(payload)
+        data["methods"] = methods
+        _save_raw(data)
+        return payload
+
+def delete_method(method_id: str) -> None:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    methods = [m for m in data["methods"] if m.get("id") != method_id]
+    links = [l for l in data["gabarit_method_links"] if l.get("method_id") != method_id]
+    data["methods"] = methods
+    data["gabarit_method_links"] = links
+    _save_raw(data)
+
+def attach_method_to_gabarit(gabarit_name: str, gabarit_version: str, method_id: str, order: int = 1, enabled: bool = True) -> None:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    links = data["gabarit_method_links"]
+
+    # remove existing identical link
+    links = [l for l in links if not (
+        l.get("gabarit_name") == gabarit_name and
+        (l.get("gabarit_version") or "v1") == (gabarit_version or "v1") and
+        l.get("method_id") == method_id
+    )]
+
+    links.append({
+        "gabarit_name": gabarit_name,
+        "gabarit_version": gabarit_version or "v1",
+        "method_id": method_id,
+        "order": int(order),
+        "enabled": bool(enabled),
+    })
+    data["gabarit_method_links"] = links
+    _save_raw(data)
+
+def detach_method_from_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> None:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    links = [
+        l for l in data["gabarit_method_links"]
+        if not (
+            l.get("gabarit_name") == gabarit_name and
+            (l.get("gabarit_version") or "v1") == (gabarit_version or "v1") and
+            l.get("method_id") == method_id
+        )
+    ]
+    data["gabarit_method_links"] = links
+    _save_raw(data)
+
+def list_gabarit_methods(gabarit_name: str, gabarit_version: str) -> list[dict]:
+    data = _load_raw()
+    data = _ensure_methods_keys(data)
+    links = [
+        l for l in data["gabarit_method_links"]
+        if l.get("gabarit_name") == gabarit_name and (l.get("gabarit_version") or "v1") == (gabarit_version or "v1")
+    ]
+    methods_index = {m["id"]: m for m in data.get("methods", [])}
+    enriched = []
+    for l in sorted(links, key=lambda x: x.get("order", 1)):
+        m = methods_index.get(l["method_id"])
+        if m:
+            enriched.append({
+                "link": l,
+                "method": m,
+            })
+    return enriched
+
+# ====== MÉTHODES PAR GABARIT =================================================
+# Stockage dans le registre JSON sous clé:
+# "gabarit_methods": {
+#    "<name>|<version>": [
+#       { "id", "name", "description", "output_column",
+#         "param_schema": [...], "required_columns": [...],
+#         "code", "order": int }
+#    ],
+#    ...
+# }
+
+import uuid
+
+def _ensure_gab_methods_key(data: dict) -> dict:
+    if "gabarit_methods" not in data:
+        data["gabarit_methods"] = {}
+    return data
+
+def _gab_key(gabarit_name: str, gabarit_version: str) -> str:
+    return f"{gabarit_name}|{gabarit_version or 'v1'}"
+
+def list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[dict]:
+    data = _load_raw()
+    _ensure_gab_methods_key(data)
+    arr = data["gabarit_methods"].get(_gab_key(gabarit_name, gabarit_version), [])
+    # tri par order croissant
+    return sorted(arr, key=lambda m: m.get("order", 1))
+
+def get_method_for_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> dict | None:
+    data = _load_raw()
+    _ensure_gab_methods_key(data)
+    for m in data["gabarit_methods"].get(_gab_key(gabarit_name, gabarit_version), []):
+        if m.get("id") == method_id:
+            return m
+    return None
+
+def upsert_method_for_gabarit(
+    gabarit_name: str,
+    gabarit_version: str,
+    *,
+    name: str,
+    description: str,
+    output_column: str,
+    param_schema: list[dict],
+    required_columns: list[str],
+    code: str,
+    order: int | None = None,
+    method_id: str | None = None,
+) -> dict:
+    """
+    Crée ou met à jour une 'méthode-colonne' propre au gabarit.
+    Champs:
+      - output_column: nom de la colonne calculée
+      - code: snippet Python définissant 'value'
+      - order: ordre d'exécution (entier)
+    """
+    data = _load_raw()
+    _ensure_gab_methods_key(data)
+    key = _gab_key(gabarit_name, gabarit_version)
+    arr = data["gabarit_methods"].get(key, [])
+
+    if method_id:
+        # update
+        found = False
+        for i, m in enumerate(arr):
+            if m.get("id") == method_id:
+                new_m = {
+                    "id": method_id,
+                    "name": name,
+                    "description": description,
+                    "output_column": (output_column or "").strip(),
+                    "param_schema": param_schema or [],
+                    "required_columns": required_columns or [],
+                    "code": code or "",
+                    "order": int(order if order is not None else m.get("order", 1)),
+                }
+                arr[i] = new_m
+                found = True
+                break
+        if not found:
+            raise ValueError(f"Method not found in gabarit: {method_id}")
+        data["gabarit_methods"][key] = arr
+        _save_raw(data)
+        return new_m
+    else:
+        mid = str(uuid.uuid4())
+        new_order = int(order) if order is not None else (arr[-1].get("order", 0) + 1 if arr else 1)
+        entry = {
+            "id": mid,
+            "name": name,
+            "description": description,
+            "output_column": (output_column or "").strip(),
+            "param_schema": param_schema or [],
+            "required_columns": required_columns or [],
+            "code": code or "",
+            "order": new_order,
+        }
+        arr.append(entry)
+        data["gabarit_methods"][key] = arr
+        _save_raw(data)
+        return entry
+
+def delete_method_for_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> None:
+    data = _load_raw()
+    _ensure_gab_methods_key(data)
+    key = _gab_key(gabarit_name, gabarit_version)
+    arr = data["gabarit_methods"].get(key, [])
+    arr = [m for m in arr if m.get("id") != method_id]
+    data["gabarit_methods"][key] = arr
+    _save_raw(data)
+
+def reorder_methods_for_gabarit(gabarit_name: str, gabarit_version: str, ordered_ids: list[str]) -> None:
+    """Applique un nouvel ordre aux méthodes du gabarit selon la liste d'ids fournie."""
+    data = _load_raw()
+    _ensure_gab_methods_key(data)
+    key = _gab_key(gabarit_name, gabarit_version)
+    arr = data["gabarit_methods"].get(key, [])
+    idx = {m["id"]: m for m in arr}
+    new_arr = []
+    for pos, mid in enumerate(ordered_ids, start=1):
+        if mid in idx:
+            m = idx[mid]
+            m["order"] = pos
+            new_arr.append(m)
+    # rajoute les éventuelles méthodes non citées en fin
+    for m in arr:
+        if m["id"] not in ordered_ids:
+            m["order"] = len(new_arr) + 1
+            new_arr.append(m)
+    data["gabarit_methods"][key] = new_arr
+    _save_raw(data)

@@ -35,6 +35,18 @@
         "type_bilan",
         "confidentiality"
       ]
+    },
+    {
+      "gabarit_name": "NACE_REV_2",
+      "gabarit_version": "v1",
+      "columns_required": [
+        "Code",
+        "NIV5",
+        "NIV4",
+        "NIV3",
+        "NIV2",
+        "NIV1"
+      ]
     }
   ],
   "gabarit_pipelines": [
@@ -113,5 +125,5 @@
   ],
   "joins": [],
   "created_at": "2025-10-05T15:56:55+02:00",
-  "updated_at": "2025-10-05T16:00:57+02:00"
+  "updated_at": "2025-10-05T23:20:26+02:00"
 }
