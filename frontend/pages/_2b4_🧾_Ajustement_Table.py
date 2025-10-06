@@ -3,14 +3,20 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+import traceback
 
+# ---------------------------------------------------------------------
+# Bootstrap import path
+# ---------------------------------------------------------------------
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
 from backend.services.gabarit_registry import (
-    get_gabarit, get_default_preview,
+    get_gabarit,
+    get_default_preview,
+    list_methods_for_gabarit,  # utilisé pour fallback colonnes
 )
 
 st.set_page_config(page_title="Ajustement de la table", page_icon="🧾", layout="wide")
@@ -91,9 +97,9 @@ if not usages:
 choices, index_map = [], []
 for u in usages:
     tgt = u.get("excel_target") or {}
-    sheet, table = tgt.get("sheet", ""), tgt.get("table", "")
-    if sheet or table:
-        label = f"{sheet} / {table} — {u.get('gabarit_name')} (v{u.get('gabarit_version','v1')})"
+    sheet_u, table_u = tgt.get("sheet", ""), tgt.get("table", "")
+    if sheet_u or table_u:
+        label = f"{sheet_u} / {table_u} — {u.get('gabarit_name')} (v{u.get('gabarit_version','v1')})"
         choices.append(label)
         index_map.append(u)
 
@@ -103,26 +109,295 @@ gname, gver = usage.get("gabarit_name"), usage.get("gabarit_version", "v1")
 sheet = (usage.get("excel_target") or {}).get("sheet", "")
 table = (usage.get("excel_target") or {}).get("table", "")
 
-tab_adjust, tab_preview = st.tabs(["🛠️ Ajustement", "👀 Prévisualisation"])
+tab_script, tab_adjust, tab_preview = st.tabs(["🧪 Script Python", "🛠️ Ajustement", "👀 Prévisualisation"])
 
 
-# ============================ Fonctions utilitaires ============================
+# ============================ Utilitaires communs ============================
 
-def _resolve_default_cols(u: dict) -> list[str]:
-    """Colonnes par défaut (base + enrich + sorties de méthodes)."""
-    from backend.services.gabarit_registry import list_methods_for_gabarit
+def _load_df_for_gabarit(name: str, ver: str, full: bool = False) -> tuple[pd.DataFrame | None, bool]:
+    """
+    Retourne (df, is_preview).
 
+    Comportement voulu :
+      - full=True  : on TENTE d'abord le FULL (registry.dataset -> dataset_service).
+                     S'il est indisponible, on NE RETOMBE PAS en preview.
+                     => on renvoie (None, False) pour que l'appelant affiche une erreur claire.
+      - full=False : on prend la preview persistée si dispo,
+                     sinon on lit le FULL et on renvoie head(20) en mode preview.
+
+    NB : le pré-typage/alignement est fait PLUS TARD (dans _compose_with_enrichments) si nécessaire.
+    """
+    # ----- chemin FULL -----
+    if full:
+        # 1) via registry facade
+        try:
+            from backend.services.gabarit_registry import get_default_dataframe
+            df_full = get_default_dataframe(name, ver)
+            if isinstance(df_full, pd.DataFrame) and not df_full.empty:
+                return df_full, False  # FULL ok
+        except Exception:
+            pass
+        # 2) via dataset_service direct
+        try:
+            from backend.services.dataset_service import get_default_dataframe_for_gabarit
+            df_full = get_default_dataframe_for_gabarit(name, ver)
+            if isinstance(df_full, pd.DataFrame) and not df_full.empty:
+                return df_full, False  # FULL ok
+        except Exception:
+            pass
+
+        # FULL demandé mais indisponible -> PAS DE FALLBACK preview ici
+        return None, False
+
+    # ----- chemin PREVIEW (rapide) -----
+    # preview persisté (registry)
+    try:
+        from backend.services.gabarit_registry import get_default_preview
+        prev = get_default_preview(name, ver) or {}
+        rows, cols = prev.get("rows") or [], prev.get("columns") or []
+        if rows and cols:
+            return pd.DataFrame(rows, columns=cols), True
+    except Exception:
+        pass
+
+    # sinon : lire le FULL et ne renvoyer qu'un échantillon -> preview
+    try:
+        from backend.services.gabarit_registry import get_default_dataframe
+        df_full = get_default_dataframe(name, ver)
+        if isinstance(df_full, pd.DataFrame) and not df_full.empty:
+            return df_full.head(20).copy(), True
+    except Exception:
+        pass
+    try:
+        from backend.services.dataset_service import get_default_dataframe_for_gabarit
+        df_full = get_default_dataframe_for_gabarit(name, ver)
+        if isinstance(df_full, pd.DataFrame) and not df_full.empty:
+            return df_full.head(20).copy(), True
+    except Exception:
+        pass
+
+    return None, True
+
+def _compose_with_enrichments(
+    u: dict,
+    *,
+    full: bool,
+    bring_all_last: bool = False,  # ramener toutes les colonnes du dernier saut (utile pour tester un script)
+    log: bool = False,             # afficher des KPIs (tailles, mode FULL/PREVIEW, taux de match)
+) -> tuple[pd.DataFrame | None, bool, str | None]:
+    """
+    Construit la table base + enrichissements (N sauts) à partir des données par défaut.
+    Renvoie (df, complete, err).
+      - df: DataFrame composé (ou None si impossible)
+      - complete: True si toutes les tables ont été chargées en FULL quand full=True (sinon False)
+      - err: message d'erreur explicite si pertinent
+    Règles:
+      - On normalise les clés avant chaque merge.
+      - On transporte les clés intermédiaires (left_key du saut suivant).
+      - On évite de ramener des colonnes déjà présentes à gauche.
+      - On ne re-sélectionne jamais right_key dans les colonnes rapatriées.
+    """
+    # Charger la base
+    df, is_preview = _load_df_for_gabarit(gname, gver, full=full)
+    if df is None:
+        if full:
+            return None, False, f"FULL demandé mais aucune source n'est définie pour {gname} (v{gver})."
+        return None, False, f"Aucune donnée par défaut pour {gname} (v{gver})."
+
+    if log:
+        _log_kpi("📦 Source de base", {
+            "gabarit": f"{gname} (v{gver})",
+            "lignes": len(df),
+            "colonnes": len(df.columns),
+            "mode": "PREVIEW" if is_preview else "FULL",
+        })
+
+    # Si on demandait full et qu'on a une preview, on n'est pas "complete"
+    complete = (not is_preview) if full else True
+
+    # --- on mémorise les colonnes réellement ajoutées par les enrichissements
+    added_enriched_cols: set[str] = set()
+
+    # Parcours des enrichissements
+    for e in (u.get("enrichments") or []):
+        path = e.get("path") or []
+        if not path:
+            continue
+
+        # Enchaîner les sauts
+        for i, step in enumerate(path):
+            frm, left_key, to, right_key = step  # [from, left_key, to, right_key]
+
+            df_to, is_prev_to = _load_df_for_gabarit(to, "v1", full=full)
+            if df_to is None:
+                if full:
+                    return df, False, f"FULL demandé mais aucune source n'est définie pour {to} (v1)."
+                return df, False, f"Aucune donnée par défaut pour {to} (v1)."
+
+            if log:
+                _log_kpi(f"🔗 Table d'enrichissement #{i+1} → {to}", {
+                    "lignes": len(df_to),
+                    "colonnes": len(df_to.columns),
+                    "mode": "PREVIEW" if is_prev_to else "FULL",
+                    "left_key": left_key,
+                    "right_key": right_key,
+                })
+
+            # Colonnes à rapatrier pour CE saut (sans dupliquer la clé droite)
+            cols_to_fetch: set[str] = set()
+
+            if i + 1 < len(path):
+                # on aura besoin de la left_key du saut suivant (présente dans 'to')
+                next_left_key = path[i + 1][1]
+                if next_left_key and next_left_key in df_to.columns:
+                    cols_to_fetch.add(next_left_key)
+            else:
+                # Dernier saut
+                if bring_all_last:
+                    # ramener toutes les colonnes de la cible (sauf la clé droite)
+                    for c in df_to.columns:
+                        if c != right_key:
+                            cols_to_fetch.add(c)
+                else:
+                    # rigoureux : seulement les colonnes sélectionnées pour l'enrichissement
+                    for c in (e.get("columns") or []):
+                        if c and c in df_to.columns:
+                            cols_to_fetch.add(c)
+
+            # NE PAS inclure la clé droite dans les colonnes à rapatrier
+            cols_to_fetch.discard(right_key)
+
+            # Éviter de ramener des colonnes déjà présentes dans la table de gauche
+            cols_to_add = [c for c in cols_to_fetch if c not in df.columns]
+
+            # Vérifier la présence des clés
+            if left_key not in df.columns or right_key not in df_to.columns:
+                return df, False, f"Clé manquante pour joindre {frm} → {to} ({left_key} / {right_key})."
+
+            # Normaliser les clés avant merge (zéro-padding SIREN/SIRET, retrait des séparateurs, etc.)
+            df[left_key] = _normalize_key(df[left_key], left_key)
+            df_to[right_key] = _normalize_key(df_to[right_key], right_key)
+
+            # Sous-ensemble de la droite : [right_key] + colonnes utiles (sans doublons)
+            right_cols = [right_key] + cols_to_add
+            seen = set()
+            right_cols = [c for c in right_cols if not (c in seen or seen.add(c))]
+            right_subset = df_to[right_cols].drop_duplicates()
+
+            if log:
+                _log_kpi(f"🧮 Jointure {frm} → {to}", {
+                    "left rows": len(df),
+                    "right rows (subset)": len(right_subset),
+                    "cols rapatriées": ", ".join(cols_to_add) if cols_to_add else "—",
+                })
+
+            # MERGE
+            df = df.merge(
+                right_subset,
+                left_on=left_key,
+                right_on=right_key,
+                how="left",
+            )
+
+            # On ne garde pas la clé de droite après la jointure
+            if right_key in df.columns:
+                df.drop(columns=[right_key], inplace=True)
+
+            # mémoriser les colonnes effectivement ajoutées par les enrichissements
+            added_enriched_cols.update([c for c in cols_to_add if c in df.columns])
+
+            # KPI après merge (compte seulement sur les colonnes effectivement présentes)
+            if log:
+                present_after = [c for c in cols_to_add if c in df.columns]
+                after_non_na = df[present_after].notna().any(axis=1).sum() if present_after else 0
+                total = len(df)
+                rate = f"{(after_non_na/total*100):.1f}%" if total else "0%"
+                _log_kpi("📊 Résultat jointure", {
+                    "lignes totales": total,
+                    "lignes avec enrichissement (≥1 col)": after_non_na,
+                    "taux de match (approx)": rate,
+                })
+
+            # si on demandait FULL mais que cette table d'enrichissement est en preview → complete = False
+            if full and is_prev_to:
+                complete = False
+
+    # === Filtrage final des colonnes enrichies ===
+    # On garde toutes les colonnes de base + uniquement les colonnes d'enrichissement sélectionnées dans l'UI.
+    selected_enriched = set()
+    for e in (u.get("enrichments") or []):
+        selected_enriched.update([c for c in (e.get("columns") or []) if c])
+
+    # Colonnes enrichies qu'on retire (car non sélectionnées)
+    to_drop = [c for c in added_enriched_cols if c not in selected_enriched and c in df.columns]
+    if to_drop:
+        df.drop(columns=to_drop, inplace=True, errors="ignore")
+        if log:
+            _log_kpi("🧹 Nettoyage colonnes enrichies non sélectionnées", {
+                "drop": ", ".join(to_drop)
+            })
+
+    return df, complete, None
+
+
+def _apply_methods(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applique les méthodes du gabarit si ton moteur est disponible.
+    Fallback silencieux si absent.
+    """
+    try:
+        from backend.services.method_executor import MethodExecutor  # adapte si besoin
+        executor = MethodExecutor()
+        df2 = executor.apply_methods_on_dataframe(gname, gver, df)  # adapte si besoin
+        if isinstance(df2, pd.DataFrame):
+            return df2
+    except Exception:
+        pass
+    return df
+
+
+def _apply_overlay(df: pd.DataFrame, code: str) -> tuple[pd.DataFrame | None, str | None]:
+    """
+    Exécute le code utilisateur dans un contexte local avec 'pd' et 'df'.
+    Le script peut modifier 'df' en place ou réassigner df = ...
+    Retourne (df_result, error_message).
+    """
+    try:
+        local_vars = {"pd": pd, "df": df.copy()}
+        exec(code, {}, local_vars)
+        result = local_vars.get("df", None)
+        if isinstance(result, pd.DataFrame):
+            return result, None
+        if isinstance(local_vars.get("df"), pd.DataFrame):
+            return local_vars["df"], None
+        return None, "Le script n'a pas produit de DataFrame 'df'."
+    except Exception as ex:
+        tb = traceback.format_exc()
+        return None, f"{type(ex).__name__}: {ex}\n{tb}"
+
+
+def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
+    """
+    Colonnes à proposer dans l'onglet Ajustement :
+    - Si overlay_python est exécutable et que les données par défaut sont complètes → colonnes du df overlayé.
+    - Sinon, colonnes 'par défaut' (base + enrich + sorties de méthodes).
+    """
+    code = (u.get("overlay_python") or "").strip()
+    df, complete, _ = _compose_with_enrichments(u, full=False)
+    if code and complete and isinstance(df, pd.DataFrame):
+        df = _apply_methods(df)
+        df2, err = _apply_overlay(df, code)
+        if err is None and isinstance(df2, pd.DataFrame):
+            return list(df2.columns)
+
+    # fallback (base + enrich + sorties méthodes, selon registry)
     g = get_gabarit(gname, gver)
     base = [c.name for c in (g.columns or [])]
     cols = u.get("columns_enabled") or base[:]
-
-    # enrichissements : colonnes rapatriées
     for e in (u.get("enrichments") or []):
         for c in (e.get("columns") or []):
             if c not in cols:
                 cols.append(c)
-
-    # sorties de méthodes
     selm = set(u.get("methods") or [])
     if selm:
         allm = list_methods_for_gabarit(gname, gver) or []
@@ -132,27 +407,142 @@ def _resolve_default_cols(u: dict) -> list[str]:
                 outc = (m.get("output_column") or "").strip()
                 if outc and outc not in cols:
                     cols.append(outc)
-
     return list(dict.fromkeys(cols))
 
 
+def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None, str | None]:
+    df, complete, err = _compose_with_enrichments(u, full=full, bring_all_last=True, log=True)
+    if df is None:
+        return None, err or "Aucune donnée de départ."
+    df = _apply_methods(df)
+    code = (u.get("overlay_python") or "").strip()
+    if code:
+        df2, err2 = _apply_overlay(df, code)
+        if err2 is None and isinstance(df2, pd.DataFrame):
+            df = df2
+        else:
+            return None, err2
+    final_cols_cfg = u.get("final_order") or df.columns.tolist()
+    final_excl_cfg = set(u.get("final_excludes") or [])
+    final_cols = [c for c in final_cols_cfg if c in df.columns and c not in final_excl_cfg] + \
+                 [c for c in df.columns if c not in final_cols_cfg and c not in final_excl_cfg]
+    # petit log final
+    _log_kpi("📦 Sortie pipeline", {"lignes": len(df), "colonnes": len(final_cols), "complete(full)": complete})
+    return df[final_cols], None
+
+
 def _sample_value(col: str) -> str:
+    """Exemple rapide depuis le preview de base."""
     try:
         prev = get_default_preview(gname, gver) or {}
         rows, cols = prev.get("rows") or [], prev.get("columns") or []
         if rows and cols:
-            df = pd.DataFrame(rows, columns=cols)
-            if col in df.columns and not df.empty:
-                return str(df[col].iloc[0])[:60]
+            dfp = pd.DataFrame(rows, columns=cols)
+            if col in dfp.columns and not dfp.empty:
+                return str(dfp[col].iloc[0])[:60]
     except Exception:
         pass
     return "—"
 
 
-# ============================ Onglet AJUSTEMENT ============================
+
+def _normalize_key(series: pd.Series, colname: str) -> pd.Series:
+    s = series.astype(str).str.strip()
+    s = s.str.replace(r"[^0-9A-Za-z]", "", regex=True)
+    low = (colname or "").lower()
+    if any(k in low for k in ["siren", "siret"]):
+        digits = s.str.replace(r"[^0-9]", "", regex=True)
+        if "siret" in low:
+            s = digits.str.zfill(14)
+        else:
+            s = digits.str.zfill(9)
+    return s
+
+
+def _log_kpi(title: str, kv: dict):
+    with st.expander(title, expanded=False):
+        for k, v in kv.items():
+            st.caption(f"• {k}: {v}")
+
+
+
+# ============================ Onglet 1 — Script Python ============================
+
+with tab_script:
+    st.caption(f"Feuille : **{sheet}** • Table : **{table}**")
+    st.markdown("**Écrivez un script Python qui transforme `df` (DataFrame).** Vous avez accès à `pd` (pandas) et `df`. Le script peut modifier `df` en place ou faire `df = ...`.")
+    code_default = (usage.get("overlay_python") or "").strip()
+    code = st.text_area("Script Python", value=code_default, height=220,
+                        placeholder="Exemples :\n# df = df[df['Année'] >= 2023]\n# df['CA_par_salarie'] = df['CA'] / df['Effectif']")
+
+    colL, colR = st.columns([2, 1], gap="large")
+    with colL:
+        if st.button("💾 Enregistrer le script", type="primary", use_container_width=True, key="btn_save_overlay"):
+            with DatabaseService.get_session() as db:
+                ts = TemplateService(db)
+                cfg2 = ts.get_config(template_id)
+                usages2 = cfg2.get("gabarit_usages", []) or []
+                for uu in usages2:
+                    tgt2 = uu.get("excel_target") or {}
+                    if (
+                        uu.get("gabarit_name") == gname
+                        and (uu.get("gabarit_version") or "v1") == gver
+                        and (tgt2.get("sheet") or "") == sheet
+                        and (tgt2.get("table") or "") == table
+                    ):
+                        uu["overlay_python"] = code
+                        break
+                cfg2["gabarit_usages"] = usages2
+                ts.update_config(template_id, cfg2)
+            st.success("✅ Script enregistré")
+
+        # Tests
+        ctest1, ctest2 = st.columns(2, gap="small")
+
+        # ⚡ Test rapide (prévisualisation)
+        with ctest1:
+            if st.button("⚡ Test rapide (prévisualisation)", use_container_width=True, key="btn_run_overlay_quick"):
+                df_prev, complete, err = _compose_with_enrichments(usage, full=False, bring_all_last=True)
+
+                if err:
+                    st.info(err)
+                elif df_prev is None:
+                    st.info("Aucune donnée de prévisualisation.")
+                else:
+                    df_prev = _apply_methods(df_prev)
+                    df2, err2 = _apply_overlay(df_prev, code)
+                    if err2:
+                        st.error(f"Erreur à l’exécution du script :\n\n{err2}")
+                    else:
+                        st.success("Aperçu rapide (prévisualisation) — 15 premières lignes :")
+                        st.dataframe(df2.head(15), use_container_width=True, hide_index=True)
+
+        # 🚀 Test complet (pipeline)
+        with ctest2:
+            if st.button("🚀 Test complet (pipeline)", use_container_width=True, key="btn_run_overlay_full"):
+                df_final, err = _compose_full_pipeline(usage, full=True) 
+
+                if err:
+                    st.error(f"Erreur pipeline :\n\n{err}")
+                elif df_final is None or df_final.empty:
+                    st.info("Pipeline exécuté mais aucun résultat affichable.")
+                else:
+                    st.success("Résultat du pipeline — 20 premières lignes :")
+                    st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
+
+    with colR:
+        st.markdown("**Colonnes actuellement disponibles**")
+        cols_eff = _resolve_effective_columns_for_adjustment(usage)
+        if cols_eff:
+            st.write(", ".join(cols_eff))
+        else:
+            st.caption("—")
+
+
+# ============================ Onglet 2 — AJUSTEMENT ============================
 
 with tab_adjust:
-    default_cols = _resolve_default_cols(usage)
+    default_cols = _resolve_effective_columns_for_adjustment(usage)
 
     # État local (lié à la table sélectionnée)
     usage_key = f"{gname}|{gver}|{sheet}|{table}"
@@ -161,12 +551,12 @@ with tab_adjust:
         st.session_state["adj_final_order"] = list(usage.get("final_order") or default_cols[:])
         st.session_state["adj_final_excludes"] = set(usage.get("final_excludes") or [])
 
-    # Synchronisation avec la structure par défaut
+    # Synchronisation avec la structure effective
     final_order = [c for c in st.session_state["adj_final_order"] if c in default_cols] + \
                   [c for c in default_cols if c not in st.session_state["adj_final_order"]]
     final_excludes = set([c for c in st.session_state["adj_final_excludes"] if c in default_cols])
 
-    # Métadonnées (source/type)
+    # Métadonnées (source/type) — best effort
     g = get_gabarit(gname, gver)
     type_map = {c.name: (c.type or "text") for c in g.columns}
     source_map = {c: "gabarit" for c in (usage.get("columns_enabled") or [c.name for c in g.columns])}
@@ -186,39 +576,27 @@ with tab_adjust:
         source_map[m] = f"method:{m}"
         type_map.setdefault(m, "unknown")
 
-    # Tableau compact “à la Airtable”
     st.markdown("### Colonnes injectées")
     st.caption("Cliquez sur ⬆️/⬇️ pour modifier l'ordre, 🗑️ pour retirer la colonne de la **sortie finale** (sans impacter les sélections amont).")
 
     hdr1, hdr2, hdr3, hdr4, hdr5 = st.columns([3, 2, 2, 2, 2], gap="small")
-    with hdr1:
-        st.markdown("**Colonne**")
-    with hdr2:
-        st.markdown("**Source**")
-    with hdr3:
-        st.markdown("**Type**")
-    with hdr4:
-        st.markdown("**Exemple**")
-    with hdr5:
-        st.markdown("**Actions**")
+    with hdr1: st.markdown("**Colonne**")
+    with hdr2: st.markdown("**Source**")
+    with hdr3: st.markdown("**Type**")
+    with hdr4: st.markdown("**Exemple**")
+    with hdr5: st.markdown("**Actions**")
 
-    # positions visibles (pour des flèches correctes)
     visible_positions = [i for i, c in enumerate(final_order) if c not in final_excludes]
 
     move_up_idx = move_down_idx = drop_idx = None
 
     for vidx, pos in enumerate(visible_positions):
-        col = final_order[pos]
+        _col = final_order[pos]
         c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2], gap="small")
-
-        with c1:
-            st.write(col)
-        with c2:
-            st.caption(source_map.get(col, "—"))
-        with c3:
-            st.caption(type_map.get(col, "text"))
-        with c4:
-            st.caption(_sample_value(col))
+        with c1: st.write(_col)
+        with c2: st.caption(source_map.get(_col, "—"))
+        with c3: st.caption(type_map.get(_col, "text"))
+        with c4: st.caption(_sample_value(_col))
         with c5:
             b1, b2, b3 = st.columns([1, 1, 1], gap="small")
             with b1:
@@ -231,10 +609,8 @@ with tab_adjust:
                 if st.button("🗑️", key=f"adj_rm_{usage_key}_{vidx}", use_container_width=True):
                     drop_idx = vidx
 
-        # séparateur discret
         st.markdown("<div style='border-bottom:1px dashed #e6e8eb; margin:6px 0 10px 0;'></div>", unsafe_allow_html=True)
 
-    # Appliquer les actions
     if move_up_idx is not None:
         cur = visible_positions[move_up_idx]
         prev = visible_positions[move_up_idx - 1]
@@ -255,7 +631,6 @@ with tab_adjust:
         st.session_state["adj_final_excludes"] = final_excludes
         st.rerun()
 
-    # Actions de page
     colA, colB = st.columns([1, 1])
     with colA:
         if st.button("💾 Enregistrer l’ajustement", type="primary", use_container_width=True, key=f"btn_save_adj_{usage_key}"):
@@ -272,76 +647,34 @@ with tab_adjust:
             st.rerun()
     with colB:
         if st.button("🔁 Réinitialiser", use_container_width=True, key=f"btn_reset_adj_{usage_key}"):
+            eff = _resolve_effective_columns_for_adjustment(usage)
             with DatabaseService.get_session() as db:
                 ts = TemplateService(db)
                 ts.update_usage_final_view(
                     template_id=template_id,
                     gabarit_name=gname,
                     gabarit_version=gver,
-                    final_order=default_cols,
+                    final_order=eff,
                     final_excludes=[],
                 )
             st.info("Réinitialisé")
-            st.session_state["adj_final_order"] = default_cols[:]
+            st.session_state["adj_final_order"] = eff[:]
             st.session_state["adj_final_excludes"] = set()
             st.rerun()
 
 
-# ============================ Onglet PRÉVISUALISATION ============================
+# ============================ Onglet 3 — PRÉVISUALISATION ============================
 
 with tab_preview:
     st.caption(f"Feuille : **{sheet}** • Table : **{table}**")
     st.markdown("---")
 
-    def _load_preview_df_for_gabarit(name: str, ver: str):
-        try:
-            prev = get_default_preview(name, ver) or {}
-            rows, cols = prev.get("rows") or [], prev.get("columns") or []
-            if rows and cols:
-                return pd.DataFrame(rows, columns=cols)
-        except Exception:
-            pass
-        return None
+    # Prévisualisation basée sur le pipeline "rapide" (full=False)
+    df_prev, err = _compose_full_pipeline(usage, full=False)
 
-    # 1) DF principal (gabarit de départ)
-    df_main = _load_preview_df_for_gabarit(gname, gver)
-
-    # 2) appliquer enrichissements (joins successifs) si possible
-    complete = df_main is not None
-    df = df_main.copy() if df_main is not None else None
-
-    if df is not None:
-        for e in (usage.get("enrichments") or []):
-            path = e.get("path") or []
-            if not path:
-                continue
-            last = path[-1]
-            tgt_name, tgt_ver = last[2], "v1"
-            df_tgt = _load_preview_df_for_gabarit(tgt_name, tgt_ver)
-            if df_tgt is None:
-                complete = False
-                break
-            # join sur la clé du premier saut
-            left_key = path[0][1]
-            right_key = path[0][3]
-            if left_key in df.columns and right_key in df_tgt.columns:
-                df = df.merge(
-                    df_tgt[[right_key] + [c for c in e.get("columns", []) if c in df_tgt.columns]].drop_duplicates(),
-                    left_on=left_key, right_on=right_key, how="left"
-                )
-                if right_key in df.columns:
-                    df.drop(columns=[right_key], inplace=True)
-            else:
-                complete = False
-                break
-
-    if not complete or df is None:
-        st.info("ℹ️ Toutes les gabarits utilisés pour construire la table doivent avoir une **donnée par défaut** pour permettre la prévisualisation.")
+    if err:
+        st.info(err)
+    elif df_prev is None or df_prev.empty:
+        st.info("Aucune donnée de prévisualisation disponible.")
     else:
-        # 3) Appliquer l'ordre/exclusions pour la vue finale
-        final_cols_cfg = usage.get("final_order") or df.columns.tolist()
-        final_excl_cfg = set(usage.get("final_excludes") or [])
-        final_cols = [c for c in final_cols_cfg if c in df.columns and c not in final_excl_cfg] + \
-                     [c for c in df.columns if c not in final_cols_cfg and c not in final_excl_cfg]
-
-        st.dataframe(df[final_cols].head(15), use_container_width=True, hide_index=True)
+        st.dataframe(df_prev.head(15), use_container_width=True, hide_index=True)

@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 from typing import List, Optional, Dict, Any
 from loguru import logger
+import pandas as pd
 
 from backend.models.gabarits import TableGabarit
 
@@ -705,3 +706,20 @@ def reorder_methods_for_gabarit(gabarit_name: str, gabarit_version: str, ordered
             new_arr.append(m)
     data["gabarit_methods"][key] = new_arr
     _save_raw(data)
+
+# --- AJOUT : façade full dataframe --------------------------------------------
+
+
+def get_default_dataframe(gabarit_name: str, gabarit_version: str = "v1") -> Optional[pd.DataFrame]:
+    """
+    Charge la donnée par défaut complète d'un gabarit (si une 'source' est définie).
+    Retourne un DataFrame ou None si absent/erreur.
+    """
+    try:
+        src = get_default_source(gabarit_name, gabarit_version)
+        if not src:
+            return None
+        from backend.services.dataset_service import _load_dataframe_from_source
+        return _load_dataframe_from_source(src)
+    except Exception:
+        return None

@@ -580,161 +580,6 @@
       }
     },
     {
-      "gabarit_name": "SIREN",
-      "gabarit_version": "v1",
-      "source": {
-        "type": "csv",
-        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\entreprises_manufacture.csv",
-        "sep": ";",
-        "encoding": "utf-8-sig",
-        "python": "# 1. Filtrer les lignes où 'Dénomination de l'unité légale' n'est pas None\ndf = df[df['Dénomination de l\\'unité légale'].notna()]\n\n# 2. Garder les colonnes nécessaires et dédupliquer sur SIREN\ndf = df[['SIREN', 'Dénomination de l\\'unité légale', 'Activité principale de l\\'établissement.1', 'Géolocalisation de l\\'établissement']].drop_duplicates(subset='SIREN', keep='first')\n\n# 3. Split la colonne Géolocalisation en Latitude et Longitude\ndf[['Latitude', 'Longitude']] = df['Géolocalisation de l\\'établissement'].str.split(',', expand=True)\n\n# 4. Convertir Latitude et Longitude en numérique\ndf['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce')\ndf['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce')\n\n# 5. Renommer les colonnes et supprimer la colonne Géolocalisation\ndf = df.rename(columns={\n    'Dénomination de l\\'unité légale': 'Nom_Entreprise',\n    'Activité principale de l\\'établissement.1': 'NACE_REV_2'\n})\n\ndf = df[['SIREN', 'NACE_REV_2', 'Nom_Entreprise', 'Latitude', 'Longitude']]"
-      },
-      "preview": {
-        "columns": [
-          "SIREN",
-          "NACE_REV_2",
-          "Nom_Entreprise",
-          "Latitude",
-          "Longitude"
-        ],
-        "rows": [
-          {
-            "SIREN": 808694772,
-            "NACE_REV_2": "26.40Z",
-            "Nom_Entreprise": "TEQOYA",
-            "Latitude": 44.453208,
-            "Longitude": -0.369968
-          },
-          {
-            "SIREN": 423915032,
-            "NACE_REV_2": "18.13Z",
-            "Nom_Entreprise": "E.B.C.D SARL",
-            "Latitude": 45.577089,
-            "Longitude": -0.612369
-          },
-          {
-            "SIREN": 513478693,
-            "NACE_REV_2": "25.99B",
-            "Nom_Entreprise": "ALU GOUTTIERES INNOVATION",
-            "Latitude": 43.508833,
-            "Longitude": 6.477832
-          },
-          {
-            "SIREN": 953922317,
-            "NACE_REV_2": "10.71C",
-            "Nom_Entreprise": "CAJMC",
-            "Latitude": 49.505866,
-            "Longitude": 4.362991
-          },
-          {
-            "SIREN": 351490560,
-            "NACE_REV_2": "28.22Z",
-            "Nom_Entreprise": "INGERSOLL RAND EQUIPEMENTS DE PRODUCTION",
-            "Latitude": 50.363141,
-            "Longitude": 3.099279
-          },
-          {
-            "SIREN": 341713592,
-            "NACE_REV_2": "32.50B",
-            "Nom_Entreprise": "NAJA",
-            "Latitude": 46.606889,
-            "Longitude": 5.904641
-          },
-          {
-            "SIREN": 498808393,
-            "NACE_REV_2": "25.12Z",
-            "Nom_Entreprise": "SOLS INDUSTRIELS FRANCAIS PRODUCTION",
-            "Latitude": 48.354085,
-            "Longitude": 7.579559
-          },
-          {
-            "SIREN": 499251916,
-            "NACE_REV_2": "33.20B",
-            "Nom_Entreprise": "VENTIL 72",
-            "Latitude": 47.979195,
-            "Longitude": 0.171284
-          },
-          {
-            "SIREN": 408481992,
-            "NACE_REV_2": "20.16Z",
-            "Nom_Entreprise": "GALLOO PLASTICS",
-            "Latitude": 50.790067,
-            "Longitude": 3.109778
-          },
-          {
-            "SIREN": 320218100,
-            "NACE_REV_2": "27.12Z",
-            "Nom_Entreprise": "GROUPE SYSELEC",
-            "Latitude": 43.563033,
-            "Longitude": 2.268219
-          },
-          {
-            "SIREN": 504725839,
-            "NACE_REV_2": "25.61Z",
-            "Nom_Entreprise": "ENCAPSULIX",
-            "Latitude": 43.436527,
-            "Longitude": 5.44297
-          },
-          {
-            "SIREN": 819300997,
-            "NACE_REV_2": "31.09B",
-            "Nom_Entreprise": "ATELIER MC",
-            "Latitude": 48.868586,
-            "Longitude": 2.402662
-          },
-          {
-            "SIREN": 918859398,
-            "NACE_REV_2": "33.20A",
-            "Nom_Entreprise": "VAUCHE & CO",
-            "Latitude": 45.257664,
-            "Longitude": 4.258349
-          },
-          {
-            "SIREN": 912097359,
-            "NACE_REV_2": "10.61A",
-            "Nom_Entreprise": "MOULIN BIOVEZOU",
-            "Latitude": 44.291586,
-            "Longitude": 2.710407
-          },
-          {
-            "SIREN": 884241563,
-            "NACE_REV_2": "28.12Z",
-            "Nom_Entreprise": "DANFOSS POWER SOLUTIONS II",
-            "Latitude": 46.204202,
-            "Longitude": 6.270402
-          },
-          {
-            "SIREN": 918947284,
-            "NACE_REV_2": "14.13Z",
-            "Nom_Entreprise": "LA BOITE A BOUTONS",
-            "Latitude": 44.161846,
-            "Longitude": 4.622056
-          },
-          {
-            "SIREN": 794911909,
-            "NACE_REV_2": "10.71C",
-            "Nom_Entreprise": "SLFAMILY",
-            "Latitude": 44.065636,
-            "Longitude": 1.097668
-          },
-          {
-            "SIREN": 811540202,
-            "NACE_REV_2": "33.20C",
-            "Nom_Entreprise": "ARNAUD SERVICES INDUSTRIELS MAINTENANCE TECHNIQUE EQUIPEMENT",
-            "Latitude": 45.813059,
-            "Longitude": 0.443674
-          },
-          {
-            "SIREN": 392342804,
-            "NACE_REV_2": "33.20D",
-            "Nom_Entreprise": "CODICOM",
-            "Latitude": 48.598933,
-            "Longitude": -2.82508
-          }
-        ]
-      }
-    },
-    {
       "gabarit_name": "Ratios Financiers (BCE/INPI)",
       "gabarit_version": "v1",
       "source": {
@@ -1273,6 +1118,161 @@
           }
         ]
       }
+    },
+    {
+      "gabarit_name": "SIREN",
+      "gabarit_version": "v1",
+      "source": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\entreprises_manufacture.csv",
+        "sep": ";",
+        "encoding": "utf-8-sig",
+        "python": "# 1. Filtrer les lignes où 'Dénomination de l'unité légale' n'est pas None\ndf = df[df['Dénomination de l\\'unité légale'].notna()]\n\n# 2. Garder les colonnes nécessaires et dédupliquer sur SIREN\ndf = df[['SIREN', 'Dénomination de l\\'unité légale', 'Activité principale de l\\'établissement.1', 'Géolocalisation de l\\'établissement']].drop_duplicates(subset='SIREN', keep='first')\n\n# 3. Split la colonne Géolocalisation en Latitude et Longitude\ndf[['Latitude', 'Longitude']] = df['Géolocalisation de l\\'établissement'].str.split(',', expand=True)\n\n# 4. Convertir Latitude et Longitude en numérique\ndf['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce')\ndf['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce')\n\n# 5. Renommer les colonnes et supprimer la colonne Géolocalisation\ndf = df.rename(columns={\n    'Dénomination de l\\'unité légale': 'Nom_Entreprise',\n    'Activité principale de l\\'établissement.1': 'NACE_REV_2'\n})\n\ndf = df[['SIREN', 'NACE_REV_2', 'Nom_Entreprise', 'Latitude', 'Longitude']]\n\n# 6. Déduplication finale pour garantir l'unicité\ndf = df.drop_duplicates(subset='SIREN', keep='first').reset_index(drop=True)"
+      },
+      "preview": {
+        "columns": [
+          "SIREN",
+          "NACE_REV_2",
+          "Nom_Entreprise",
+          "Latitude",
+          "Longitude"
+        ],
+        "rows": [
+          {
+            "SIREN": 808694772,
+            "NACE_REV_2": "26.40Z",
+            "Nom_Entreprise": "TEQOYA",
+            "Latitude": 44.453208,
+            "Longitude": -0.369968
+          },
+          {
+            "SIREN": 423915032,
+            "NACE_REV_2": "18.13Z",
+            "Nom_Entreprise": "E.B.C.D SARL",
+            "Latitude": 45.577089,
+            "Longitude": -0.612369
+          },
+          {
+            "SIREN": 513478693,
+            "NACE_REV_2": "25.99B",
+            "Nom_Entreprise": "ALU GOUTTIERES INNOVATION",
+            "Latitude": 43.508833,
+            "Longitude": 6.477832
+          },
+          {
+            "SIREN": 953922317,
+            "NACE_REV_2": "10.71C",
+            "Nom_Entreprise": "CAJMC",
+            "Latitude": 49.505866,
+            "Longitude": 4.362991
+          },
+          {
+            "SIREN": 351490560,
+            "NACE_REV_2": "28.22Z",
+            "Nom_Entreprise": "INGERSOLL RAND EQUIPEMENTS DE PRODUCTION",
+            "Latitude": 50.363141,
+            "Longitude": 3.099279
+          },
+          {
+            "SIREN": 341713592,
+            "NACE_REV_2": "32.50B",
+            "Nom_Entreprise": "NAJA",
+            "Latitude": 46.606889,
+            "Longitude": 5.904641
+          },
+          {
+            "SIREN": 498808393,
+            "NACE_REV_2": "25.12Z",
+            "Nom_Entreprise": "SOLS INDUSTRIELS FRANCAIS PRODUCTION",
+            "Latitude": 48.354085,
+            "Longitude": 7.579559
+          },
+          {
+            "SIREN": 499251916,
+            "NACE_REV_2": "33.20B",
+            "Nom_Entreprise": "VENTIL 72",
+            "Latitude": 47.979195,
+            "Longitude": 0.171284
+          },
+          {
+            "SIREN": 408481992,
+            "NACE_REV_2": "20.16Z",
+            "Nom_Entreprise": "GALLOO PLASTICS",
+            "Latitude": 50.790067,
+            "Longitude": 3.109778
+          },
+          {
+            "SIREN": 320218100,
+            "NACE_REV_2": "27.12Z",
+            "Nom_Entreprise": "GROUPE SYSELEC",
+            "Latitude": 43.563033,
+            "Longitude": 2.268219
+          },
+          {
+            "SIREN": 504725839,
+            "NACE_REV_2": "25.61Z",
+            "Nom_Entreprise": "ENCAPSULIX",
+            "Latitude": 43.436527,
+            "Longitude": 5.44297
+          },
+          {
+            "SIREN": 819300997,
+            "NACE_REV_2": "31.09B",
+            "Nom_Entreprise": "ATELIER MC",
+            "Latitude": 48.868586,
+            "Longitude": 2.402662
+          },
+          {
+            "SIREN": 918859398,
+            "NACE_REV_2": "33.20A",
+            "Nom_Entreprise": "VAUCHE & CO",
+            "Latitude": 45.257664,
+            "Longitude": 4.258349
+          },
+          {
+            "SIREN": 912097359,
+            "NACE_REV_2": "10.61A",
+            "Nom_Entreprise": "MOULIN BIOVEZOU",
+            "Latitude": 44.291586,
+            "Longitude": 2.710407
+          },
+          {
+            "SIREN": 884241563,
+            "NACE_REV_2": "28.12Z",
+            "Nom_Entreprise": "DANFOSS POWER SOLUTIONS II",
+            "Latitude": 46.204202,
+            "Longitude": 6.270402
+          },
+          {
+            "SIREN": 918947284,
+            "NACE_REV_2": "14.13Z",
+            "Nom_Entreprise": "LA BOITE A BOUTONS",
+            "Latitude": 44.161846,
+            "Longitude": 4.622056
+          },
+          {
+            "SIREN": 794911909,
+            "NACE_REV_2": "10.71C",
+            "Nom_Entreprise": "SLFAMILY",
+            "Latitude": 44.065636,
+            "Longitude": 1.097668
+          },
+          {
+            "SIREN": 811540202,
+            "NACE_REV_2": "33.20C",
+            "Nom_Entreprise": "ARNAUD SERVICES INDUSTRIELS MAINTENANCE TECHNIQUE EQUIPEMENT",
+            "Latitude": 45.813059,
+            "Longitude": 0.443674
+          },
+          {
+            "SIREN": 392342804,
+            "NACE_REV_2": "33.20D",
+            "Nom_Entreprise": "CODICOM",
+            "Latitude": 48.598933,
+            "Longitude": -2.82508
+          }
+        ]
+      }
     }
   ],
   "methods": [],
@@ -1299,6 +1299,7 @@
         "code": "value = df['EBE']*4",
         "order": 1
       }
-    ]
+    ],
+    "SIREN|v1": []
   }
 }

@@ -71,6 +71,26 @@ with DatabaseService.get_session() as db:
 # ==== Navbar + Titre ====
 render_template_subnav("inject", template_id)
 st.title(f"📑 Injection des données — {tpl_name} (v{tpl_version})")
+# Indicateur visuel du mode + switch création/édition
+_edit_key = st.session_state.get("_inject_edit_target")
+if isinstance(_edit_key, dict):
+    _lbl = f"{_edit_key.get('gname','?')} (v{_edit_key.get('gver','v1')}) → {(_edit_key.get('sheet') or 'Data')}/{(_edit_key.get('table') or 'Table')}"
+    cL, cR = st.columns([3,1])
+    with cL:
+        st.info(f"✏️ **Mode ÉDITION** de l’usage : {_lbl}")
+    with cR:
+        if st.button("➕ Créer un nouvel usage", use_container_width=True, key="switch_to_create"):
+            st.session_state._inject_edit_target = None
+            # on reset l'état d'édition d'enrichissements éventuel
+            if "tpl_enrich_rows" in st.session_state:
+                del st.session_state["tpl_enrich_rows"]
+            if "_inject_loaded_for" in st.session_state:
+                del st.session_state["_inject_loaded_for"]
+            st.rerun()
+else:
+    st.success("➕ **Mode CRÉATION** d’un nouvel usage")
+
+
 if st.session_state.get("_inject_saved"):
     st.success("✅ Usage enregistré")
     del st.session_state["_inject_saved"]
@@ -83,42 +103,58 @@ if not usages:
     st.info("Aucun usage configuré pour ce template.")
 else:
     for u in usages:
-        with st.container(border=True):
+        # clé en cours d'édition ?
+        _edit_key = st.session_state.get("_inject_edit_target")
+        tgt = u.get("excel_target") or {}
+        sheet_u, table_u = (tgt.get("sheet") or ""), (tgt.get("table") or "")
+
+        is_editing = (
+            isinstance(_edit_key, dict)
+            and _edit_key.get("gname") == u.get("gabarit_name")
+            and (_edit_key.get("gver") or "v1") == (u.get("gabarit_version") or "v1")
+            and (_edit_key.get("sheet") or "") == sheet_u
+            and (_edit_key.get("table") or "") == table_u
+        )
+
+        # Carte (un seul container) — si en édition, on ajoute un fin liseré coloré en haut
+        box = st.container()
+        st.markdown("<div style='border:1px solid #eee;border-radius:8px;padding:10px;margin-bottom:6px;'>", unsafe_allow_html=True)
+
+        with box:
+            if is_editing:
+                st.markdown("<div style='height:0;border-top:3px solid #3b82f6;margin:-6px 0 10px 0;'></div>", unsafe_allow_html=True)
+
             c1, c2, c3, c4, c5 = st.columns([3,3,2,2,1])
             with c1:
-                st.markdown(f"**Gabarit** : {u.get('gabarit_name')} (v{u.get('gabarit_version','v1')})")
-                tgt = u.get("excel_target") or {}
-                st.caption(f"**Excel** : {tgt.get('sheet','')}/{tgt.get('table','')}")
+                # Titre de carte = NOM DE L’USAGE (feuille/table)
+                st.markdown(f"**Usage : {sheet_u}/{table_u}**")
+                st.caption(f"Gabarit : {u.get('gabarit_name')} (v{u.get('gabarit_version','v1')})")
             with c2:
                 st.caption(f"Colonnes gardées : {len(u.get('columns_enabled') or [])}")
                 st.caption(f"Méthodes : {', '.join(u.get('methods') or []) or '—'}")
                 st.caption(f"Enrichissements : {len(u.get('enrichments') or [])}")
             with c3:
-                has_overlay = bool((u.get("overlay_python") or "").strip())
+                has_overlay = bool((u.get('overlay_python') or '').strip())
                 st.caption(f"Overlay : {'Oui' if has_overlay else '—'}")
             with c4:
-                if st.button("✏️ Éditer",
-                          key=f"edit_usage_{(u.get('gabarit_name'), u.get('gabarit_version','v1'), (u.get('excel_target') or {}).get('sheet',''), (u.get('excel_target') or {}).get('table',''))}",
-                          use_container_width=True):
-                 tgt = u.get("excel_target") or {}
-                 st.session_state._inject_edit_target = {
-                     "gname": u.get("gabarit_name"),
-                     "gver": u.get("gabarit_version","v1"),
-                     "sheet": tgt.get("sheet",""),
-                     "table": tgt.get("table",""),
-                 }
-                 st.rerun()
+                if st.button(
+                    "✏️ Éditer",
+                    key=f"edit_usage_{u.get('gabarit_name')}|{u.get('gabarit_version','v1')}|{sheet_u}|{table_u}",
+                    use_container_width=True
+                ):
 
+                    st.session_state._inject_edit_target = {
+                        "gname": u.get("gabarit_name"),
+                        "gver": u.get("gabarit_version","v1"),
+                        "sheet": sheet_u,
+                        "table": table_u,
+                    }
+                    st.rerun()
             with c5:
-                tgt = u.get("excel_target") or {}
-                del_key = (
-                    u.get("gabarit_name"),
-                    u.get("gabarit_version","v1"),
-                    tgt.get("sheet",""),
-                    tgt.get("table",""),
-                )
+                del_key = (u.get("gabarit_name"), u.get("gabarit_version","v1"), sheet_u, table_u)
                 if st.button("🗑️",
-                             key=f"del_usage_{del_key}",
+                             key=f"del_usage_{del_key[0]}|{del_key[1]}|{del_key[2]}|{del_key[3]}",
+
                              use_container_width=True,
                              help="Supprimer cet usage (clé = gabarit+feuille+table)"):
                     try:
@@ -126,22 +162,26 @@ else:
                             ts2 = TemplateService(db2)
                             cfg2 = ts2.get_config(template_id)
                             allu = cfg2.get("gabarit_usages", []) or []
-                            gname, gver, sheet, table = del_key
+                            gname, gver, sheet_, table_ = del_key
                             allu = [
                                 x for x in allu
                                 if not (
                                     x.get("gabarit_name")==gname
                                     and (x.get("gabarit_version") or "v1")==gver
-                                    and ((x.get("excel_target") or {}).get("sheet","") or "")==sheet
-                                    and ((x.get("excel_target") or {}).get("table","") or "")==table
+                                    and ((x.get("excel_target") or {}).get("sheet","") or "")==sheet_
+                                    and ((x.get("excel_target") or {}).get("table","") or "")==table_
                                 )
                             ]
                             cfg2["gabarit_usages"] = allu
                             ts2.update_config(template_id, cfg2)
+                        # si on supprime celui en édition, on repasse en création
+                        if is_editing:
+                            st.session_state._inject_edit_target = None
                         st.success("Usage supprimé")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Suppression impossible : {e}")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 st.markdown("---")
@@ -216,6 +256,9 @@ def _build_enrichments_payload(start_g, rows: list[dict]) -> list[dict]:
 # Sélection gabarit
 gab_list = list_gabarits()
 labels = [f"{g.name} (v{g.version})" for g in gab_list]
+if not gab_list:
+    st.error("Aucun gabarit disponible dans le registre.")
+    st.stop()
 
 # mode EDIT ciblé ?
 edit_key = st.session_state.get("_inject_edit_target")
