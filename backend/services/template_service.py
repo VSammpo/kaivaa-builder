@@ -591,6 +591,7 @@ class TemplateService:
         gabarit_version: str = "v1",
         final_order: list[str] | None = None,
         final_excludes: list[str] | None = None,
+        final_renames: dict[str, str] | None = None,
     ) -> None:
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
@@ -609,12 +610,16 @@ class TemplateService:
                     u["final_order"] = list(final_order or [])
                 if final_excludes is not None:
                     u["final_excludes"] = [c for c in (final_excludes or []) if str(c).strip()]
+                if final_renames is not None:
+                    clean = {str(k): str(v) for k, v in (final_renames or {}).items() if str(k).strip() and str(v).strip()}
+                    u["final_renames"] = clean
                 updated = True
             new_usages.append(u)
 
         if updated:
             cfg["gabarit_usages"] = new_usages
             self.update_config(template_id, cfg)
+
 
 
     def delete_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str) -> bool:

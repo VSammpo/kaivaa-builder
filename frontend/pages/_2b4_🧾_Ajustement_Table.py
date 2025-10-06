@@ -340,20 +340,48 @@ def _compose_with_enrichments(
     return df, complete, None
 
 
-def _apply_methods(df: pd.DataFrame) -> pd.DataFrame:
+# -- Helper d'application des méthodes sur un DataFrame --
+def _apply_methods(df: pd.DataFrame, only: list[str] | None = None) -> pd.DataFrame:
     """
-    Applique les méthodes du gabarit si ton moteur est disponible.
-    Fallback silencieux si absent.
+    Applique les méthodes du gabarit courant dans l'ordre, éventuellement filtrées par 'only' (liste de noms).
+    Requiert backend.services.gabarit_registry.list_methods_for_gabarit et method_executor.apply_method.
     """
     try:
-        from backend.services.method_executor import MethodExecutor  # adapte si besoin
-        executor = MethodExecutor()
-        df2 = executor.apply_methods_on_dataframe(gname, gver, df)  # adapte si besoin
-        if isinstance(df2, pd.DataFrame):
-            return df2
+        from backend.services.gabarit_registry import list_methods_for_gabarit
     except Exception:
-        pass
-    return df
+        return df
+
+    try:
+        from backend.services.method_executor import apply_method as _apply_method
+    except Exception:
+        # Fallback : pas d'exécution si le moteur n'est pas dispo
+        return df
+
+    gname = u.get("gabarit_name")
+    gver  = u.get("gabarit_version", "v1")
+    methods = list_methods_for_gabarit(gname, gver) or []
+    methods = sorted(methods, key=lambda m: m.get("order", 1))
+    names_filter = set([n.strip() for n in (only or []) if n and str(n).strip()])
+
+    cur = df.copy()
+    for m in methods:
+        if names_filter and m.get("name") not in names_filter:
+            continue
+        # paramètres par défaut (si schema présent)
+        schema = m.get("param_schema") or []
+        pvals = {}
+        for spec in schema:
+            nm = spec.get("name")
+            dv = spec.get("default")
+            if nm:
+                pvals[nm] = dv
+        try:
+            cur = _apply_method(cur, m, pvals)
+        except Exception:
+            # on continue en cas d'échec d'une méthode spécifique
+            pass
+    return cur
+
 
 
 def _apply_overlay(df: pd.DataFrame, code: str) -> tuple[pd.DataFrame | None, str | None]:
@@ -411,10 +439,16 @@ def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
 
 
 def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None, str | None]:
+    """
+    Pipeline final : base + enrichissements → overlay → méthodes sélectionnées → renommages → ordre/exclusions.
+    Utilisé pour la prévisualisation FULL.
+    """
+    # 1) base + enrichissements
     df, complete, err = _compose_with_enrichments(u, full=full, bring_all_last=True, log=True)
     if df is None:
         return None, err or "Aucune donnée de départ."
-    df = _apply_methods(df)
+
+    # 2) overlay utilisateur (df -> df)
     code = (u.get("overlay_python") or "").strip()
     if code:
         df2, err2 = _apply_overlay(df, code)
@@ -422,13 +456,56 @@ def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None,
             df = df2
         else:
             return None, err2
-    final_cols_cfg = u.get("final_order") or df.columns.tolist()
-    final_excl_cfg = set(u.get("final_excludes") or [])
-    final_cols = [c for c in final_cols_cfg if c in df.columns and c not in final_excl_cfg] + \
-                 [c for c in df.columns if c not in final_cols_cfg and c not in final_excl_cfg]
-    # petit log final
-    _log_kpi("📦 Sortie pipeline", {"lignes": len(df), "colonnes": len(final_cols), "complete(full)": complete})
+
+    # 3) méthodes sélectionnées (APPLIQUÉES APRÈS l'overlay)
+    only_selected = list(u.get("methods") or [])
+    try:
+        # si ton moteur accepte only=
+        df = _apply_methods(df, only=only_selected)  # type: ignore[call-arg]
+    except TypeError:
+        df = _apply_methods(df)
+
+    # 3bis) renommages finaux (df.rename)
+    ren: dict[str, str] = u.get("final_renames") or {}
+    if ren:
+        safe_map = {k: v for k, v in ren.items() if k in df.columns and v and v != k}
+        if safe_map:
+            df = df.rename(columns=safe_map)
+
+    # 4) ordre / exclusions — MAPPÉS via les renommages
+    #    - on prend l’ordre demandé (sur les noms "source")
+    #    - on le convertit via renames -> ordre sur les noms ACTUELS
+    src_order = u.get("final_order") or df.columns.tolist()
+    src_excl  = set(u.get("final_excludes") or [])
+
+    # map ordre & exclusions via ren
+    mapped_order = []
+    seen = set()
+    for c in src_order:
+        cc = ren.get(c, c)  # si renommé: A -> A_new
+        if cc in df.columns and cc not in seen:
+            mapped_order.append(cc)
+            seen.add(cc)
+
+    # exclusions : on exclut à la fois l’ancien nom et le nouveau
+    excl_names = set()
+    for c in src_excl:
+        excl_names.add(c)
+        rc = ren.get(c)
+        if rc:
+            excl_names.add(rc)
+
+    # colonnes finales = ordre mappé + le reste (non exclus)
+    final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names] + \
+                 [c for c in df.columns if c not in mapped_order and c not in excl_names]
+
+    _log_kpi("📦 Sortie pipeline", {
+        "lignes": len(df),
+        "colonnes": len(final_cols),
+        "complete(full)": complete,
+    })
     return df[final_cols], None
+
 
 
 def _sample_value(col: str) -> str:
@@ -497,38 +574,16 @@ with tab_script:
             st.success("✅ Script enregistré")
 
         # Tests
-        ctest1, ctest2 = st.columns(2, gap="small")
+        if st.button("🚀 Prévisualiser (pipeline complet)", use_container_width=True, key="btn_run_overlay_full"):
+            df_final, err = _compose_full_pipeline(usage, full=True)
+            if err:
+                st.error(f"Erreur pipeline :\n\n{err}")
+            elif df_final is None or df_final.empty:
+                st.info("Pipeline exécuté mais aucun résultat affichable.")
+            else:
+                st.success("Résultat du pipeline — 20 premières lignes :")
+                st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
 
-        # ⚡ Test rapide (prévisualisation)
-        with ctest1:
-            if st.button("⚡ Test rapide (prévisualisation)", use_container_width=True, key="btn_run_overlay_quick"):
-                df_prev, complete, err = _compose_with_enrichments(usage, full=False, bring_all_last=True)
-
-                if err:
-                    st.info(err)
-                elif df_prev is None:
-                    st.info("Aucune donnée de prévisualisation.")
-                else:
-                    df_prev = _apply_methods(df_prev)
-                    df2, err2 = _apply_overlay(df_prev, code)
-                    if err2:
-                        st.error(f"Erreur à l’exécution du script :\n\n{err2}")
-                    else:
-                        st.success("Aperçu rapide (prévisualisation) — 15 premières lignes :")
-                        st.dataframe(df2.head(15), use_container_width=True, hide_index=True)
-
-        # 🚀 Test complet (pipeline)
-        with ctest2:
-            if st.button("🚀 Test complet (pipeline)", use_container_width=True, key="btn_run_overlay_full"):
-                df_final, err = _compose_full_pipeline(usage, full=True) 
-
-                if err:
-                    st.error(f"Erreur pipeline :\n\n{err}")
-                elif df_final is None or df_final.empty:
-                    st.info("Pipeline exécuté mais aucun résultat affichable.")
-                else:
-                    st.success("Résultat du pipeline — 20 premières lignes :")
-                    st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
 
     with colR:
         st.markdown("**Colonnes actuellement disponibles**")
@@ -540,26 +595,29 @@ with tab_script:
 
 
 # ============================ Onglet 2 — AJUSTEMENT ============================
-
 with tab_adjust:
+    # Colonnes “effectives” proposées à l’ajustement (base + enrich + sorties méthodes,
+    # ou résultat overlay si exécutable sur preview)
     default_cols = _resolve_effective_columns_for_adjustment(usage)
 
-    # État local (lié à la table sélectionnée)
+    # --- état local lié à la table sélectionnée ---
     usage_key = f"{gname}|{gver}|{sheet}|{table}"
     if st.session_state.get("_adj_key") != usage_key:
         st.session_state["_adj_key"] = usage_key
         st.session_state["adj_final_order"] = list(usage.get("final_order") or default_cols[:])
         st.session_state["adj_final_excludes"] = set(usage.get("final_excludes") or [])
+        st.session_state["adj_final_renames"] = dict(usage.get("final_renames") or {})
 
-    # Synchronisation avec la structure effective
+    # synchronisation avec la structure effective
     final_order = [c for c in st.session_state["adj_final_order"] if c in default_cols] + \
                   [c for c in default_cols if c not in st.session_state["adj_final_order"]]
     final_excludes = set([c for c in st.session_state["adj_final_excludes"] if c in default_cols])
+    final_renames = dict(st.session_state["adj_final_renames"])
 
-    # Métadonnées (source/type) — best effort
+    # --- métadonnées (source/type) pour affichage ---
     g = get_gabarit(gname, gver)
-    type_map = {c.name: (c.type or "text") for c in g.columns}
-    source_map = {c: "gabarit" for c in (usage.get("columns_enabled") or [c.name for c in g.columns])}
+    type_map = {c.name: (c.type or "text") for c in (g.columns or [])}
+    source_map = {c: "gabarit" for c in (usage.get("columns_enabled") or [c.name for c in (g.columns or [])])}
 
     for e in (usage.get("enrichments") or []):
         if not e.get("path"):
@@ -567,7 +625,7 @@ with tab_adjust:
         last = e["path"][-1]
         tgt_name = last[2]
         tgt_g = get_gabarit(tgt_name, "v1")
-        for c in e.get("columns", []):
+        for c in (e.get("columns") or []):
             source_map[c] = f"enrich:{tgt_name}"
             if c not in type_map:
                 type_map[c] = next((col.type for col in (tgt_g.columns or []) if col.name == c), "text")
@@ -576,41 +634,100 @@ with tab_adjust:
         source_map[m] = f"method:{m}"
         type_map.setdefault(m, "unknown")
 
+    # --- entête ---
     st.markdown("### Colonnes injectées")
-    st.caption("Cliquez sur ⬆️/⬇️ pour modifier l'ordre, 🗑️ pour retirer la colonne de la **sortie finale** (sans impacter les sélections amont).")
+    st.caption(
+        "Cochez/décochez pour inclure/exclure une colonne dans la **sortie finale** "
+        "(les sélections amont ne sont pas modifiées)."
+    )
 
-    hdr1, hdr2, hdr3, hdr4, hdr5 = st.columns([3, 2, 2, 2, 2], gap="small")
+    hdr0, hdr1, hdr2, hdr3, hdr4, hdr5 = st.columns([1.2, 3, 2, 2, 2, 2], gap="small")
+    with hdr0: st.markdown("**Inclure**")
     with hdr1: st.markdown("**Colonne**")
     with hdr2: st.markdown("**Source**")
     with hdr3: st.markdown("**Type**")
     with hdr4: st.markdown("**Exemple**")
     with hdr5: st.markdown("**Actions**")
 
+    def _muted_html(s: str) -> str:
+        return f"<span style='color:#9aa0a6'>{s}</span>"
+
+    # indices visibles (pour gérer ↑↓ sur les colonnes incluses)
     visible_positions = [i for i, c in enumerate(final_order) if c not in final_excludes]
+    move_up_idx = move_down_idx = None
+    toggled = False
 
-    move_up_idx = move_down_idx = drop_idx = None
+    for idx, col in enumerate(final_order):
+        included = col not in final_excludes
+        pos_visible = visible_positions.index(idx) if included and idx in visible_positions else None
 
-    for vidx, pos in enumerate(visible_positions):
-        _col = final_order[pos]
-        c1, c2, c3, c4, c5 = st.columns([3, 2, 2, 2, 2], gap="small")
-        with c1: st.write(_col)
-        with c2: st.caption(source_map.get(_col, "—"))
-        with c3: st.caption(type_map.get(_col, "text"))
-        with c4: st.caption(_sample_value(_col))
+        c0, c1, c2, c3, c4, c5 = st.columns([1.2, 3, 2, 2, 2, 2], gap="small")
+
+        # Inclure / Exclure
+        with c0:
+            new_state = st.checkbox(
+                label=f"Inclure {col}",
+                value=included,
+                key=f"incl_{usage_key}_{idx}",
+                label_visibility="collapsed",
+            )
+            if new_state != included:
+                if new_state:
+                    final_excludes.discard(col)
+                else:
+                    final_excludes.add(col)
+                toggled = True
+
+        # Renommage (grisé si exclu)
+        with c1:
+            proposed = st.text_input(
+                "Nouveau nom",
+                value=final_renames.get(col, ""),
+                placeholder=col,
+                key=f"rename_{usage_key}_{idx}",
+                label_visibility="collapsed",
+                disabled=not new_state,
+            )
+            if proposed.strip():
+                final_renames[col] = proposed.strip()
+            else:
+                final_renames.pop(col, None)
+
+        # Source / Type / Exemple (gris si exclu)
+        with c2:
+            txt = source_map.get(col, "—")
+            st.markdown(_muted_html(txt) if not new_state else txt, unsafe_allow_html=True)
+        with c3:
+            txt = type_map.get(col, "text")
+            st.markdown(_muted_html(txt) if not new_state else txt, unsafe_allow_html=True)
+        with c4:
+            txt = _sample_value(col)
+            st.markdown(_muted_html(txt) if not new_state else txt, unsafe_allow_html=True)
+
+        # Actions : ordre ↑↓ (désactivées si exclu)
         with c5:
-            b1, b2, b3 = st.columns([1, 1, 1], gap="small")
+            b1, b2, _ = st.columns([1, 1, 1], gap="small")
             with b1:
-                if st.button("⬆️", key=f"adj_up_{usage_key}_{vidx}", use_container_width=True, disabled=(vidx == 0)):
-                    move_up_idx = vidx
+                if st.button("⬆️", key=f"adj_up_{usage_key}_{idx}", use_container_width=True,
+                             disabled=(not new_state or pos_visible is None or pos_visible == 0)):
+                    move_up_idx = pos_visible
             with b2:
-                if st.button("⬇️", key=f"adj_dn_{usage_key}_{vidx}", use_container_width=True, disabled=(vidx == len(visible_positions) - 1)):
-                    move_down_idx = vidx
-            with b3:
-                if st.button("🗑️", key=f"adj_rm_{usage_key}_{vidx}", use_container_width=True):
-                    drop_idx = vidx
+                if st.button("⬇️", key=f"adj_dn_{usage_key}_{idx}", use_container_width=True,
+                             disabled=(not new_state or pos_visible is None or pos_visible == len(visible_positions)-1)):
+                    move_down_idx = pos_visible
 
-        st.markdown("<div style='border-bottom:1px dashed #e6e8eb; margin:6px 0 10px 0;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            "<div style='border-bottom:1px dashed #e6e8eb; margin:6px 0 10px 0;'></div>",
+            unsafe_allow_html=True,
+        )
 
+    # si un toggle a eu lieu -> mémoriser et relancer pour recalculer visible_positions
+    if toggled:
+        st.session_state["adj_final_excludes"] = set(final_excludes)
+        st.session_state["adj_final_renames"] = dict(final_renames)
+        st.rerun()
+
+    # gestion ↑↓ (sur les visibles seulement)
     if move_up_idx is not None:
         cur = visible_positions[move_up_idx]
         prev = visible_positions[move_up_idx - 1]
@@ -625,12 +742,7 @@ with tab_adjust:
         st.session_state["adj_final_order"] = final_order
         st.rerun()
 
-    if drop_idx is not None:
-        col_to_drop = final_order[visible_positions[drop_idx]]
-        final_excludes.add(col_to_drop)
-        st.session_state["adj_final_excludes"] = final_excludes
-        st.rerun()
-
+    # --- actions globales ---
     colA, colB = st.columns([1, 1])
     with colA:
         if st.button("💾 Enregistrer l’ajustement", type="primary", use_container_width=True, key=f"btn_save_adj_{usage_key}"):
@@ -642,9 +754,13 @@ with tab_adjust:
                     gabarit_version=gver,
                     final_order=final_order,
                     final_excludes=list(final_excludes),
+                    final_renames=final_renames,
                 )
+            st.session_state["adj_final_order"] = final_order[:]
+            st.session_state["adj_final_excludes"] = set(final_excludes)
+            st.session_state["adj_final_renames"] = dict(final_renames)
             st.success("✅ Ajustement enregistré")
-            st.rerun()
+
     with colB:
         if st.button("🔁 Réinitialiser", use_container_width=True, key=f"btn_reset_adj_{usage_key}"):
             eff = _resolve_effective_columns_for_adjustment(usage)
@@ -656,10 +772,12 @@ with tab_adjust:
                     gabarit_version=gver,
                     final_order=eff,
                     final_excludes=[],
+                    final_renames={},
                 )
-            st.info("Réinitialisé")
             st.session_state["adj_final_order"] = eff[:]
             st.session_state["adj_final_excludes"] = set()
+            st.session_state["adj_final_renames"] = {}
+            st.info("Réinitialisé")
             st.rerun()
 
 
@@ -670,7 +788,7 @@ with tab_preview:
     st.markdown("---")
 
     # Prévisualisation basée sur le pipeline "rapide" (full=False)
-    df_prev, err = _compose_full_pipeline(usage, full=False)
+    df_prev, err = _compose_full_pipeline(usage, full=True)
 
     if err:
         st.info(err)

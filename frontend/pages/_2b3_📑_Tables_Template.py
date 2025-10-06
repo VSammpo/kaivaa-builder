@@ -14,6 +14,50 @@ from backend.services.template_service import TemplateService
 from backend.services.gabarit_registry import (
     list_gabarits, get_gabarit, get_relations, load_registry, list_methods_for_gabarit
 )
+# --- Helpers de reconciliation pour multiselects (colonnes / méthodes) ---
+import difflib
+
+def _safe_reconcile_defaults(defaults: list[str] | None, options: list[str]) -> tuple[list[str], dict[str, str], list[str]]:
+    """
+    Retourne:
+      - cleaned: liste des valeurs "default" garanties présentes dans options (après mapping).
+      - renamed_map: dict {old_name -> new_name} pour les éléments vraisemblablement renommés.
+      - removed: liste des valeurs définitivement retirées (ni exact match ni proche).
+    Logique:
+      1) on garde les exact match
+      2) pour celles manquantes, on tente une correspondance "proche" (cutoff=0.86)
+      3) sinon on les met en 'removed'
+    """
+    defaults = list(defaults or [])
+    cleaned: list[str] = []
+    renamed: dict[str, str] = {}
+    removed: list[str] = []
+
+    # normalisation simple pour éviter la casse/espaces parasites
+    def norm(s: str) -> str:
+        return (s or "").strip()
+
+    opt_set = set(options)
+    for d in defaults:
+        d0 = norm(d)
+        if d0 in opt_set:
+            cleaned.append(d0)
+        else:
+            # tentative de matching "renommage"
+            match = difflib.get_close_matches(d0, options, n=1, cutoff=0.86)
+            if match:
+                target = match[0]
+                renamed[d0] = target
+                if target not in cleaned:
+                    cleaned.append(target)
+            else:
+                removed.append(d0)
+
+    # garantir unicité dans l'ordre
+    seen = set()
+    cleaned = [x for x in cleaned if not (x in seen or seen.add(x))]
+    return cleaned, renamed, removed
+
 
 
 st.set_page_config(page_title="Injection des données", page_icon="📑", layout="wide")
@@ -287,11 +331,22 @@ with DatabaseService.get_session() as db:
     existing = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, default_sheet, default_table) or {}
 
 base_cols = [c.name for c in g.columns]
-default_enabled = existing.get("columns_enabled", []) if existing else base_cols[:]
+# Reconcilier colonnes renommées/supprimées
+existing_cols = existing.get("columns_enabled", []) if existing else base_cols[:]
+_clean_cols, _renamed_cols, _removed_cols = _safe_reconcile_defaults(existing_cols, base_cols)
+
+if _renamed_cols:
+    st.caption("🪄 Renommages de colonnes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_cols.items()]))
+if _removed_cols:
+    st.caption("⚠️ Colonnes introuvables (retirées) : " + ", ".join(_removed_cols))
+
 enabled = st.multiselect(
     "Colonnes à conserver (si vide → toutes les colonnes du gabarit)",
-    options=base_cols, default=default_enabled
+    options=base_cols,
+    default=_clean_cols,
+    key=f"ms_cols_{g.name}_{g.version}",
 )
+
 
 # Enrichissements simplifiés
 st.markdown("### 🔗 Enrichissements")
@@ -339,9 +394,23 @@ for i, row in enumerate(st.session_state.tpl_enrich_rows):
                 row["target"] = label_to_tuple[sel]
                 tgt_g = get_gabarit(*row["target"])
                 tgt_cols = [c.name for c in (tgt_g.columns or [])]
-                row["columns"] = st.multiselect("Colonnes à rapatrier",
-                                                options=tgt_cols, default=row.get("columns", []),
-                                                key=f"cols_{i}")
+
+                # Reconcilier la sélection existante de l’enrichissement
+                existing_e = row.get("columns", []) or []
+                _clean_e, _renamed_e, _removed_e = _safe_reconcile_defaults(existing_e, tgt_cols)
+
+                if _renamed_e:
+                    st.caption("🪄 Renommages (enrichissement) : " + ", ".join([f"{k} → {v}" for k, v in _renamed_e.items()]))
+                if _removed_e:
+                    st.caption("⚠️ Colonnes introuvables (enrichissement) : " + ", ".join(_removed_e))
+
+                row["columns"] = st.multiselect(
+                    "Colonnes à rapatrier",
+                    options=tgt_cols,
+                    default=_clean_e,
+                    key=f"cols_{i}"
+                )
+
             else:
                 row["target"] = None
                 row["columns"] = []
@@ -371,10 +440,20 @@ def _method_names(gname: str, gver: str) -> list[str]:
     return sorted(names)
 
 all_methods = _method_names(g.name, g.version)
+
+existing_methods = existing.get("methods", []) if existing else []
+_clean_m, _renamed_m, _removed_m = _safe_reconcile_defaults(existing_methods, all_methods)
+
+if _renamed_m:
+    st.caption("🪄 Renommages de méthodes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_m.items()]))
+if _removed_m:
+    st.caption("⚠️ Méthodes introuvables (retirées) : " + ", ".join(_removed_m))
+
 methods_selected = st.multiselect(
     "Méthodes autorisées par le gabarit",
     options=all_methods,
-    default=(existing.get("methods", []) if existing else []),
+    default=_clean_m,
+    key=f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}",
     help="Ces colonnes calculées seront disponibles et leurs colonnes d'entrée seront demandées dans la table d'entrée du projet."
 )
 

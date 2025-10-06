@@ -1281,9 +1281,9 @@
     "Ratios Financiers (BCE/INPI)|v1": [
       {
         "id": "2b6a10a7-a23d-494f-8d4f-6367aa7df398",
-        "name": "EBE",
+        "name": "sdfgsdfsdfg",
         "description": "Calcul de l'EBE en %",
-        "output_column": "EBE_EN_%",
+        "output_column": "qsdrfgsdfgs",
         "param_schema": [
           {
             "name": "Colonnes inutiles",
