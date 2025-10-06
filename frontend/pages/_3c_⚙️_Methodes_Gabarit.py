@@ -37,6 +37,34 @@ st.markdown("""
 
 
 # ========================= Helpers =========================
+
+# --- Helper: exécuter un code python qui renvoie une liste d'options ---
+def _safe_eval_options_python(code: str, df: pd.DataFrame) -> list[str]:
+    if not code or not isinstance(code, str):
+        return []
+    env = {"df": df, "pd": pd}
+    try:
+        loc = {}
+        exec(code, env, loc)
+        # Convention : l'utilisateur doit définir une variable 'options'
+        options = loc.get("options", None)
+        if options is None and "get_options" in loc and callable(loc["get_options"]):
+            options = loc["get_options"](df)
+        if isinstance(options, (list, tuple)):
+            return [str(x) for x in options][:500]
+        return []
+    except Exception:
+        return []
+
+# --- Helper: charger un sample juste pour l'éditeur (colonnes / preview) ---
+def _get_sample_for_editor(gabarit):
+    sample, _err = _load_default_sample(gabarit)
+    # sample peut être None; on retourne un DF vide mais avec .columns
+    if sample is None:
+        sample = pd.DataFrame()
+    return sample
+
+
 def _infer_required_columns(code: str) -> list[str]:
     if not code:
         return []
@@ -75,47 +103,91 @@ def _load_default_sample(gab):
         return None, f"Erreur lecture source par défaut: {e}"
 
 def _default_params_for_method(schema, df):
-    vals={}
+    vals = {}
     for spec in schema or []:
-        nm, tp, dv = spec.get("name"), spec.get("type","text"), spec.get("default",None)
+        nm = spec.get("name")
+        tp = spec.get("type", "text")
+        dv = spec.get("default", None)
+
+        # Préparer options si besoin (select / select_multi)
+        opts = []
+        if tp in ("select", "select_multi"):
+            # source 1: manuel (options)
+            if spec.get("options"):
+                if isinstance(spec["options"], list):
+                    opts = [str(x) for x in spec["options"]]
+                elif isinstance(spec["options"], str):
+                    opts = [s.strip() for s in spec["options"].split(",") if s.strip()]
+            # source 2: colonne
+            if not opts and spec.get("source_column") and isinstance(df, pd.DataFrame):
+                col = spec["source_column"]
+                if col in df.columns:
+                    opts = sorted(list(df[col].dropna().astype(str).unique()))[:500]
+            # source 3: python
+            if not opts and spec.get("options_python"):
+                opts = _safe_eval_options_python(spec.get("options_python"), df)
+
+        # Attribution du default en fonction du type
         if tp == "number":
-            try: vals[nm] = float(dv) if dv not in (None,"") else 0.0
-            except: vals[nm] = 0.0
+            try:
+                vals[nm] = float(dv) if dv not in (None, "") else 0.0
+            except Exception:
+                vals[nm] = 0.0
         elif tp == "boolean":
-            vals[nm] = str(dv).lower() in ("1","true","yes","y","on")
+            vals[nm] = str(dv).lower() in ("1", "true", "yes", "y", "on")
         elif tp == "select":
-            opts = spec.get("options") or []
-            vals[nm] = dv if dv in opts else (opts[0] if opts else "")
-        elif tp == "select_from_column":
-            col = spec.get("source_column")
-            if col and col in df.columns:
-                opts = sorted(list(df[col].dropna().astype(str).unique()))[:200]
-                vals[nm] = str(dv) if str(dv) in opts else (opts[0] if opts else "")
+            # valeur par défaut cohérente avec les options
+            if opts:
+                vals[nm] = dv if str(dv) in [str(o) for o in opts] else opts[0]
             else:
                 vals[nm] = str(dv) if dv is not None else ""
+        elif tp == "select_multi":
+            # liste de valeurs
+            cur = dv if isinstance(dv, list) else ([dv] if dv not in (None, "") else [])
+            cur = [str(x) for x in cur]
+            if opts:
+                # filtrer sur les options valides
+                cur = [x for x in cur if x in [str(o) for o in opts]]
+                if not cur and opts:
+                    cur = [str(opts[0])]
+            vals[nm] = cur
         else:
+            # text et tout le reste par défaut
             vals[nm] = "" if dv is None else str(dv)
     return vals
 
 def _param_schema_from_form() -> list[dict]:
-    out=[]
+    out = []
     for p in st.session_state.form_param_list:
-        name=(p.get("name") or "").strip()
+        name = (p.get("name") or "").strip()
         if not name:
             continue
-        tp=(p.get("type") or "text").strip()
-        item={"name":name,"type":tp,"default":p.get("default","")}
-        lbl=(p.get("label") or "").strip()
+        item = {
+            "name": name,
+            "type": (p.get("type") or "text").strip(),
+            "default": p.get("default"),
+        }
+        lbl = (p.get("label") or "").strip()
         if lbl:
-            item["label"]=lbl
-        if tp=="select":
-            opts_csv=(p.get("options") or "").strip()
-            if opts_csv:
-                item["options"]=[s.strip() for s in opts_csv.split(",") if s.strip()][:200]
-        if tp=="select_from_column":
-            col=(p.get("source_column") or "").strip()
-            if col:
-                item["source_column"]=col
+            item["label"] = lbl
+
+        # Sources d'options pour select / select_multi
+        if item["type"] in ("select", "select_multi"):
+            src_mode = p.get("options_mode") or "manual"
+            if src_mode == "manual":
+                opts_csv = (p.get("options_text") or "").strip()
+                if opts_csv:
+                    item["options"] = [s.strip() for s in opts_csv.split(",") if s.strip()]
+            elif src_mode == "column":
+                col = (p.get("source_column") or "").strip()
+                if col:
+                    # on stocke sous le champ standard utilisé côté exécution
+                    item["source_column"] = col
+            elif src_mode == "python":
+                py = (p.get("options_python") or "").strip()
+                if py:
+                    item["options_python"] = py
+
         out.append(item)
     return out
 
@@ -240,16 +312,31 @@ if st.session_state.current_view == "list":
                         st.session_state.form_output_col = m.get("output_column","")
                         st.session_state.form_desc = m.get("description","")
                         st.session_state.form_code = m.get("code","")
-                        st.session_state.form_param_list = [
-                            {
-                                "name": p.get("name",""), 
+                        st.session_state.form_param_list = []
+                        for p in (m.get("param_schema") or []):
+                            entry = {
+                                "name": p.get("name",""),
                                 "label": p.get("label",""),
-                                "type": p.get("type","text"), 
+                                "type": p.get("type","text"),
                                 "default": p.get("default",""),
-                                "options": ",".join(p.get("options",[])) if isinstance(p.get("options"),list) else (p.get("options","") or ""),
-                                "source_column": p.get("source_column",""),
-                            } for p in (m.get("param_schema") or [])
-                        ]
+                                "options_mode": "manual",
+                                "options_text": "",
+                                "source_column": "",
+                                "options_python": "",
+                            }
+                            if entry["type"] in ("select","select_multi"):
+                                if p.get("options_python"):
+                                    entry["options_mode"] = "python"
+                                    entry["options_python"] = p.get("options_python","")
+                                elif p.get("source_column"):
+                                    entry["options_mode"] = "column"
+                                    entry["source_column"] = p.get("source_column","")
+                                else:
+                                    entry["options_mode"] = "manual"
+                                    opts = p.get("options",[])
+                                    entry["options_text"] = ",".join(opts) if isinstance(opts,list) else str(opts or "")
+                            st.session_state.form_param_list.append(entry)
+
                         st.rerun()
                     
                     col_up, col_down = st.columns(2)
@@ -311,6 +398,141 @@ elif st.session_state.current_view == "edit":
     inferred = _infer_required_columns(code)
     if inferred:
         st.markdown("**Colonnes détectées :** " + " ".join([f"`{c}`" for c in inferred]))
+
+
+    # ================== PARAMS DYNAMIQUES ==================
+    st.markdown("---")
+    st.subheader("⚙️ Paramètres (optionnel)")
+
+    # sample pour listes basées sur colonnes / python
+    _editor_sample = _get_sample_for_editor(gabarit)
+    _sample_cols = list(_editor_sample.columns) if isinstance(_editor_sample, pd.DataFrame) else []
+
+    # initialisation state
+    if not st.session_state.form_param_list:
+        st.session_state.form_param_list = []
+
+    # bouton d'ajout
+    if st.button("➕ Ajouter un paramètre", key="add_param_btn", use_container_width=True):
+        st.session_state.form_param_list.append({
+            "name": "",
+            "label": "",
+            "type": "text",                  # text | number | boolean | select | select_multi
+            "default": "",
+            # champs spécifiques select/select_multi
+            "options_mode": "manual",        # manual | column | python
+            "options_text": "",              # CSV si manuel
+            "source_column": "",             # si column
+            "options_python": "",            # si python (doit produire 'options' = list)
+        })
+        st.rerun()
+
+    # édition param par param (expander)
+    to_delete = []
+    for idx, p in enumerate(st.session_state.form_param_list):
+        with st.expander(f"Paramètre #{idx+1} — {(p.get('name') or 'sans nom')}", expanded=True):
+            colA, colB, colC = st.columns([2,2,1])
+            with colA:
+                p["name"] = st.text_input("Nom *", value=p.get("name",""), key=f"p_name_{idx}")
+            with colB:
+                p["label"] = st.text_input("Label", value=p.get("label",""), key=f"p_label_{idx}")
+            with colC:
+                p["type"]  = st.selectbox("Type", ["text","number","boolean","select","select_multi"],
+                                        index=["text","number","boolean","select","select_multi"].index(p.get("type","text")),
+                                        key=f"p_type_{idx}")
+
+            # zone dynamique selon type
+            if p["type"] in ("select","select_multi"):
+                st.caption("Source des options")
+                mode = st.radio(
+                    "Mode", ["manual","column","python"],
+                    index=["manual","column","python"].index(p.get("options_mode","manual")),
+                    key=f"p_mode_{idx}", horizontal=True, label_visibility="collapsed"
+                )
+                p["options_mode"] = mode
+
+                if mode == "manual":
+                    p["options_text"] = st.text_area(
+                        "Options (séparées par des virgules)",
+                        value=p.get("options_text",""),
+                        key=f"p_opts_text_{idx}",
+                        height=80
+                    )
+                    # aperçu options
+                    opts_preview = [s.strip() for s in (p.get("options_text") or "").split(",") if s.strip()]
+                    if opts_preview:
+                        st.caption(f"Prévisualisation : {len(opts_preview)} option(s)")
+
+                elif mode == "column":
+                    p["source_column"] = st.selectbox(
+                        "Colonne source",
+                        options=_sample_cols if _sample_cols else ["(aucune donnée par défaut disponible)"],
+                        index=(_sample_cols.index(p.get("source_column")) if p.get("source_column") in _sample_cols else 0) if _sample_cols else 0,
+                        key=f"p_source_col_{idx}",
+                        disabled=not _sample_cols
+                    )
+                    if _sample_cols and p.get("source_column") in _sample_cols:
+                        uniques = sorted(list(_editor_sample[p["source_column"]].dropna().astype(str).unique()))
+                        st.caption(f"Prévisualisation : {min(len(uniques), 500)} valeur(s) unique(s)")
+
+                elif mode == "python":
+                    st.caption("Le code doit définir une variable `options` (list[str]) ou une fonction `get_options(df)`.")
+                    p["options_python"] = st.text_area(
+                        "Code Python des options", value=p.get("options_python",""),
+                        key=f"p_opts_py_{idx}", height=140, placeholder="options = sorted(df['col'].astype(str).unique().tolist())[:200]"
+                    )
+                    if st.button("▶️ Tester le code", key=f"p_opts_py_test_{idx}"):
+                        preview = _safe_eval_options_python(p.get("options_python",""), _editor_sample)
+                        st.caption(f"Prévisualisation : {len(preview)} option(s)")
+                        if preview[:10]:
+                            st.write(preview[:10])
+
+                # valeur par défaut en fonction des options disponibles
+                st.markdown("**Valeur par défaut**")
+                # reconstituer les options déterministes pour le widget
+                widget_opts = []
+                if mode == "manual":
+                    widget_opts = [s.strip() for s in (p.get("options_text") or "").split(",") if s.strip()]
+                elif mode == "column" and _sample_cols and p.get("source_column") in _sample_cols:
+                    widget_opts = sorted(list(_editor_sample[p["source_column"]].dropna().astype(str).unique()))[:500]
+                elif mode == "python" and p.get("options_python"):
+                    widget_opts = _safe_eval_options_python(p.get("options_python",""), _editor_sample)
+
+                if p["type"] == "select":
+                    # simple select
+                    cur = p.get("default", "")
+                    p["default"] = st.selectbox(
+                        "Défaut", options=widget_opts if widget_opts else [cur],
+                        index=(widget_opts.index(cur) if cur in widget_opts else 0) if widget_opts else 0,
+                        key=f"p_def_sel_{idx}"
+                    )
+                else:
+                    # multi select
+                    cur = p.get("default", [])
+                    if not isinstance(cur, list): cur = [cur] if cur not in (None,"") else []
+                    p["default"] = st.multiselect(
+                        "Défaut (multi)", options=widget_opts, default=[x for x in cur if x in widget_opts],
+                        key=f"p_def_ms_{idx}"
+                    )
+
+            elif p["type"] == "number":
+                p["default"] = st.number_input("Valeur par défaut", value=float(p.get("default") or 0.0), key=f"p_def_num_{idx}")
+            elif p["type"] == "boolean":
+                p["default"] = st.checkbox("Valeur par défaut", value=bool(p.get("default") in (True, "true", "True", 1, "1", "on")), key=f"p_def_bool_{idx}")
+            else:
+                p["default"] = st.text_input("Valeur par défaut", value=str(p.get("default") or ""), key=f"p_def_text_{idx}")
+
+            # bouton supprimer
+            if st.button("🗑️ Supprimer ce paramètre", key=f"p_del_{idx}"):
+                to_delete.append(idx)
+
+    # suppression différée pour éviter conflits d'index
+    if to_delete:
+        for i in sorted(to_delete, reverse=True):
+            del st.session_state.form_param_list[i]
+        st.rerun()
+    # ================== /PARAMS DYNAMIQUES ==================
+
     
     if st.button("💾 Enregistrer", type="primary", use_container_width=True):
         if not name.strip():
@@ -331,7 +553,7 @@ elif st.session_state.current_view == "edit":
                     name=name.strip(),
                     description=desc.strip(),
                     output_column=outcol.strip(),
-                    param_schema=[],
+                    param_schema=_param_schema_from_form(),
                     required_columns=inferred,
                     code=code,
                     order=current_order,
@@ -412,8 +634,11 @@ elif st.session_state.current_view == "test":
                 if st.button("▶️ Exécuter le test", type="primary", use_container_width=True):
                     try:
                         with st.spinner("Exécution en cours..."):
-                            out = apply_method(sample, m, {})
+                            pvals = _default_params_for_method(m.get("param_schema") or [], sample)
+                            out = apply_method(sample, m, pvals)
                         st.success("Méthode appliquée avec succès")
+                        if pvals:
+                            st.caption("Paramètres utilisés : " + ", ".join([f"{k}={v}" for k,v in pvals.items()]))
                         st.dataframe(out, use_container_width=True, height=500)
                     except MethodExecutionError as e:
                         st.error(f"Erreur d'exécution : {e}")

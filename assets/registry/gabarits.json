@@ -1278,6 +1278,27 @@
   "methods": [],
   "gabarit_method_links": [],
   "gabarit_methods": {
-    "Ratios Financiers (BCE/INPI)|v1": []
+    "Ratios Financiers (BCE/INPI)|v1": [
+      {
+        "id": "2b6a10a7-a23d-494f-8d4f-6367aa7df398",
+        "name": "EBE",
+        "description": "Calcul de l'EBE en %",
+        "output_column": "EBE_EN_%",
+        "param_schema": [
+          {
+            "name": "Colonnes inutiles",
+            "type": "select",
+            "default": "327373478",
+            "label": "Colonnes inutiles",
+            "source_column": "siren"
+          }
+        ],
+        "required_columns": [
+          "EBE"
+        ],
+        "code": "value = df['EBE']*4",
+        "order": 1
+      }
+    ]
   }
 }
