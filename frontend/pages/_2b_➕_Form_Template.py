@@ -25,9 +25,36 @@ from backend.models.template_config import (
     SlideMapping
 )
 
-st.set_page_config(page_title="Nouveau Template", page_icon="➕", layout="wide")
+st.set_page_config(page_title="Paramètres généraux", page_icon="⚙️", layout="wide")
+def render_template_subnav(active: str, template_id: int | None):
+    cols = st.columns([1,1,1,1,1])
+    with cols[0]:
+        if st.button("← Retour bibliothèque", use_container_width=True):
+            if template_id:
+                st.session_state.selected_template_detail = template_id
+            if "selected_template" in st.session_state:
+                del st.session_state.selected_template
+            st.switch_page("pages/2_📚_Bibliotheque.py")
+    with cols[1]:
+        if st.button("🗂️ Détail du template", type=("primary" if active=="detail" else "secondary"), use_container_width=True):
+            if template_id:
+                st.session_state.selected_template_detail = template_id
+            st.switch_page("pages/_2a_📊_Detail_Livrable.py")
+    with cols[2]:
+        st.button("⚙️ Paramètres généraux", type="primary" if active=="general" else "secondary", use_container_width=True)
+    with cols[3]:
+        if st.button("📑 Injection des données", type=("primary" if active=="inject" else "secondary"), use_container_width=True):
+            if template_id:
+                st.session_state.selected_template = template_id
+            st.switch_page("pages/_2b3_📑_Tables_Template.py")
+    with cols[4]:
+        if st.button("🧾 Ajustement de la table", type=("primary" if active=="adjust" else "secondary"), use_container_width=True):
+            if template_id:
+                st.session_state.selected_template = template_id
+            st.switch_page("pages/_2b4_🧾_Ajustement_Table.py")
+    st.divider()
 
-# Initialiser les états de session
+# --- États init (inchangés)
 if 'parameters' not in st.session_state:
     st.session_state.parameters = []
 if 'loops' not in st.session_state:
@@ -37,94 +64,57 @@ if 'images' not in st.session_state:
 if 'mappings' not in st.session_state:
     st.session_state.mappings = []
 
-# Mode édition : charger un template existant
+# --- Guard + chargement
 edit_mode = False
 template_id_to_edit = None
-template_config = None
-template_db = None
+
+if 'selected_template' not in st.session_state and 'selected_template_detail' in st.session_state:
+    st.session_state.selected_template = st.session_state.selected_template_detail
 
 if 'selected_template' in st.session_state and st.session_state.selected_template:
     edit_mode = True
     template_id_to_edit = st.session_state.selected_template
-    
-    # Charger les données du template
     with DatabaseService.get_session() as db:
         service = TemplateService(db)
         template_config = service.load_template_config(template_id_to_edit)
         template_db = service.get_template(template_id_to_edit)
-        
-        # EXTRAIRE les données AVANT de sortir du contexte
         template_name = template_db.name
         template_version = template_db.version
         template_description = template_db.description
         template_card_image_path = template_db.card_image_path
-    
-    # Pré-remplir les états si c'est la première fois
+
+    render_template_subnav("general", template_id_to_edit)
+    st.title(f"⚙️ Paramètres généraux — {template_name} (v{template_version})")
+
     if not st.session_state.get('_template_loaded'):
         st.session_state.parameters = [
-            {
-                "name": p.name,
-                "type": p.type,
-                "required": p.required,
-                "balise_ppt": p.balise_ppt
-            }
+            {"name": p.name, "type": p.type, "required": p.required, "balise_ppt": p.balise_ppt}
             for p in template_config.parameters
         ]
-        
         st.session_state.loops = [
-            {
-                "loop_id": loop.loop_id,
-                "slides": loop.slides,
-                "sheet_name": loop.sheet_name
-            }
+            {"loop_id": loop.loop_id, "slides": loop.slides, "sheet_name": loop.sheet_name}
             for loop in template_config.loops
         ]
-        
         st.session_state.images = {
             slide_id: [
-                {
-                    "type": img.type,
-                    "pattern": img.pattern,
-                    "default_path": img.default_path,
-                    "position": img.position,
-                    "size": img.size,
-                    "background": img.background,
-                    "loop_dependent": img.loop_dependent
-                }
+                {"type": img.type, "pattern": img.pattern, "default_path": img.default_path,
+                 "position": img.position, "size": img.size, "background": img.background,
+                 "loop_dependent": img.loop_dependent}
                 for img in images
-            ]
-            for slide_id, images in template_config.image_injections.items()
+            ] for slide_id, images in template_config.image_injections.items()
         }
-        
         st.session_state.mappings = [
-            {
-                "slide_id": m.slide_id,
-                "sheet_name": m.sheet_name,
-                "excel_range": m.excel_range,
-                "has_header": m.has_header
-            }
+            {"slide_id": m.slide_id, "sheet_name": m.sheet_name, "excel_range": m.excel_range, "has_header": m.has_header}
             for m in template_config.slide_mappings
         ]
-        
         st.session_state._template_loaded = True
-    
-    # Réinitialiser après navigation
-    if st.button("🔙 Retour à la bibliothèque"):
-        del st.session_state.selected_template
-        del st.session_state._template_loaded
-        st.switch_page("pages/2_📚_Bibliotheque.py")
-
-# TITRE (maintenant edit_mode et template_name sont définis)
-if edit_mode:
-    st.title(f"✏️ Modifier le template '{template_name}'")
 else:
+    render_template_subnav("general", None)
     st.title("➕ Créer un nouveau template")
-
-# --- Valeurs par défaut en mode création (pour éviter NameError dans la sidebar) ---
-if not edit_mode:
     template_name = ""
     template_version = "1.0"
     template_description = ""
+    template_card_image_path = None
 
 
 # === Récap compact dans la sidebar ===

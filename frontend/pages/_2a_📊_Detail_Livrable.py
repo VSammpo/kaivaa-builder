@@ -1,51 +1,23 @@
-# frontend/pages/2a_📊_Detail_Livrable.py
-# (Ancien: 4_📊_Detail_Livrable.py)
-# CHANGEMENTS:
-# - Numérotation 2a
-# - SUPPRESSION du bouton "▶️ Générer" (ligne 88-91)
-# - Navigation mise à jour
-
-"""
-Page de détail d'un livrable - Version optimisée
-"""
+# frontend/pages/_2a_📊_Detail_Livrable.py
+# Page HUB (lecture seule) d'un template : nav + (col gauche: infos) + (col droite: historique téléchargements)
 
 import streamlit as st
 from pathlib import Path
 import sys
 import subprocess
 import platform
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+# ===== Bootstrap
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
-from backend.services.gabarit_registry import list_gabarits, get_gabarit, load_registry
-from datetime import datetime
-from zoneinfo import ZoneInfo
 
-def _list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[str]:
-    try:
-        reg = load_registry()
-        meta = (reg.get(gabarit_name) or {}).get("versions", {}).get(gabarit_version) \
-               or (reg.get(gabarit_name) or {}).get("versions", {}).get("v1") \
-               or {}
-        methods = meta.get("methods") or {}
-        if isinstance(methods, dict):
-            return sorted([k for k in methods.keys()])
-        elif isinstance(methods, list):
-            out = []
-            for m in methods:
-                if isinstance(m, dict) and m.get("name"):
-                    out.append(str(m["name"]))
-            return sorted(out)
-        return []
-    except Exception:
-        return []
-
-
+# ===== Utils
 def fmt_paris(ts) -> str:
     if ts is None:
         return "—"
@@ -60,340 +32,236 @@ def fmt_paris(ts) -> str:
         return ts.strftime("%d/%m/%Y %H:%M")
     return str(ts)
 
-st.set_page_config(page_title="Détail Livrable", page_icon="📊", layout="wide")
-if st.session_state.get("_flash_msg"):
-    st.toast(st.session_state["_flash_msg"])
-    del st.session_state["_flash_msg"]
+def open_file(filepath: str) -> bool:
+    try:
+        if not filepath:
+            st.error("Chemin vide.")
+            return False
+        abspath = str(Path(filepath).resolve())
+        if platform.system() == "Windows":
+            subprocess.run(["cmd", "/c", "start", "", abspath], check=True)
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", abspath], check=True)
+        else:
+            subprocess.run(["xdg-open", abspath], check=True)
+        return True
+    except Exception as e:
+        st.error(f"Erreur d'ouverture : {e}")
+        return False
 
+st.set_page_config(page_title="Détail du template", page_icon="🗂️", layout="wide")
 
-# Vérifier qu'un template est sélectionné
-if 'selected_template_detail' not in st.session_state:
-    st.error("Aucun template sélectionné")
-    if st.button("Retour à la bibliothèque"):
+# ===== Guard : un template doit être sélectionné
+if "selected_template_detail" not in st.session_state or not st.session_state.selected_template_detail:
+    st.error("Aucun template sélectionné.")
+    if st.button("← Retour bibliothèque", use_container_width=True):
         st.switch_page("pages/2_📚_Bibliotheque.py")
     st.stop()
 
 template_id = st.session_state.selected_template_detail
 
-# Charger les données
+# ===== Charger PRIMITIFS du template (évite Detached)
 with DatabaseService.get_session() as db:
-    service = TemplateService(db)
-    template = service.get_template(template_id)
-    
-    if not template:
-        st.error(f"Template {template_id} introuvable")
+    ts = TemplateService(db)
+    tpl = ts.get_template(template_id)
+    if not tpl:
+        st.error(f"Template #{template_id} introuvable.")
         st.stop()
-    
-    config = service.load_template_config(template_id)
-    stats = service.get_template_stats(template_id)
-    
-    # Extraire données
-    template_name = template.name
-    template_version = template.version
-    template_description = template.description
-    ppt_path = template.ppt_template_path
-    excel_path = template.excel_template_path
+    cfg = ts.get_config(template_id)  # dict
+    stats = ts.get_template_stats(template_id)  # KPIs agrégés si dispo
 
-# En-tête cliquable
-if st.button(f"📊 {template_name} (v{template_version})", key="header_deselect", use_container_width=True):
-    del st.session_state.selected_template_detail
-    st.switch_page("pages/2_📚_Bibliotheque.py")
+    tpl_name = tpl.name
+    tpl_version = tpl.version
+    tpl_desc = tpl.description
+    ppt_path = tpl.ppt_template_path
+    excel_path = tpl.excel_template_path
 
-st.caption("Cliquez sur le titre pour retourner à la bibliothèque")
-
-if template_description:
-    st.info(template_description)
-
-st.divider()
-
-# Layout principal
-col_left, col_right = st.columns([1, 1])
-
-with col_left:
-    st.subheader("Actions")
-    
-    col1, col2 = st.columns(2)
-    
-    # ⚠️ SUPPRESSION DU BOUTON "▶️ Générer" (ancien col1)
-    # Les rapports se génèrent uniquement depuis les Projets
-    
-    with col1:
-        if st.button("✏️ Éditer", use_container_width=True, type="primary"):
+# ===== Navbar (4 boutons unifiés)
+def render_template_subnav(active: str, template_id: int):
+    cols = st.columns([1,1,1,1,1])
+    with cols[0]:
+        if st.button("← Retour bibliothèque", use_container_width=True):
+            if "selected_template" in st.session_state:
+                del st.session_state.selected_template
+            st.switch_page("pages/2_📚_Bibliotheque.py")
+    with cols[1]:
+        st.button("🗂️ Détail du template", type="primary" if active=="detail" else "secondary", use_container_width=True)
+    with cols[2]:
+        if st.button("⚙️ Paramètres généraux", type=("primary" if active=="general" else "secondary"), use_container_width=True):
             st.session_state.selected_template = template_id
             st.switch_page("pages/_2b_➕_Form_Template.py")
-    
-    with col2:
-        if st.button("🗑️ Supprimer", use_container_width=True):
-            st.session_state.show_delete_modal = True
-            st.rerun()
-    
-    st.markdown("")
-    
-    st.subheader("Éditer les fichiers master")
-    
-    def open_file(filepath):
-        try:
-            filepath_abs = str(Path(filepath).resolve())
-            if platform.system() == 'Windows':
-                subprocess.run(['cmd', '/c', 'start', '', filepath_abs], check=True)
-            elif platform.system() == 'Darwin':
-                subprocess.run(['open', filepath_abs], check=True)
-            else:
-                subprocess.run(['xdg-open', filepath_abs], check=True)
-            return True
-        except Exception as e:
-            st.error(f"Erreur : {e}")
-            return False
-    
-
-    def render_gabarits_section(template_id: int):
-        st.subheader("🧱 Tables demandées (gabarits rattachés)")
-
-        DatabaseService.initialize()
-        with DatabaseService.get_session() as db:
-            ts = TemplateService(db)
-
-            # Liste des usages déjà attachés
-            usages = ts.list_gabarit_usages(template_id)
-
-            if usages:
-                df = pd.DataFrame([{
-                    "gabarit": f'{u.get("gabarit_name")} (v{u.get("gabarit_version")})',
-                    "sheet": u.get("excel_target", {}).get("sheet", ""),
-                    "table": u.get("excel_target", {}).get("table", ""),
-                    "n_cols_enabled": len(u.get("columns_enabled", [])),
-                    "methods": ", ".join(u.get("methods") or [])
-                } for u in usages])
-                st.dataframe(df, use_container_width=True, hide_index=True)
-            else:
-                st.caption("Aucune table demandée pour l'instant.")
-
-            st.divider()
-
-            # Sélection d'un gabarit global
-            gab_list = list_gabarits()
-            if not gab_list:
-                st.info("Crée d'abord des gabarits dans la page « 3_🧱_Gabarits ».")
-                return
-
-            labels = [f"{g.name} (v{g.version})" for g in gab_list]
-            choice = st.selectbox("Choisir un gabarit", labels, key="gab_select")
-            g = gab_list[labels.index(choice)]
-
-            all_cols = [c.name for c in g.columns]
-
-            # Valeurs existantes si déjà attaché
-            existing = ts.get_gabarit_usage(template_id, g.name, g.version)
-            default_enabled = existing.get("columns_enabled", []) if existing else all_cols[:]
-            default_sheet = existing.get("excel_target", {}).get("sheet", "D001") if existing else "D001"
-            default_table = existing.get("excel_target", {}).get("table", "") if existing else ""
-            default_methods = existing.get("methods", []) if existing else []
-
-            columns_enabled = st.multiselect(
-                "Colonnes utilisées par CE livrable",
-                options=all_cols,
-                default=default_enabled,
-                help="Coche uniquement les colonnes nécessaires à ce livrable. Par défaut : toutes."
-            )
-
-            # Méthodes disponibles
-            methods_avail = _list_methods_for_gabarit(g.name, g.version)
-            methods_selected = st.multiselect(
-                "Méthodes (facultatif)",
-                options=methods_avail,
-                default=default_methods,
-                help="Les méthodes peuvent forcer des colonnes requises à l'injection (non bloquant)."
-            )
-
-            c1, c2 = st.columns(2)
-            with c1:
-                sheet = st.text_input("Feuille Excel cible", value=default_sheet)
-            with c2:
-                table = st.text_input("Nom du tableau Excel (ListObject)", value=default_table)
-
-            c3, c4 = st.columns(2)
-            with c3:
-                if st.button("💾 Enregistrer / Mettre à jour", key="gab_save"):
-                    ordered = [c for c in all_cols if c in set(columns_enabled)]
-                    ts.upsert_gabarit_usage(
-                        template_id=template_id,
-                        gabarit_name=g.name,
-                        gabarit_version=g.version,
-                        columns_enabled=ordered,
-                        excel_sheet=sheet,
-                        excel_table=table,
-                        methods=methods_selected,
-                    )
-                    st.session_state["_flash_msg"] = f"Gabarit {g.name} v{g.version} enregistré sur le livrable."
-                    st.rerun()
-            with c4:
-                if existing and st.button("🗑️ Détacher ce gabarit", type="secondary", key="gab_delete"):
-                    if ts.delete_gabarit_usage(template_id, g.name, g.version):
-                        st.session_state["_flash_msg"] = "Gabarit détaché."
-                        st.rerun()
-                    else:
-                        st.warning("Aucune suppression effectuée.")
+    with cols[3]:
+        if st.button("📑 Injection des données", type=("primary" if active=="inject" else "secondary"), use_container_width=True):
+            st.session_state.selected_template = template_id
+            st.switch_page("pages/_2b3_📑_Tables_Template.py")
+    with cols[4]:
+        if st.button("🧾 Ajustement de la table", type=("primary" if active=="adjust" else "secondary"), use_container_width=True):
+            st.session_state.selected_template = template_id
+            st.switch_page("pages/_2b4_🧾_Ajustement_Table.py")
+    st.divider()
 
 
+render_template_subnav("detail", template_id)
 
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("📊 Excel", use_container_width=True, disabled=not (excel_path and Path(excel_path).exists())):
-            if open_file(excel_path):
-                st.toast("Excel ouvert")
-    
-    with col2:
-        if st.button("📄 PPT", use_container_width=True, disabled=not (ppt_path and Path(ppt_path).exists())):
+# ===== Titre + description
+st.title(f"🗂️ Détail du template — {tpl_name} (v{tpl_version})")
+if tpl_desc:
+    st.info(tpl_desc)
+
+# ===== Layout 2 colonnes
+col_left, col_right = st.columns([1, 1], gap="large")
+
+# ---------------------------------------------------------------------
+# COLONNE GAUCHE : FICHIERS MASTER + TABLES DEMANDÉES + KPIs
+# ---------------------------------------------------------------------
+with col_left:
+    st.subheader("📁 Fichiers master (lecture seule)")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.text_input("Chemin PPT", value=str(ppt_path or ""), disabled=True)
+        if st.button("📂 Ouvrir PPT", use_container_width=True, disabled=not ppt_path):
             if open_file(ppt_path):
                 st.toast("PowerPoint ouvert")
-    
-    st.markdown("")
-    
-    render_gabarits_section(template_id)
+    with c2:
+        st.text_input("Chemin Excel", value=str(excel_path or ""), disabled=True)
+        if st.button("📂 Ouvrir Excel", use_container_width=True, disabled=not excel_path):
+            if open_file(excel_path):
+                st.toast("Excel ouvert")
 
-    
-    st.markdown("")
-    
-    st.subheader("Statistiques d'utilisation")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Total", stats['total_executions'])
-        st.metric("Durée moy.", f"{stats['avg_execution_time_seconds']}s")
-    
-    with col2:
-        st.metric("Succès", f"{stats['success_rate']}%")
-        st.metric("Échecs", stats['failed_executions'])
+    st.divider()
 
-with col_right:
-    st.subheader("Historique des téléchargements")
-    
-    from backend.database.models import ExecutionJob
-    
-    # Forcer refresh des données
+    st.subheader("🧱 Tables demandées (colonnes minimales par gabarit)")
+
     with DatabaseService.get_session() as db:
-        recent_jobs = db.query(ExecutionJob).filter_by(
-            template_id=template_id
-        ).order_by(ExecutionJob.created_at.desc()).limit(15).all()
-        
-        jobs_data = []
-        for job in recent_jobs:
-            jobs_data.append({
-                'id': job.id,
-                'date': job.created_at,
-                'status': job.status,
-                'duration': job.execution_time_seconds,
-                'excel_path': job.output_excel_path,
-                'ppt_path': job.output_ppt_path,
-                'parameters': job.parameters,
-                'error': job.error_message
-            })
-    
-    if jobs_data:
-        with st.container(height=600):
-            for job in jobs_data:
-                
-                # Ligne principale avec boutons
-                col_status, col_date, col_excel, col_ppt, col_actions = st.columns([1, 3, 2, 2, 1])
+        ts = TemplateService(db)
+        usages = ts.list_gabarit_usages(template_id)
 
-                with col_status:
-                    if job['status'] == 'running':
-                        st.markdown("🔄")
-                    elif job['status'] == 'completed':
-                        st.markdown("✅")
-                    else:
-                        st.markdown("❌")
+    if not usages:
+        st.caption("Aucune table demandée pour l'instant.")
+    else:
+        rows = []
+        # Pour chaque usage, calculer les tables requises + colonnes
+        for u in usages:
+            gname = u.get("gabarit_name")
+            gver  = u.get("gabarit_version", "v1")
+            req = ts.compute_required_tables_for_usage(template_id, gname, gver)
+            # usage cible Excel
+            tgt = u.get("excel_target") or {}
+            sheet, table = tgt.get("sheet", ""), tgt.get("table", "")
+            for (nm, ver), cols in req.items():
+                rows.append({
+                    "Gabarit": f"{nm} (v{ver})",
+                    "Vers Excel": f"{sheet}/{table}",
+                    "Colonnes requises": ", ".join(cols) if cols else "—",
+                })
 
-                with col_date:
-                    date_str = fmt_paris(job['date'])
-                    duration_str = f" - {job['duration']:.1f}s" if job['duration'] else ""
-                    st.markdown(f"**{date_str}**{duration_str}")
+        import pandas as pd
+        df_req = pd.DataFrame(rows)
+        st.dataframe(df_req, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    st.subheader("📄 Tables Excel créées")
+    if usages:
+        unique_tbls = sorted({((u.get("excel_target") or {}).get("sheet",""),
+                            (u.get("excel_target") or {}).get("table","")) for u in usages})
+        if unique_tbls:
+            df_tbls = pd.DataFrame([{"Feuille": s, "Table": t} for (s, t) in unique_tbls])
+            st.dataframe(df_tbls, use_container_width=True, hide_index=True)
+        else:
+            st.caption("Aucune table Excel définie.")
 
 
-                with col_excel:
-                    excel_exists = job['excel_path'] and Path(job['excel_path']).exists()
-                    if st.button("📊 Excel", key=f"excel_{job['id']}",
-                                 disabled=not excel_exists or job['status'] != 'completed',
-                                 use_container_width=True):
-                        if open_file(job['excel_path']):
+    st.divider()
+
+    st.subheader("📈 KPIs de génération")
+    k1, k2 = st.columns(2)
+    with k1:
+        st.metric("Total exécutions", stats.get("total_executions", 0))
+        st.metric("Taux de succès", f"{stats.get('success_rate', 0)}%")
+    with k2:
+        st.metric("Durée moyenne", f"{stats.get('avg_execution_time_seconds', 0)}s")
+        st.metric("Échecs", stats.get("failed_executions", 0))
+
+# ---------------------------------------------------------------------
+# COLONNE DROITE : HISTORIQUE DES TÉLÉCHARGEMENTS
+# ---------------------------------------------------------------------
+with col_right:
+    st.subheader("⬇️ Historique des téléchargements")
+
+    # Modèle ExecutionJob (historique)
+    from backend.database.models import ExecutionJob  # pylint: disable=import-error
+
+    # Récup données fraîches
+    with DatabaseService.get_session() as db:
+        recent = (
+            db.query(ExecutionJob)
+              .filter_by(template_id=template_id)
+              .order_by(ExecutionJob.created_at.desc())
+              .limit(20)
+              .all()
+        )
+        jobs = [{
+            "id": j.id,
+            "date": j.created_at,
+            "status": j.status,
+            "duration": j.execution_time_seconds,
+            "excel_path": j.output_excel_path,
+            "ppt_path": j.output_ppt_path,
+            "parameters": j.parameters,
+            "error": j.error_message,
+        } for j in recent]
+
+    if not jobs:
+        st.caption("Aucun téléchargement pour le moment.")
+    else:
+        with st.container(height=620):
+            for job in jobs:
+                # Ligne principale
+                cst, cdate, cxl, cppt, cact = st.columns([1, 3, 2, 2, 1])
+
+                with cst:
+                    st.markdown("🔄" if job["status"] == "running"
+                                else ("✅" if job["status"] == "completed" else "❌"))
+                with cdate:
+                    d = fmt_paris(job["date"])
+                    dur = f" · {job['duration']:.1f}s" if job["duration"] else ""
+                    st.markdown(f"**{d}**{dur}")
+
+                with cxl:
+                    ok = job["excel_path"] and Path(job["excel_path"]).exists()
+                    if st.button("📊 Excel", key=f"job_x_{job['id']}",
+                                 use_container_width=True,
+                                 disabled=(not ok or job["status"] != "completed")):
+                        if open_file(job["excel_path"]):
                             st.toast("Excel ouvert")
 
-                with col_ppt:
-                    ppt_exists = job['ppt_path'] and Path(job['ppt_path']).exists()
-                    if st.button("📄 PPT", key=f"ppt_{job['id']}",
-                                 disabled=not ppt_exists or job['status'] != 'completed',
-                                 use_container_width=True):
-                        if open_file(job['ppt_path']):
+                with cppt:
+                    ok = job["ppt_path"] and Path(job["ppt_path"]).exists()
+                    if st.button("📄 PPT", key=f"job_p_{job['id']}",
+                                 use_container_width=True,
+                                 disabled=(not ok or job["status"] != "completed")):
+                        if open_file(job["ppt_path"]):
                             st.toast("PowerPoint ouvert")
 
-                with col_actions:
-                    if st.button("🗑️", key=f"del_{job['id']}", use_container_width=True,
-                                 help="Supprimer cette exécution (fichiers + KPI)"):
+                with cact:
+                    if st.button("🗑️", key=f"job_del_{job['id']}", use_container_width=True,
+                                 help="Supprimer cette exécution (fichiers + traces)"):
                         with DatabaseService.get_session() as db_del:
-                           ok = DatabaseService.delete_job_and_files(db_del, job['id'])
-
+                            ok = DatabaseService.delete_job_and_files(db_del, job["id"])
                         if ok:
                             st.success("Exécution supprimée")
                         else:
                             st.warning("Exécution introuvable")
                         st.rerun()
 
-                
-                # Expander pour détails
-                with st.expander("📋 Détails", expanded=False):
-                    st.caption(f"**Heure de génération :** {fmt_paris(job['date'])}")
-
-                    
-                    if job['duration']:
-                        st.caption(f"**Durée :** {job['duration']:.2f} secondes")
-                    
-                    if job['parameters']:
-                        st.caption("**Paramètres :**")
-                        st.json(job['parameters'])
-                    
-                    if job['error']:
-                        st.error(f"**Erreur :** {job['error']}")
-                    
-                    if job['excel_path']:
-                        st.caption(f"**Excel :** `{job['excel_path']}`")
-                    if job['ppt_path']:
-                        st.caption(f"**PPT :** `{job['ppt_path']}`")
-                
-                st.divider()
-    else:
-        st.info("Aucune génération pour ce template")
-
-# Modal suppression
-if st.session_state.get('show_delete_modal'):
-    
-    @st.dialog("Confirmer la suppression")
-    def delete_confirmation():
-        st.warning(f"Suppression du template **{template_name}**")
-        st.markdown("Tapez le nom exact pour confirmer :")
-        
-        confirmation = st.text_input("Nom du template", key="delete_confirm_input")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            if st.button("Annuler", use_container_width=True):
-                st.session_state.show_delete_modal = False
-                st.rerun()
-        
-        with col2:
-            if st.button("Supprimer", type="primary", use_container_width=True):
-                if confirmation == template_name:
-                    with DatabaseService.get_session() as db:
-                        service = TemplateService(db)
-                        service.delete_template(template_id, hard_delete=False)
-                    
-                    st.success(f"Template '{template_name}' désactivé")
-                    st.session_state.show_delete_modal = False
-                    del st.session_state.selected_template_detail
-                    st.switch_page("pages/2_📚_Bibliotheque.py")
-                else:
-                    st.error("Le nom ne correspond pas")
-    
-    delete_confirmation()
+                # Détails
+                with st.expander("📋 Détails"):
+                    st.caption(f"**Heure** : {fmt_paris(job['date'])}")
+                    if job["duration"]:
+                        st.caption(f"**Durée** : {job['duration']:.2f} s")
+                    if job["parameters"]:
+                        st.caption("**Paramètres** :")
+                        st.json(job["parameters"])
+                    if job["error"]:
+                        st.error(f"**Erreur** : {job['error']}")

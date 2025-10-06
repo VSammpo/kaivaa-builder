@@ -494,36 +494,31 @@ class TemplateService:
 
     def list_gabarit_usages(self, template_id: int) -> list[dict]:
         """
-        Liste des *tables demandées* (usages de gabarit) rattachées au livrable
-        (templates.config['gabarit_usages']).
-
-        Chaque item est normalisé au format :
-        {
-        "gabarit_name": str,
-        "gabarit_version": str,
-        "columns_enabled": [str, ...],
-        "excel_target": {"sheet": str, "table": str},
-        "methods": [str, ...]                # NEW (MVP: noms symboliques)
-        }
+        Liste des *tables demandées* (usages de gabarit) rattachées au livrable.
+        Tous les champs utiles sont normalisés et renvoyés pour ne rien perdre.
         """
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
         usages = usages if isinstance(usages, list) else []
 
-        # Normalisation rétrocompatible
         norm: list[dict] = []
         for u in usages:
             if not isinstance(u, dict):
                 continue
+            excel = u.get("excel_target") or {}
             norm.append({
                 "gabarit_name": (u.get("gabarit_name") or "").strip(),
                 "gabarit_version": (u.get("gabarit_version") or "v1").strip(),
-                "columns_enabled": [c.strip() for c in (u.get("columns_enabled") or []) if c and str(c).strip()],
+                "columns_enabled": [str(c).strip() for c in (u.get("columns_enabled") or []) if str(c).strip()],
                 "excel_target": {
-                    "sheet": (u.get("excel_target", {}).get("sheet") or "").strip(),
-                    "table": (u.get("excel_target", {}).get("table") or "").strip(),
+                    "sheet": (excel.get("sheet") or "").strip(),
+                    "table": (excel.get("table") or "").strip(),
                 },
-                "methods": [m.strip() for m in (u.get("methods") or []) if m and str(m).strip()],  # NEW
+                "methods": [str(m).strip() for m in (u.get("methods") or []) if str(m).strip()],
+                "enrichments": u.get("enrichments") or [],          # ← garder tel quel
+                "overlay_python": (u.get("overlay_python") or "").strip(),
+                "final_order": list(u.get("final_order") or []),     # ← garder ordre final
+                "final_excludes": [str(c).strip() for c in (u.get("final_excludes") or []) if str(c).strip()],
             })
         return norm
 
@@ -533,50 +528,93 @@ class TemplateService:
         template_id: int,
         gabarit_name: str,
         gabarit_version: str,
-        columns_enabled: list[str],
         excel_sheet: str,
         excel_table: str,
-        methods: Optional[list[str]] = None,   # NEW
+        columns_enabled: list[str] | None = None,
+        methods: list[str] | None = None,
+        enrichments: list[dict] | None = None,
+        overlay_python: str | None = None,
+        final_order: list[str] | None = None,
+        final_excludes: list[str] | None = None,
     ) -> None:
         """
-        Crée/MAJ une *table demandée* (usage de gabarit) pour ce livrable (clé: gabarit_name+version).
-
-        Args:
-            template_id: id du template livrable
-            gabarit_name: nom du gabarit
-            gabarit_version: version du gabarit (ex: 'v1')
-            columns_enabled: colonnes cochées pour ce livrable (sous-ensemble du gabarit)
-            excel_sheet: feuille Excel cible (ListObject)
-            excel_table: nom du ListObject Excel cible
-            methods: liste de méthodes à appliquer (noms symboliques)  # NEW
+        Unicité par (gabarit_name, gabarit_version, excel_sheet, excel_table).
+        Permet plusieurs tables pour un même gabarit.
         """
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
         if not isinstance(usages, list):
             usages = []
 
-        gabarit_name = (gabarit_name or "").strip()
-        gabarit_version = (gabarit_version or "v1").strip()
-        excel_sheet = (excel_sheet or "").strip()
-        excel_table = (excel_table or "").strip()
-        columns_enabled = [c.strip() for c in (columns_enabled or []) if c and str(c).strip()]
-        methods = [m.strip() for m in (methods or []) if m and str(m).strip()]  # NEW
+        gname = (gabarit_name or "").strip()
+        gver  = (gabarit_version or "v1").strip()
+        sheet = (excel_sheet or "").strip()
+        table = (excel_table or "").strip()
 
-        # Remplacer si déjà présent (name+version)
-        usages = [
-            u for u in usages
-            if not (u.get("gabarit_name") == gabarit_name and u.get("gabarit_version") == gabarit_version)
-        ]
-        usages.append({
-            "gabarit_name": gabarit_name,
-            "gabarit_version": gabarit_version,
-            "columns_enabled": columns_enabled,
-            "excel_target": {"sheet": excel_sheet, "table": excel_table},
-            "methods": methods,  # NEW
-        })
+        # retrouver ancien usage avec la même clé complète
+        old = None
+        new_usages = []
+        for u in usages:
+            same = (
+                u.get("gabarit_name") == gname
+                and (u.get("gabarit_version") or "v1") == gver
+                and ((u.get("excel_target") or {}).get("sheet", "") or "") == sheet
+                and ((u.get("excel_target") or {}).get("table", "") or "") == table
+            )
+            if same:
+                old = u
+            else:
+                new_usages.append(u)
 
-        cfg["gabarit_usages"] = usages
+        usage = {
+            "gabarit_name": gname,
+            "gabarit_version": gver,
+            "columns_enabled": [c for c in (columns_enabled or []) if str(c).strip()],
+            "methods": [m for m in (methods or []) if str(m).strip()],
+            "excel_target": {"sheet": sheet, "table": table},
+            "enrichments": enrichments or [],
+            "overlay_python": (overlay_python or "").strip(),
+            # préserver l'ajustement si non fourni
+            "final_order": list(final_order) if final_order is not None else list((old or {}).get("final_order") or []),
+            "final_excludes": [c for c in (final_excludes if final_excludes is not None else (old or {}).get("final_excludes") or []) if str(c).strip()],
+        }
+
+        new_usages.append(usage)
+        cfg["gabarit_usages"] = new_usages
         self.update_config(template_id, cfg)
+
+
+    def update_usage_final_view(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str = "v1",
+        final_order: list[str] | None = None,
+        final_excludes: list[str] | None = None,
+    ) -> None:
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        if not isinstance(usages, list):
+            usages = []
+
+        gname = (gabarit_name or "").strip()
+        gver = (gabarit_version or "v1").strip()
+
+        new_usages = []
+        updated = False
+        for u in usages:
+            if u.get("gabarit_name") == gname and (u.get("gabarit_version") or "v1") == gver:
+                u = dict(u)
+                if final_order is not None:
+                    u["final_order"] = list(final_order or [])
+                if final_excludes is not None:
+                    u["final_excludes"] = [c for c in (final_excludes or []) if str(c).strip()]
+                updated = True
+            new_usages.append(u)
+
+        if updated:
+            cfg["gabarit_usages"] = new_usages
+            self.update_config(template_id, cfg)
 
 
     def delete_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str) -> bool:
@@ -686,68 +724,10 @@ class TemplateService:
         methods = [m for m in (usage or {}).get("methods", []) if m != method]
         self.set_usage_methods(template_id, gabarit_name, gabarit_version, methods)
 
-    def get_tables_demandees(self, template_id: int) -> list[dict]:
-        """
-        Vue synthétique pour l'UI : tables demandées (usages normalisés).
-        """
-        return self.list_gabarit_usages(template_id)
-    
-    def resolve_usage_expected_columns(self, template_id: int, gabarit_name: str, gabarit_version: str = "v1") -> list[str]:
-        """
-        Colonnes 'attendues' pour une table demandée = colonnes cochées (columns_enabled)
-        ∪ colonnes exigées par les méthodes sélectionnées (get_method_requirements).
-        L'ordre conserve d'abord 'columns_enabled', puis on ajoute les manquantes.
-        """
-        usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version) or {}
-        enabled = [c for c in (usage.get("columns_enabled") or []) if isinstance(c, str) and c.strip()]
-        methods = [m for m in (usage.get("methods") or []) if isinstance(m, str) and m.strip()]
-
-        # dépendances de colonnes par méthodes
-        try:
-            from backend.services.gabarit_registry import get_method_requirements
-            required = get_method_requirements(gabarit_name, gabarit_version, methods) or []
-        except Exception:
-            required = []
-
-        # union ordonnée: cochées d'abord, puis exigences méthodes
-        out: list[str] = []
-        for c in enabled:
-            if c not in out:
-                out.append(c)
-        for c in required:
-            if c not in out:
-                out.append(c)
-        return out
-
-
-        # ---------- RÔLE DE TABLE (catalogue) ---------------------------------
-
-    def set_table_role(self, template_id: int, gabarit_name: str, gabarit_version: str, table_role: str) -> None:
-        """
-        table_role ∈ {"fact","dimension","mixed"}
-        """
-        table_role = (table_role or "").strip().lower()
-        assert table_role in {"fact", "dimension", "mixed"}, "table_role invalide"
-
-        cfg = self.get_config(template_id)
-        roles = cfg.get("gabarit_roles", [])
-        if not isinstance(roles, list):
-            roles = []
-
-        gname = (gabarit_name or "").strip()
-        gver = (gabarit_version or "v1").strip()
-
-        # replace if exists
-        roles = [r for r in roles if not (r.get("gabarit_name")==gname and r.get("gabarit_version")==gver)]
-        roles.append({"gabarit_name": gname, "gabarit_version": gver, "table_role": table_role})
-
-        cfg["gabarit_roles"] = roles
-        self.update_config(template_id, cfg)
-
     def get_table_role(self, template_id: int, gabarit_name: str, gabarit_version: str="v1") -> str | None:
         cfg = self.get_config(template_id)
         for r in (cfg.get("gabarit_roles") or []):
-            if r.get("gabarit_name")==gabarit_name and r.get("gabarit_version")==gabarit_version:
+            if r.get("gabarit_name")==gabarit_name and (r.get("gabarit_version") or "v1")==gabarit_version:
                 return r.get("table_role")
         return None
 
@@ -765,7 +745,7 @@ class TemplateService:
             fv = (from_version or "v1").strip()
             return [r for r in rels if r.get("from_gabarit")==from_gabarit and (r.get("from_version") or "v1")==fv]
         return rels
-    
+
     def get_relation_by_id(self, template_id: int, relation_id: str) -> dict | None:
         cfg = self.get_config(template_id)
         for r in (cfg.get("gabarit_relations") or []):
@@ -773,12 +753,11 @@ class TemplateService:
                 return r
         return None
 
-
     def add_relation(self, template_id: int,
-                     from_gabarit: str, from_version: str,
-                     to_gabarit: str, to_version: str,
-                     left_key: str, right_key: str,
-                     cardinality: str | None=None) -> None:
+                    from_gabarit: str, from_version: str,
+                    to_gabarit: str, to_version: str,
+                    left_key: str, right_key: str,
+                    cardinality: str | None=None) -> None:
         """
         Déclare une relation autorisée entre 2 gabarits (clé ↔ clé).
         """
@@ -795,7 +774,6 @@ class TemplateService:
             "left_key": (left_key or "").strip(),
             "right_key": (right_key or "").strip(),
         }
-        # id stable (évite ambiguïtés si plusieurs relations similaires)
         rid = (
             f"{item['from_gabarit']}|{item['from_version']}->"
             f"{item['to_gabarit']}|{item['to_version']}::"
@@ -805,12 +783,8 @@ class TemplateService:
         if cardinality:
             item["cardinality"] = cardinality
 
-        if cardinality:
-            item["cardinality"] = cardinality
-
         # anti-duplication exacte
-        dup = [r for r in rels if r == item]
-        if not dup:
+        if item not in rels:
             rels.append(item)
 
         cfg["gabarit_relations"] = rels
@@ -837,3 +811,171 @@ class TemplateService:
         cfg["gabarit_relations"] = new_rels
         self.update_config(template_id, cfg)
         return True
+
+    def list_enrichment_paths(self, start_name: str, start_version: str="v1", max_depth: int=2) -> list[list[tuple]]:
+        """
+        Retourne des chemins possibles sous forme de séquences (g_from, col_from, g_to, col_to).
+        max_depth=2 autorise 2 sauts (A->B->C).
+        """
+        from backend.services.gabarit_registry import get_relations
+
+        paths = []
+        frontier = [[(start_name, start_version)]]
+        depth = 0
+        while frontier and depth < max_depth:
+            new_frontier = []
+            for p in frontier:
+                cur_name, cur_ver = p[-1]
+                rels = get_relations(cur_name, cur_ver) or []
+                for r in rels:
+                    step = (r["from_gabarit"], r.get("from_version","v1"),
+                            r["left_key"], r["to_gabarit"], r.get("to_version","v1"),
+                            r["right_key"])
+                    path_for_ui = [(step[0], step[2], step[3], step[5])]
+                    paths.append(path_for_ui)
+                    new_frontier.append(p + [(r["to_gabarit"], r.get("to_version","v1"))])
+            frontier = new_frontier
+            depth += 1
+
+        return paths
+
+
+    def get_tables_demandees(self, template_id: int) -> list[dict]:
+        """
+        Vue synthétique pour l'UI : tables demandées (usages normalisés).
+        """
+        return self.list_gabarit_usages(template_id)
+
+    def get_required_input_columns_for_usage(self, template_id: int, gname: str, gver: str = "v1") -> list[str]:
+        """
+        Colonnes MINIMALES à fournir dans la table d'entrée (gabarit de base) pour cet usage :
+        - columns_enabled (ou toutes les colonnes du gabarit si vide)
+        - + toutes les left_key du PREMIER saut des enrichissements (pour pouvoir démarrer les chaînes)
+        - + colonnes d'entrée des méthodes sélectionnées (registry: "inputs": ["colA","colB",...])
+        """
+        from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
+
+        u = self.get_gabarit_usage(template_id, gname, gver) or {}
+        g = get_gabarit(gname, gver)
+        base_cols = [c.name for c in (g.columns or [])]
+
+        required = u.get("columns_enabled") or base_cols[:]
+
+        # 1) toutes les left_key du premier saut des enrichissements
+        for e in (u.get("enrichments") or []):
+            p = e.get("path") or []
+            if p:
+                first_left_key = p[0][1]  # [from, left_key, to, right_key]
+                if first_left_key and first_left_key not in required:
+                    required.append(first_left_key)
+
+        # 2) inputs des méthodes sélectionnées
+        sel = set(u.get("methods") or [])
+        if sel:
+            allm = list_methods_for_gabarit(gname, gver) or []
+            it = (allm.values() if isinstance(allm, dict) else allm)
+            for m in it:
+                if isinstance(m, dict) and m.get("name") in sel:
+                    for cin in (m.get("inputs") or []):
+                        if cin not in required:
+                            required.append(cin)
+
+        return list(dict.fromkeys(required))
+    
+    def compute_required_tables_for_usage(self, template_id: int, gname: str, gver: str = "v1") -> dict[tuple[str, str], list[str]]:
+        """
+        Retourne un dict { (gabarit_name, gabarit_version): [colonnes requises] }
+        en tenant compte des enrichissements multi-sauts et des méthodes.
+        """
+        from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
+
+        u = self.get_gabarit_usage(template_id, gname, gver) or {}
+        result: dict[tuple[str, str], list[str]] = {}
+
+        # Helpers
+        def _ensure(d: dict, key: tuple[str, str]) -> list[str]:
+            if key not in d:
+                d[key] = []
+            return d[key]
+
+        # 0) Base
+        g = get_gabarit(gname, gver)
+        base_cols = [c.name for c in (g.columns or [])]
+        base_req = u.get("columns_enabled") or base_cols[:]
+        # + inputs de méthodes
+        sel = set(u.get("methods") or [])
+        if sel:
+            allm = list_methods_for_gabarit(gname, gver) or []
+            it = (allm.values() if isinstance(allm, dict) else allm)
+            for m in it:
+                if isinstance(m, dict) and m.get("name") in sel:
+                    for cin in (m.get("inputs") or []):
+                        if cin not in base_req:
+                            base_req.append(cin)
+
+        # + toutes les left_key des 1ers sauts
+        for e in (u.get("enrichments") or []):
+            p = e.get("path") or []
+            if p:
+                lk = p[0][1]
+                if lk and lk not in base_req:
+                    base_req.append(lk)
+
+        result[(gname, gver)] = list(dict.fromkeys(base_req))
+
+        # 1) Parcourir les chemins pour poser les clés sur chaque table
+        for e in (u.get("enrichments") or []):
+            path = e.get("path") or []
+            # poser les clés de pas en pas
+            for step in path:
+                frm, lkey, to, rkey = step  # [from, left_key, to, right_key]
+                frm_key = (frm, "v1")
+                to_key = (to, "v1")
+                lst_from = _ensure(result, frm_key)
+                lst_to = _ensure(result, to_key)
+                if lkey and lkey not in lst_from:
+                    lst_from.append(lkey)
+                if rkey and rkey not in lst_to:
+                    lst_to.append(rkey)
+
+            # ajouter les colonnes sélectionnées sur la table cible (dernier 'to')
+            if path:
+                last_to = (path[-1][2], "v1")
+                lst_last = _ensure(result, last_to)
+                for c in (e.get("columns") or []):
+                    if c not in lst_last:
+                        lst_last.append(c)
+
+        # dédup ordonnée
+        for k, cols in result.items():
+            result[k] = list(dict.fromkeys(cols))
+        return result
+
+
+    
+    def get_gabarit_usage_by_target(
+        self,
+        template_id: int,
+        gabarit_name: str,
+        gabarit_version: str,
+        excel_sheet: str,
+        excel_table: str,
+    ) -> dict | None:
+        """Retourne l'usage correspondant à (gabarit, version, sheet, table)."""
+        cfg = self.get_config(template_id)
+        usages = cfg.get("gabarit_usages", [])
+        if not isinstance(usages, list):
+            return None
+        gname = (gabarit_name or "").strip()
+        gver  = (gabarit_version or "v1").strip()
+        sheet = (excel_sheet or "").strip()
+        table = (excel_table or "").strip()
+        for u in usages:
+            if (
+                u.get("gabarit_name") == gname
+                and (u.get("gabarit_version") or "v1") == gver
+                and ((u.get("excel_target") or {}).get("sheet", "") or "") == sheet
+                and ((u.get("excel_target") or {}).get("table", "") or "") == table
+            ):
+                return u
+        return None
