@@ -1,11 +1,14 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
 
+# ==== Bootstrap
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# ==== Services
 from backend.services.gabarit_registry import (
     get_gabarit, list_gabarits,
     get_relations, add_relation, delete_relation
@@ -13,9 +16,46 @@ from backend.services.gabarit_registry import (
 
 st.set_page_config(page_title="Enrichissements", page_icon="🔗", layout="wide")
 
-# Sélection gabarit
+# ========= Navbar homogène
+def render_gabarit_subnav(active: str):
+    cols = st.columns([1, 1, 1, 1, 1])
+
+    with cols[0]:
+        if st.button("← Fiche gabarit", key=f"subnav_back_{active}", use_container_width=True):
+            st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+
+    with cols[1]:
+        if st.button("📊 Structure", key=f"subnav_struct_{active}",
+                     type=("primary" if active == "structure" else "secondary"),
+                     use_container_width=True):
+            if active != "structure":
+                st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+
+    with cols[2]:
+        if st.button("🔗 Enrichissements", key=f"subnav_enrich_{active}",
+                     type=("primary" if active == "enrich" else "secondary"),
+                     use_container_width=True):
+            if active != "enrich":
+                st.switch_page("pages/_3b2_🔗_Enrichissements_Gabarit.py")
+
+    with cols[3]:
+        if st.button("⚙️ Méthodes", key=f"subnav_methods_{active}",
+                     type=("primary" if active == "methods" else "secondary"),
+                     use_container_width=True):
+            if active != "methods":
+                st.switch_page("pages/_3c_⚙️_Methodes_Gabarit.py")
+
+    with cols[4]:
+        if st.button("📁 Données par défaut", key=f"subnav_default_{active}",
+                     type=("primary" if active == "default" else "secondary"),
+                     use_container_width=True):
+            if active != "default":
+                st.switch_page("pages/_3b3_📁_Donnee_Par_Defaut.py")
+    st.divider()
+
+# ==== Sélection gabarit obligatoire
 if "selected_gabarit" not in st.session_state or not st.session_state.selected_gabarit:
-    st.error("Aucun gabarit sélectionné")
+    st.error("Aucun gabarit sélectionné.")
     if st.button("← Retour aux gabarits", use_container_width=True):
         st.switch_page("pages/3_🧱_Gabarits.py")
     st.stop()
@@ -23,14 +63,10 @@ if "selected_gabarit" not in st.session_state or not st.session_state.selected_g
 gab_name, gab_version = st.session_state.selected_gabarit
 gabarit = get_gabarit(gab_name, gab_version)
 
-col_back, col_title = st.columns([1, 5])
-with col_back:
-    if st.button("← Détail gabarit", use_container_width=True):
-        st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
-with col_title:
-    st.title(f"🔗 Enrichissements : {gabarit.name} [{gabarit.version}]")
-
+render_gabarit_subnav("enrich")
+st.title(f"🔗 Enrichissements : {gabarit.name} [{gabarit.version}]")
 st.divider()
+
 with st.expander("💡 Principe", expanded=False):
     st.markdown("""
 Vous enrichissez **cette table** avec une **table de référence** (dimension).
@@ -38,7 +74,7 @@ Vous enrichissez **cette table** avec une **table de référence** (dimension).
 - **Clé d'enrichissement** : la colonne dans la table de référence
 """)
 
-# Liste des enrichissements
+# ==== Liste des enrichissements existants
 existing_relations = get_relations(gabarit.name, gabarit.version)
 if existing_relations:
     st.caption(f"📋 {len(existing_relations)} enrichissement(s)")
@@ -60,14 +96,14 @@ if existing_relations:
                     except Exception as e:
                         st.error(f"Suppression impossible : {e}")
 else:
-    st.info("Aucun enrichissement configuré")
+    st.info("Aucun enrichissement configuré.")
 
-# Ajout
 st.divider()
 st.subheader("Ajouter un enrichissement")
 
+# ==== Ajout d'un enrichissement
 all_gabs = list_gabarits()
-options = [
+targets = [
     f"{g.name}|{g.version}"
     for g in all_gabs
     if not (g.name == gabarit.name and g.version == gabarit.version)
@@ -75,8 +111,8 @@ options = [
 
 target = st.selectbox(
     "Table de référence",
-    options=options,
-    index=0 if options else None,
+    options=targets,
+    index=0 if targets else None,
     format_func=lambda s: f"{s.split('|')[0]} [{s.split('|')[1]}]" if '|' in s else s,
 )
 
@@ -99,7 +135,7 @@ with col2:
 
 if st.button("➕ Ajouter l'enrichissement", use_container_width=True, type="primary", disabled=not target):
     if not left_key or not right_key:
-        st.error("Champs incomplets")
+        st.error("Champs incomplets.")
     else:
         try:
             tgt_name, tgt_ver = target.split("|",1)

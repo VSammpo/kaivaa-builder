@@ -1,16 +1,20 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
 
+# ==== Bootstrap
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
+# ==== Services
 from backend.services.gabarit_registry import (
-    get_gabarit, get_default_source, set_default_source, clear_default_source,
-    set_default_preview
+    get_gabarit, get_default_source, set_default_source,
+    clear_default_source, set_default_preview
 )
 
+# align helper (fallback si service absent)
 try:
     from backend.services.dataset_service import align_df_to_expected_columns
 except Exception:
@@ -25,9 +29,46 @@ except Exception:
 
 st.set_page_config(page_title="Donnée par défaut", page_icon="📁", layout="wide")
 
-# Sélection gabarit
+# ========= Navbar homogène
+def render_gabarit_subnav(active: str):
+    cols = st.columns([1, 1, 1, 1, 1])
+
+    with cols[0]:
+        if st.button("← Fiche gabarit", key=f"subnav_back_{active}", use_container_width=True):
+            st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+
+    with cols[1]:
+        if st.button("📊 Structure", key=f"subnav_struct_{active}",
+                     type=("primary" if active == "structure" else "secondary"),
+                     use_container_width=True):
+            if active != "structure":
+                st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+
+    with cols[2]:
+        if st.button("🔗 Enrichissements", key=f"subnav_enrich_{active}",
+                     type=("primary" if active == "enrich" else "secondary"),
+                     use_container_width=True):
+            if active != "enrich":
+                st.switch_page("pages/_3b2_🔗_Enrichissements_Gabarit.py")
+
+    with cols[3]:
+        if st.button("⚙️ Méthodes", key=f"subnav_methods_{active}",
+                     type=("primary" if active == "methods" else "secondary"),
+                     use_container_width=True):
+            if active != "methods":
+                st.switch_page("pages/_3c_⚙️_Methodes_Gabarit.py")
+
+    with cols[4]:
+        if st.button("📁 Données par défaut", key=f"subnav_default_{active}",
+                     type=("primary" if active == "default" else "secondary"),
+                     use_container_width=True):
+            if active != "default":
+                st.switch_page("pages/_3b3_📁_Donnee_Par_Defaut.py")
+    st.divider()
+
+# ==== Sélection gabarit obligatoire
 if "selected_gabarit" not in st.session_state or not st.session_state.selected_gabarit:
-    st.error("Aucun gabarit sélectionné")
+    st.error("Aucun gabarit sélectionné.")
     if st.button("← Retour aux gabarits", use_container_width=True):
         st.switch_page("pages/3_🧱_Gabarits.py")
     st.stop()
@@ -35,10 +76,11 @@ if "selected_gabarit" not in st.session_state or not st.session_state.selected_g
 gab_name, gab_version = st.session_state.selected_gabarit
 gabarit = get_gabarit(gab_name, gab_version)
 
+render_gabarit_subnav("default")
 st.title(f"📁 Donnée par défaut : {gabarit.name} [{gabarit.version}]")
 st.divider()
 
-# Helpers locaux (identiques à ceux de _3b_➕_Form_Gabarit.py)
+# ==== Helpers locaux
 def _try_load_source(fmt: str, path: str, sep: str | None, enc: str | None, head: int = 20):
     try:
         p = Path(path)
@@ -76,7 +118,7 @@ if use_default:
     col1, col2 = st.columns([1,3])
     with col1:
         fmt = st.selectbox("Format", ["csv","parquet"],
-                           index=0 if current_default.get("type") == "csv" else 1)
+                           index=(0 if current_default.get("type") == "csv" else (1 if current_default.get("type")=="parquet" else 0)))
     with col2:
         path = st.text_input(
             "Chemin du fichier",
@@ -154,11 +196,9 @@ if use_default:
                             src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
                         if python_code and python_code.strip():
                             src["python"] = python_code
-
                         set_default_source(gabarit.name, gabarit.version, src)
                         try:
                             sample = df20.head(20)
-                            from backend.services.gabarit_registry import set_default_preview
                             set_default_preview(
                                 gabarit.name, gabarit.version,
                                 rows=sample.to_dict(orient="records"),
@@ -174,11 +214,6 @@ if use_default:
             clear_default_source(gabarit.name, gabarit.version)
             st.success("✅ Donnée par défaut retirée")
             st.rerun()
-
 else:
     if current_default:
-        st.info("La donnée par défaut a été désactivée. Activez la case ci-dessus pour la reconfigurer.")
-
-st.divider()
-if st.button("← Retour au détail", use_container_width=True):
-    st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+        st.info("La donnée par défaut est désactivée. Cochez la case ci-dessus pour la reconfigurer.")
