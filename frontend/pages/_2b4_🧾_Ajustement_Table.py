@@ -382,6 +382,92 @@ def _apply_methods(df: pd.DataFrame, only: list[str] | None = None) -> pd.DataFr
             pass
     return cur
 
+def _compose_until_overlay_and_methods(u: dict, *, full: bool) -> tuple[pd.DataFrame | None, str | None]:
+    """
+    Étape de prévisualisation 'Script Python' :
+    Base + Enrichissements + Méthodes → Script
+    (pas d’ordre/exclusions/renommages).
+    """
+    # 1) base + enrichissements
+    df, complete, err = _compose_with_enrichments(u, full=full, bring_all_last=True, log=True)
+    if df is None:
+        return None, err or "Aucune donnée de départ."
+
+    # 2) méthodes (sélectionnées)
+    only_selected = list(u.get("methods") or [])
+    try:
+        df = _apply_methods(df, only=only_selected)  # type: ignore[call-arg]
+    except TypeError:
+        df = _apply_methods(df)
+
+    # 3) script utilisateur (overlay)
+    code = (u.get("overlay_python") or "").strip()
+    if code:
+        df2, err2 = _apply_overlay(df, code)
+        if err2 is None and isinstance(df2, pd.DataFrame):
+            df = df2
+        else:
+            return None, err2
+
+    return df, None
+
+
+def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
+    """
+    Colonnes proposées dans l’onglet 'Ajustement' :
+    on exécute Base + Enrich. + Méthodes → Script (en mode PREVIEW si possible),
+    puis on renvoie df.columns.
+    """
+    # On essaie en PREVIEW pour être léger ; si ça échoue on bascule en FULL.
+    df, err = _compose_until_overlay_and_methods(u, full=False)
+    if df is None:
+        df, err = _compose_until_overlay_and_methods(u, full=True)
+    if df is None:
+        # fallback minimal si vraiment rien ne marche
+        try:
+            from backend.services.template_service import TemplateService
+            ts = TemplateService()
+            return ts.resolve_usage_expected_columns(u.get("template_id"), u.get("gabarit_name"), u.get("gabarit_version", "v1"))
+        except Exception:
+            return []
+    return list(df.columns)
+
+def _get_current_usage_for_preview(template_id: int, gname: str, gver: str, usage_fallback: dict) -> dict:
+    """
+    Recharge le 'usage' persistant (DB) pour la preview finale.
+    Puis superpose les éventuels ajustements en session (si non sauvés).
+    """
+    try:
+        from backend.services.template_service import TemplateService
+        from backend.services.database_service import DatabaseService
+        with DatabaseService.get_session() as db:
+            ts = TemplateService(db)
+            fresh = ts.get_gabarit_usage(template_id, gname, gver) or {}
+    except Exception:
+        fresh = {}
+
+    # Si rien en DB, on retombe sur l'usage courant de la page
+    u = dict(usage_fallback)
+    u.update(fresh)  # la DB prime sur l'ancien 'usage' si présent
+
+    # Superposer les ajustements encore en session (non sauvegardés)
+    ord_ss = st.session_state.get("adj_final_order")
+    if ord_ss:
+        u["final_order"] = list(ord_ss)
+
+    exc_ss = st.session_state.get("adj_final_excludes")
+    if exc_ss is not None:
+        u["final_excludes"] = list(exc_ss)
+
+    ren_ss = st.session_state.get("adj_final_renames")
+    if ren_ss is not None:
+        u["final_renames"] = dict(ren_ss)
+
+    # Idem si tu as ajouté un tri final dans l’UI plus tard :
+    if "final_sort" in st.session_state:
+        u["final_sort"] = st.session_state["final_sort"]
+
+    return u
 
 
 def _apply_overlay(df: pd.DataFrame, code: str) -> tuple[pd.DataFrame | None, str | None]:
@@ -437,18 +523,24 @@ def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
                     cols.append(outc)
     return list(dict.fromkeys(cols))
 
-
 def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None, str | None]:
     """
-    Pipeline final : base + enrichissements → overlay → méthodes sélectionnées → renommages → ordre/exclusions.
-    Utilisé pour la prévisualisation FULL.
+    Pipeline final pour la PRÉVISUALISATION :
+    Base + Enrichissements + Méthodes → Script → Renommages → TRI → Ordre/Exclusions.
     """
     # 1) base + enrichissements
     df, complete, err = _compose_with_enrichments(u, full=full, bring_all_last=True, log=True)
     if df is None:
         return None, err or "Aucune donnée de départ."
 
-    # 2) overlay utilisateur (df -> df)
+    # 2) méthodes sélectionnées
+    only_selected = list(u.get("methods") or [])
+    try:
+        df = _apply_methods(df, only=only_selected)  # type: ignore[call-arg]
+    except TypeError:
+        df = _apply_methods(df)
+
+    # 3) script utilisateur (overlay)
     code = (u.get("overlay_python") or "").strip()
     if code:
         df2, err2 = _apply_overlay(df, code)
@@ -457,37 +549,59 @@ def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None,
         else:
             return None, err2
 
-    # 3) méthodes sélectionnées (APPLIQUÉES APRÈS l'overlay)
-    only_selected = list(u.get("methods") or [])
-    try:
-        # si ton moteur accepte only=
-        df = _apply_methods(df, only=only_selected)  # type: ignore[call-arg]
-    except TypeError:
-        df = _apply_methods(df)
-
-    # 3bis) renommages finaux (df.rename)
+    # 4) renommages de colonnes
     ren: dict[str, str] = u.get("final_renames") or {}
     if ren:
         safe_map = {k: v for k, v in ren.items() if k in df.columns and v and v != k}
         if safe_map:
             df = df.rename(columns=safe_map)
 
-    # 4) ordre / exclusions — MAPPÉS via les renommages
-    #    - on prend l’ordre demandé (sur les noms "source")
-    #    - on le convertit via renames -> ordre sur les noms ACTUELS
+    # 5) TRI DES LIGNES (optionnel)
+    # u["final_sort"] peut être une liste de dicts: [{"col":"Nom", "asc": True}, ...]
+    sort_rules = u.get("final_sort") or []
+    if isinstance(sort_rules, list) and sort_rules:
+        by: list[str] = []
+        ascending: list[bool] = []
+        for r in sort_rules:
+            if not isinstance(r, dict):
+                continue
+            col = (r.get("col") or "").strip()
+            if not col:
+                continue
+            # si la colonne a été renommée plus haut, on travaille sur son NOM ACTUEL
+            col_now = ren.get(col, col)
+            if col_now in df.columns:
+                by.append(col_now)
+                ascending.append(bool(r.get("asc", True)))
+        if by:
+            # tri stable pour préserver l'ordre relatif si égalité
+            df = df.sort_values(by=by, ascending=ascending, kind="mergesort", ignore_index=True)
+
+    # 5-bis) Sécuriser les noms de colonnes (supprimer les doublons de noms)
+    # Après renames + tri, il peut rester des noms identiques (ex. 'EBE' provenant de 2 sources).
+    # On garde la première occurrence et on supprime les suivantes pour éviter l'erreur PyArrow.
+    if df.columns.duplicated().any():
+        dup_names = list(df.columns[df.columns.duplicated(keep=False)])
+        _log_kpi("⚠️ Noms de colonnes dupliqués détectés (suppression des doublons, keep=first)", {
+            "doublons": ", ".join(map(str, dup_names[:30])) + (" …" if len(dup_names) > 30 else "")
+        })
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
+
+    # 6) Ordre / exclusions (après renommages)
     src_order = u.get("final_order") or df.columns.tolist()
     src_excl  = set(u.get("final_excludes") or [])
 
-    # map ordre & exclusions via ren
+    # mapper l’ordre via les renommages
     mapped_order = []
     seen = set()
     for c in src_order:
-        cc = ren.get(c, c)  # si renommé: A -> A_new
+        cc = ren.get(c, c)
         if cc in df.columns and cc not in seen:
             mapped_order.append(cc)
             seen.add(cc)
 
-    # exclusions : on exclut à la fois l’ancien nom et le nouveau
+    # exclusions : on exclut anciens noms et nouveaux
     excl_names = set()
     for c in src_excl:
         excl_names.add(c)
@@ -495,18 +609,15 @@ def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None,
         if rc:
             excl_names.add(rc)
 
-    # colonnes finales = ordre mappé + le reste (non exclus)
     final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names] + \
                  [c for c in df.columns if c not in mapped_order and c not in excl_names]
 
-    _log_kpi("📦 Sortie pipeline", {
+    _log_kpi("📦 Sortie pipeline (finale)", {
         "lignes": len(df),
         "colonnes": len(final_cols),
-        "complete(full)": complete,
+        "complete(full)": complete
     })
     return df[final_cols], None
-
-
 
 def _sample_value(col: str) -> str:
     """Exemple rapide depuis le preview de base."""
@@ -574,15 +685,16 @@ with tab_script:
             st.success("✅ Script enregistré")
 
         # Tests
-        if st.button("🚀 Prévisualiser (pipeline complet)", use_container_width=True, key="btn_run_overlay_full"):
-            df_final, err = _compose_full_pipeline(usage, full=True)
+        if st.button("🧪 Prévisualiser le script (base+enrich+métodes → script)", use_container_width=True, key="btn_run_overlay_full"):
+            df_final, err = _compose_until_overlay_and_methods(usage, full=True)
             if err:
-                st.error(f"Erreur pipeline :\n\n{err}")
+                st.error(f"Erreur :\n\n{err}")
             elif df_final is None or df_final.empty:
-                st.info("Pipeline exécuté mais aucun résultat affichable.")
+                st.info("Exécution OK, mais aucun résultat affichable.")
             else:
-                st.success("Résultat du pipeline — 20 premières lignes :")
+                st.success("Résultat après script — 20 premières lignes :")
                 st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
+
 
 
     with colR:
@@ -788,11 +900,13 @@ with tab_preview:
     st.markdown("---")
 
     # Prévisualisation basée sur le pipeline "rapide" (full=False)
-    df_prev, err = _compose_full_pipeline(usage, full=True)
+    usage_preview = _get_current_usage_for_preview(template_id, gname, gver, usage)
 
+    df_prev, err = _compose_full_pipeline(usage_preview, full=True)
     if err:
-        st.info(err)
+        st.error(f"Erreur pipeline :\n\n{err}")
     elif df_prev is None or df_prev.empty:
-        st.info("Aucune donnée de prévisualisation disponible.")
+        st.info("Pipeline exécuté mais aucun résultat affichable.")
     else:
-        st.dataframe(df_prev.head(15), use_container_width=True, hide_index=True)
+        st.success("Résultat FINAL — 20 premières lignes :")
+        st.dataframe(df_prev.head(20), use_container_width=True, hide_index=True)
