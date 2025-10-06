@@ -21,6 +21,9 @@ nav = st.navigation(
             st.Page("pages/_3a_🧱_Detail_Gabarit.py",    title=None),
             st.Page("pages/_3b_➕_Form_Gabarit.py",      title=None),
             st.Page("pages//_3c_⚙️_Methodes_Gabarit.py", title=None),
+            st.Page("pages//_3b1_🧱_Structure_Gabarit.py", title=None),
+            st.Page("pages//_3b2_🔗_Enrichissements_Gabarit.py", title=None),
+            st.Page("pages//_3b3_📁_Donnee_Par_Defaut.py", title=None),
         ],
     },
     position="hidden",  # masque la nav Streamlit par défaut

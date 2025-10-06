@@ -82,9 +82,6 @@ with col_title:
 with col_actions:
     st.write("")  # Spacing
     col_edit, col_del = st.columns(2)
-    with col_edit:
-        if st.button("✏️ Éditer", use_container_width=True, type="primary"):
-            st.switch_page("pages/_3b_➕_Form_Gabarit.py")
     with col_del:
         if st.button("🗑️ Supprimer", use_container_width=True):
             st.session_state.show_delete_modal_gabarit = True
@@ -116,16 +113,21 @@ if gabarit.description:
 st.divider()
 
 # ============= CONTENU PRINCIPAL EN ONGLETS =============
-tab_cols, tab_methods, tab_enrichments, tab_data = st.tabs([
-    "📊 Colonnes", 
-    "⚙️ Méthodes", 
-    "🔗 Enrichissements", 
+tab_structure, tab_enrichments, tab_methods, tab_data = st.tabs([
+    "📊 Structure",
+    "🔗 Enrichissements",
+    "⚙️ Méthodes",
     "📁 Données par défaut"
 ])
 
 # ----------- ONGLET COLONNES -----------
-with tab_cols:
-    st.subheader("Définition des colonnes")
+with tab_structure:
+    st.subheader("Structure du gabarit")
+    edit_col1, edit_col2 = st.columns([1,5])
+    with edit_col1:
+        if st.button("✏️ Éditer la structure", use_container_width=True, key="edit_structure_btn"):
+            st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+
     
     cols_data = []
     for c in gabarit.columns:
@@ -194,6 +196,9 @@ with tab_methods:
 # ----------- ONGLET ENRICHISSEMENTS -----------
 with tab_enrichments:
     st.subheader("Enrichissements déclarés")
+    if st.button("🔗 Gérer les enrichissements", use_container_width=True, key="edit_enrich_btn", type="primary"):
+        st.switch_page("pages/_3b2_🔗_Enrichissements_Gabarit.py")
+
     
     rels = get_relations(gabarit.name, gabarit.version)
     
@@ -222,7 +227,9 @@ with tab_enrichments:
 # ----------- ONGLET DONNÉES PAR DÉFAUT -----------
 with tab_data:
     st.subheader("Donnée par défaut")
-    
+    if st.button("📁 Configurer la donnée par défaut", use_container_width=True, key="edit_default_btn"):
+        st.switch_page("pages/_3b3_📁_Donnee_Par_Defaut.py")
+
     src = get_default_source(gabarit.name, gabarit.version)
     preview = get_default_preview(gabarit.name, gabarit.version)
     
