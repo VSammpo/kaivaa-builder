@@ -9,6 +9,7 @@ import platform
 import pandas as pd
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from backend.services.report_service import ReportService
 
 # ===== Bootstrap
 project_root = Path(__file__).parent.parent.parent
@@ -112,14 +113,41 @@ with col_title:
         st.info(tpl_desc)
 
 with col_actions:
-    st.write("")  # Spacing pour alignement vertical
     st.write("")
-    
-    # Bouton Supprimer
+    st.write("")
+
+    if st.button("▶️ Créer livrable (données par défaut)", use_container_width=True, type="primary", key="btn_build_from_defaults"):
+        from backend.services.database_service import DatabaseService
+        with DatabaseService.get_session() as db:
+            try:
+                ts_local = TemplateService(db)
+                cfg_obj = ts_local.load_template_config(template_id)
+
+                defaults = {}
+                for p in getattr(cfg_obj, "parameters", []):
+                    val = getattr(p, "default", None)
+                    defaults[p.name] = (val if val is not None else "")
+
+                rs = ReportService(cfg_obj)
+
+                with st.spinner("Génération du livrable à partir des données par défaut…"):
+                    result = rs.generate_report(parameters=defaults, project_id=None)
+
+                if result.get("success"):
+                    st.success("✅ Livrable créé. Il apparaît dans l'historique ci-dessous.")
+                    st.rerun()
+                else:
+                    st.error(f"Échec de la génération : {result.get('error', 'erreur inconnue')}")
+            except Exception as e:
+                st.error(f"Erreur lors de la génération : {e}")
+
+
+    # Bouton Supprimer (existant)
     if st.button("🗑️ Supprimer", use_container_width=True, type="secondary", key="btn_delete_template"):
         st.session_state.delete_template_detail_id = template_id
         st.session_state.show_delete_modal_detail = True
         st.rerun()
+
 
 st.divider()
 

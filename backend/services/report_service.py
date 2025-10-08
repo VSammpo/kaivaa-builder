@@ -46,7 +46,7 @@ class ReportService:
         self,
         parameters: Dict[str, Any],
         output_name: Optional[str] = None,
-        project_id: Optional[str] = None  # ← AJOUTER CE PARAMÈTRE
+        project_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Génère un rapport complet."""
         logger.info(f"Génération du rapport '{self.config.name}'")
@@ -64,32 +64,68 @@ class ReportService:
         start_time = self._now()
         
         try:
-            logger.info("Étape 1/6 : Préparation Excel")
+            # ========================================================================
+            # ÉTAPE 1 : Préparation Excel (copie + balises paramètres)
+            # ========================================================================
+            logger.info("Étape 1/7 : Préparation Excel")
             excel_path = self._prepare_excel(parameters, output_paths['excel_path'])
+            self.current_excel_path = excel_path  # ✅ Stocké pour injection
             
-            # Stocker le chemin pour _inject_all_usages_from_project
-            self.current_excel_path = excel_path  # ← AJOUTER
+            # ========================================================================
+            # ÉTAPE 2 : INJECTION DES DONNÉES DANS EXCEL ← AVANT TOUT LE RESTE
+            # ========================================================================
+            logger.info("Étape 2/7 : Injection des données Excel (usages de gabarits)")
             
-            logger.info("Étape 2/6 : Lecture des données")
+            if project_id:
+                logger.info(f"Mode PROJET : injection depuis project_id={project_id}")
+                injection_result = self._inject_all_usages_from_project(project_id)
+                logger.info(f"Résultat injection projet : {injection_result}")
+            else:
+                logger.info("Mode DÉFAUT : injection depuis données par défaut des gabarits")
+                injection_result = self._inject_all_usages_from_defaults()
+                logger.info(f"Résultat injection défaut : {injection_result}")
+            
+            # Vérifier si l'injection a réussi
+            if injection_result.get("err", 0) > 0:
+                logger.warning(f"⚠️ {injection_result['err']} table(s) non injectée(s)")
+                for detail in injection_result.get("details", []):
+                    if "error" in detail:
+                        logger.error(f"  - {detail.get('usage')}: {detail.get('error')}")
+            
+            # ========================================================================
+            # ÉTAPE 3 : Lecture des données (legacy - peut-être inutile maintenant)
+            # ========================================================================
+            logger.info("Étape 3/7 : Lecture des données")
             data = self._load_data(excel_path)
             
-            logger.info("Étape 3/6 : Génération PowerPoint")
+            # ========================================================================
+            # ÉTAPE 4 : Génération PowerPoint (avec données Excel déjà présentes)
+            # ========================================================================
+            logger.info("Étape 4/7 : Génération PowerPoint")
             ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
 
-            logger.info("Conversion des graphiques statiques")
+            # ========================================================================
+            # ÉTAPE 5 : Conversion graphiques statiques (Excel déjà rempli)
+            # ========================================================================
+            logger.info("Étape 5/7 : Conversion des graphiques statiques")
             self._convert_static_charts(ppt_path, excel_path)
             
-            logger.info("Étape 4/6 : Injection des tableaux")
-            if project_id:  # ← MODE PROJET
-                injection_result = self._inject_all_usages_from_project(project_id)
-                logger.info(f"Injection via projet : {injection_result}")
-            else:  # ← MODE LEGACY (sans projet)
-                self._inject_tables_to_slides(ppt_path, excel_path)
+            # ========================================================================
+            # ÉTAPE 6 : Mappings PPT (tableaux dynamiques) - OPTIONNEL
+            # ========================================================================
+            logger.info("Étape 6/7 : Injection des tableaux PPT (slide_mappings)")
+            self._inject_tables_to_slides(ppt_path, excel_path)
             
-            logger.info("Étape 5/6 : Application des boucles")
+            # ========================================================================
+            # ÉTAPE 7 : Application des boucles
+            # ========================================================================
+            logger.info("Étape 7/7 : Application des boucles")
             self._apply_loops(ppt_path, excel_path)
             
-            logger.info("Étape 6/6 : Injection des images")
+            # ========================================================================
+            # ÉTAPE 8 : Injection des images (après boucles)
+            # ========================================================================
+            logger.info("Étape 8/7 : Injection des images")
             self._inject_images(ppt_path, excel_path)
             
             execution_time = (self._now() - start_time).total_seconds()
@@ -99,14 +135,40 @@ class ReportService:
                 "excel_path": str(excel_path),
                 "pptx_path": str(ppt_path),
                 "execution_time_seconds": execution_time,
-                "parameters": parameters
+                "parameters": parameters,
+                "injection_summary": injection_result
             }
             
             logger.success(f"Rapport généré en {execution_time:.1f}s")
+            
+            # Journaliser l'exécution
+            try:
+                from backend.services.database_service import DatabaseService
+                from backend.database.models import ExecutionJob
+                DatabaseService.initialize()
+                template_id_resolved = self._resolve_template_id_by_name()
+
+                with DatabaseService.get_session() as db:
+                    job = ExecutionJob(
+                        template_id=template_id_resolved,
+                        status="completed",
+                        execution_time_seconds=execution_time,
+                        output_excel_path=str(excel_path),
+                        output_ppt_path=str(ppt_path),
+                        parameters=parameters,
+                        error_message=None,
+                    )
+                    db.add(job)
+                    db.commit()
+            except Exception as e:
+                logger.warning(f"[HISTORIQUE] Impossible d'enregistrer l'exécution : {e}")
+            
             return result
         
         except Exception as e:
             logger.error(f"Erreur génération rapport : {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             execution_time = (self._now() - start_time).total_seconds()
             
             return {
@@ -125,6 +187,7 @@ class ReportService:
                 logger.debug("Excel fermé en fin de génération")
             except:
                 pass
+
 
     def _validate_parameters(self, parameters: Dict[str, Any]) -> None:
         """Valide que tous les paramètres requis sont fournis"""
@@ -913,11 +976,15 @@ class ReportService:
                 logger.info(f"{converted_count} slides statiques avec graphiques rafraîchis et convertis")
                 presentation.Save()
 
+
     def _inject_all_usages_from_project(self, project_id: str) -> dict:
+        """
+        Version projet : utilise ProjectService.build_dataframe puis le service centralisé.
+        """
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
         from backend.services.project_service import ProjectService
-        from loguru import logger
+        from backend.services.table_builder_service import build_table_from_usage
 
         DatabaseService.initialize()
         summary: dict = {}
@@ -943,8 +1010,20 @@ class ReportService:
                 key = f"{gname}:{gver}"
 
                 try:
-                    df = ps.build_dataframe(project_id, gname, gver)
-                    res = self._inject_usage_dataframe(template_id, u, df)
+                    # Charger le DataFrame du projet
+                    df_base = ps.build_dataframe(project_id, gname, gver)
+                    
+                    # ✅ Construire la table avec les enrichissements/méthodes/script
+                    # On crée un usage modifié qui utilise df_base au lieu de charger depuis le gabarit
+                    usage_modified = dict(u)
+                    usage_modified["_source_df"] = df_base  # DataFrame de base fourni
+                    
+                    df_final, error = build_table_from_usage(usage_modified, full=True, log_kpis=True)
+                    
+                    if error or df_final is None:
+                        raise RuntimeError(error or "Construction de table échouée")
+                    
+                    res = self._inject_usage_dataframe(template_id, u, df_final)
                     summary[key] = {
                         "rows": int(res.get("rows", 0)),
                         "warnings": res.get("warnings", {}),
@@ -956,6 +1035,86 @@ class ReportService:
 
         return summary
 
+    # Dans report_service.py, remplacer la méthode _inject_all_usages_from_defaults
+
+    def _inject_all_usages_from_defaults(self) -> dict:
+        """
+        Parcourt les usages du template et injecte les DataFrames dans l'Excel
+        en utilisant le nouveau service de construction de tables.
+        """
+        from backend.services.database_service import DatabaseService
+        from backend.services.template_service import TemplateService
+        from backend.services.table_builder_service import build_table_from_usage
+        from backend.services.excel_injection_service import inject_dataframe
+
+        DatabaseService.initialize()
+        summary = {"ok": 0, "err": 0, "details": []}
+
+        template_id = self._resolve_template_id_by_name()
+        if not template_id:
+            return {"skipped": True, "reason": "template_id_not_found"}
+
+        excel_path = getattr(self, "current_excel_path", None)
+        if not excel_path:
+            return {"skipped": True, "reason": "no_excel_path"}
+
+        with DatabaseService.get_session() as db:
+            ts = TemplateService(db)
+            usages = ts.list_gabarit_usages(template_id) or []
+
+            for u in usages:
+                g_name = u.get("gabarit_name", "")
+                g_ver  = u.get("gabarit_version", "v1")
+                target = (u.get("excel_target") or {})
+                sheet  = (target.get("sheet") or "").strip()
+                table  = (target.get("table") or "").strip()
+
+                if not sheet or not table:
+                    summary["details"].append({
+                        "usage": g_name, 
+                        "error": "missing_target_sheet_or_table"
+                    })
+                    summary["err"] += 1
+                    continue
+
+                try:
+                    # ✅ UTILISATION DU NOUVEAU SERVICE
+                    df, error = build_table_from_usage(u, full=True, log_kpis=True)
+                    
+                    if error or df is None or (hasattr(df, "empty") and df.empty):
+                        raise RuntimeError(error or "Aucune donnée disponible")
+
+                    # Colonnes attendues (pour l'alignement)
+                    expected_cols = ts.resolve_usage_expected_columns(template_id, g_name, g_ver)
+
+                    # Injection dans Excel
+                    res = inject_dataframe(
+                        excel_path,
+                        sheet,
+                        table,
+                        df,
+                        expected_columns=expected_cols
+                    )
+                    
+                    summary["ok"] += 1
+                    summary["details"].append({
+                        "usage": g_name, 
+                        "sheet": sheet, 
+                        "table": table,
+                        "rows": res.get("rows"), 
+                        "cols": res.get("cols"), 
+                        "warnings": res.get("warnings", {})
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"Erreur injection {g_name} → {sheet}/{table}: {e}")
+                    summary["err"] += 1
+                    summary["details"].append({
+                        "usage": g_name, 
+                        "error": str(e)
+                    })
+
+        return summary
 
     def _inject_usage_dataframe(
         self,

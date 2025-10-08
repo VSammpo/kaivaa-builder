@@ -984,3 +984,55 @@ class TemplateService:
             ):
                 return u
         return None
+    
+    def resolve_usage_expected_columns(self, template_id: int, gabarit_name: str, gabarit_version: str) -> list[str]:
+        """
+        Retourne la liste finale des colonnes attendues pour un usage,
+        en tenant compte de l'ordre final, des exclusions et des renommages.
+        """
+        usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version)
+        if not usage:
+            return []
+        
+        from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
+        
+        # Ordre final (ou colonnes par défaut)
+        final_order = usage.get("final_order") or []
+        if not final_order:
+            g = get_gabarit(gabarit_name, gabarit_version)
+            base_cols = [c.name for c in (g.columns or [])]
+            final_order = usage.get("columns_enabled") or base_cols[:]
+            
+            # Ajouter colonnes enrichies
+            for e in (usage.get("enrichments") or []):
+                for c in (e.get("columns") or []):
+                    if c not in final_order:
+                        final_order.append(c)
+            
+            # Ajouter sorties de méthodes
+            methods_selected = set(usage.get("methods") or [])
+            if methods_selected:
+                all_methods = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
+                it = (all_methods.values() if isinstance(all_methods, dict) else all_methods)
+                for m in it:
+                    if isinstance(m, dict) and m.get("name") in methods_selected:
+                        out_col = (m.get("output_column") or "").strip()
+                        if out_col and out_col not in final_order:
+                            final_order.append(out_col)
+        
+        # Exclusions
+        final_excludes = set(usage.get("final_excludes") or [])
+        
+        # Renommages (appliquer les nouveaux noms)
+        final_renames = usage.get("final_renames") or {}
+        
+        result = []
+        for col in final_order:
+            if col in final_excludes:
+                continue
+            # Utiliser le nom renommé si présent
+            new_name = final_renames.get(col, col)
+            if new_name and new_name not in result:
+                result.append(new_name)
+        
+        return result
