@@ -50,15 +50,22 @@ class ReportService:
     ) -> Dict[str, Any]:
         """Génère un rapport complet."""
         logger.info(f"Génération du rapport '{self.config.name}'")
-        logger.info(f"Paramètres : {parameters}")
-        
-        self._validate_parameters(parameters)
+        logger.info(f"Paramètres (bruts) : {parameters}")
+        effective_params = self._build_effective_params(parameters)
+        logger.info(f"Paramètres normalisés/appliqués : {effective_params}")
+        self._effective_params = effective_params
+
+        # ✅ Valider sur les paramètres normalisés
+        self._validate_parameters(self._effective_params)
+
         
         # Nettoyage préventif
         from backend.utils.cleanup import cleanup_before_run
         cleanup_before_run()
         
-        output_paths = self._generate_output_paths(parameters, output_name)
+        # ✅ Pour que le nom de fichier reflète les paramètres effectivement appliqués
+        output_paths = self._generate_output_paths(self._effective_params, output_name)
+
         ensure_directories(output_paths['excel_path'], output_paths['pptx_path'])
         
         start_time = self._now()
@@ -68,7 +75,8 @@ class ReportService:
             # ÉTAPE 1 : Préparation Excel (copie + balises paramètres)
             # ========================================================================
             logger.info("Étape 1/7 : Préparation Excel")
-            excel_path = self._prepare_excel(parameters, output_paths['excel_path'])
+            excel_path = self._prepare_excel(effective_params, output_paths['excel_path'])
+
             self.current_excel_path = excel_path  # ✅ Stocké pour injection
             
             # ========================================================================
@@ -195,6 +203,35 @@ class ReportService:
             if param.required and param.name not in parameters:
                 raise ValueError(f"Paramètre requis manquant : {param.name}")
     
+    def _map_params_to_template(self, incoming: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Mappe les clés entrantes (casse libre) vers les noms EXACTS du template.
+        Ex: {'secteur': 'X'} -> {'Secteur': 'X'} si le param du template s'appelle 'Secteur'.
+        """
+        try:
+            template_param_names = [p.name for p in self.config.parameters]  # pydantic TemplateConfig
+        except Exception:
+            template_param_names = []
+        idx = {n.lower(): n for n in template_param_names}
+        out: Dict[str, Any] = {}
+        for k, v in (incoming or {}).items():
+            key = idx.get(str(k).lower(), k)
+            out[key] = v
+        return out
+
+    def _build_effective_params(self, run_params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Construit les paramètres EFFECTIFS = defaults du template overridés
+        par les valeurs fournies (casse insensible).
+        """
+        from backend.services.parameter_service import ParameterService
+        # defaults
+        eff: Dict[str, Any] = {p.name: ParameterService.get_default_value(p) for p in self.config.parameters}
+        # overrides normalisés
+        norm = self._map_params_to_template(run_params or {})
+        eff.update({k: v for k, v in norm.items() if v is not None and str(v) != ""})
+        return eff
+
 
     def _generate_output_paths(self, parameters: Dict[str, Any], custom_name: Optional[str]) -> Dict[str, str]:
         """Génère les chemins de sortie"""
@@ -1018,7 +1055,13 @@ class ReportService:
                     usage_modified = dict(u)
                     usage_modified["_source_df"] = df_base  # DataFrame de base fourni
                     
-                    df_final, error = build_table_from_usage(usage_modified, full=True, log_kpis=True)
+                    df_final, error = build_table_from_usage(
+                        usage_modified,
+                        full=True,
+                        log_kpis=True,
+                        params=getattr(self, "_effective_params", {}) or {}
+                    )
+
                     
                     if error or df_final is None:
                         raise RuntimeError(error or "Construction de table échouée")
@@ -1046,6 +1089,7 @@ class ReportService:
         from backend.services.template_service import TemplateService
         from backend.services.table_builder_service import build_table_from_usage
         from backend.services.excel_injection_service import inject_dataframe
+        from backend.services.parameter_service import ParameterService
 
         DatabaseService.initialize()
         summary = {"ok": 0, "err": 0, "details": []}
@@ -1058,9 +1102,18 @@ class ReportService:
         if not excel_path:
             return {"skipped": True, "reason": "no_excel_path"}
 
+        # ✅ CHARGER LES PARAMÈTRES DU TEMPLATE
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
+            template_config = ts.load_template_config(template_id)
+
+            # ✅ Utiliser exactement les paramètres normalisés construits en amont
+            params_dict = getattr(self, "_effective_params", {}) or {}
+            logger.info(f"[inject/defaults] paramètres passés au pipeline : {params_dict}")
+
             usages = ts.list_gabarit_usages(template_id) or []
+
+
 
             for u in usages:
                 g_name = u.get("gabarit_name", "")
@@ -1078,16 +1131,14 @@ class ReportService:
                     continue
 
                 try:
-                    # ✅ UTILISATION DU NOUVEAU SERVICE
-                    df, error = build_table_from_usage(u, full=True, log_kpis=True)
+                    # ✅ PASSER LES PARAMS
+                    df, error = build_table_from_usage(u, full=True, log_kpis=True, params=params_dict)
                     
                     if error or df is None or (hasattr(df, "empty") and df.empty):
                         raise RuntimeError(error or "Aucune donnée disponible")
 
-                    # Colonnes attendues (pour l'alignement)
                     expected_cols = ts.resolve_usage_expected_columns(template_id, g_name, g_ver)
 
-                    # Injection dans Excel
                     res = inject_dataframe(
                         excel_path,
                         sheet,

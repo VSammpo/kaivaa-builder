@@ -114,6 +114,15 @@ def inject_dataframe(
     expected_columns: List[str] | None = None
 ) -> dict:
     xlsx_path = str(xlsx_path)
+    MAX_EXCEL_ROWS = 1_048_576
+    rows, cols = len(df), len(df.columns)
+    logger.info(f"[excel_injection] → {sheet_name}/{table_name} : {rows} x {cols}")
+    if rows > MAX_EXCEL_ROWS:
+        raise ValueError(
+            f"Table trop grande pour Excel ({rows}>{MAX_EXCEL_ROWS}). "
+            f"Filtre/agrège avant injection (ex: paramètre Secteur)."
+        )
+
     
     # Alignement
     df_aligned, base_warn = align_df_to_expected_columns(df, expected_columns)

@@ -1,5 +1,6 @@
+# pages/_2b_➕_Form_Template.py
 """
-Page de création de templates - VERSION COMPLÈTE
+Page de création de templates - VERSION COMPLÈTE AVEC PARAMÈTRES ENRICHIS
 """
 
 import streamlit as st
@@ -7,15 +8,13 @@ from pathlib import Path
 import sys
 import json
 import pandas as pd
-from io import BytesIO
-from pathlib import Path
-
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
+from backend.services.parameter_service import ParameterService
 from backend.models.template_config import (
     TemplateConfig,
     ParameterConfig,
@@ -26,6 +25,7 @@ from backend.models.template_config import (
 )
 
 st.set_page_config(page_title="Paramètres généraux", page_icon="⚙️", layout="wide")
+
 def render_template_subnav(active: str, template_id: int | None):
     cols = st.columns([1,1,1,1,1])
     with cols[0]:
@@ -54,7 +54,7 @@ def render_template_subnav(active: str, template_id: int | None):
             st.switch_page("pages/_2b4_🧾_Ajustement_Table.py")
     st.divider()
 
-# --- États init (inchangés)
+# États init
 if 'parameters' not in st.session_state:
     st.session_state.parameters = []
 if 'loops' not in st.session_state:
@@ -64,7 +64,7 @@ if 'images' not in st.session_state:
 if 'mappings' not in st.session_state:
     st.session_state.mappings = []
 
-# --- Guard + chargement
+# Guard + chargement
 edit_mode = False
 template_id_to_edit = None
 
@@ -87,10 +87,7 @@ if 'selected_template' in st.session_state and st.session_state.selected_templat
     st.title(f"⚙️ Paramètres généraux — {template_name} (v{template_version})")
 
     if not st.session_state.get('_template_loaded'):
-        st.session_state.parameters = [
-            {"name": p.name, "type": p.type, "required": p.required, "balise_ppt": p.balise_ppt}
-            for p in template_config.parameters
-        ]
+        st.session_state.parameters = [p.model_dump() for p in template_config.parameters]
         st.session_state.loops = [
             {"loop_id": loop.loop_id, "slides": loop.slides, "sheet_name": loop.sheet_name}
             for loop in template_config.loops
@@ -117,7 +114,7 @@ else:
     template_card_image_path = None
 
 
-# === Récap compact dans la sidebar ===
+# Sidebar récap
 with st.sidebar:
     st.header("🧭 Récap")
     st.write(f"**Mode** : {'Édition' if edit_mode else 'Création'}")
@@ -125,7 +122,6 @@ with st.sidebar:
     st.write(f"**Version** : {template_version if edit_mode else '—'}")
     st.write(f"**Source** : {template_config.data_source.type if edit_mode else '—'}")
 
-    # Aperçu image carte
     if edit_mode and template_card_image_path:
         try:
             st.image(template_card_image_path, caption="Image actuelle", use_container_width=True)
@@ -147,19 +143,19 @@ col1, col2 = st.columns(2)
 with col1:
     name = st.text_input(
         "Nom du template*", 
-        value=template_name if edit_mode else "",  # Utiliser template_name extrait
+        value=template_name if edit_mode else "",
         placeholder="ex: BCE_INSEE",
         disabled=edit_mode
     )
     version = st.text_input(
         "Version", 
-        value=template_version if edit_mode else "1.0"  # Utiliser template_version extrait
+        value=template_version if edit_mode else "1.0"
     )
 
 with col2:
     description = st.text_area(
         "Description", 
-        value=template_description if edit_mode and template_description else "",  # Utiliser template_description extrait
+        value=template_description if edit_mode and template_description else "",
         placeholder="Description du template..."
     )
 
@@ -177,7 +173,6 @@ with col1:
     )
 
 with col2:
-    # Upload image de carte
     card_image = st.file_uploader(
         "🖼️ Image de carte (optionnelle)", 
         type=['png', 'jpg', 'jpeg'],
@@ -207,7 +202,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     show_params = st.checkbox(
         "Paramètres d'utilisation",
-        value=False,
+        value=len(st.session_state.parameters) > 0,
         help="Variables à renseigner lors de chaque génération (ex: période, enseigne, segment)"
     )
 
@@ -235,44 +230,277 @@ with col4:
 st.divider()
 
 
-
-# ===== ÉTAPE 3 : Paramètres =====
+# ===== ÉTAPE 3 : PARAMÈTRES (UI MODERNE) =====
 if show_params:
-    st.header("3️⃣ Paramètres")
-    st.markdown("Ajoute/modifie directement dans le tableau. Les lignes vides sont ignorées.")
+    st.header("3️⃣ Paramètres d'utilisation")
+    st.markdown("Variables demandées à l'utilisateur lors de chaque génération de livrable")
+    
+    # Liste des gabarits disponibles (pour options dynamiques)
+    from backend.services.gabarit_registry import list_gabarits, get_gabarit
+    all_gabarits = list_gabarits()
+    gabarit_options = ["(aucun)"] + [f"{g.name} (v{g.version})" for g in all_gabarits]
+    
+    # Bouton ajout
+    if st.button("➕ Ajouter un paramètre", use_container_width=True, type="primary"):
+        st.session_state.parameters.append({
+            "name": "",
+            "type": "string",
+            "required": True,
+            "balise_ppt": "",
+            "description": "",
+            "default": None,
+            "options_mode": "none",
+            "options_manual": [],
+            "options_source": None
+        })
+        st.rerun()
+    
+    st.markdown("")
+    
+    # Affichage des paramètres (style gabarit)
+    to_delete = []
+    for idx, param in enumerate(st.session_state.parameters):
+        param_type_label = param.get('type', 'string')
+        param_name_label = param.get('name') or '(sans nom)'
+        
+        with st.expander(f"**{idx+1}. {param_name_label}** — {param_type_label}", expanded=True):
+            
+            # Ligne 1 : Nom + Balise PPT
+            col1, col2 = st.columns(2)
+            with col1:
+                param["name"] = st.text_input(
+                    "Nom du paramètre *",
+                    value=param.get("name", ""),
+                    placeholder="ex: sous_marque",
+                    key=f"param_name_{idx}"
+                )
+            with col2:
+                param["balise_ppt"] = st.text_input(
+                    "Balise PPT *",
+                    value=param.get("balise_ppt", ""),
+                    placeholder="ex: [Sous_Marque]",
+                    key=f"param_balise_{idx}"
+                )
+            
+            # Ligne 2 : Type + Obligatoire
+            col1, col2 = st.columns(2)
+            with col1:
+                param["type"] = st.selectbox(
+                    "Type",
+                    ["string", "integer", "date", "liste"],
+                    index=["string", "integer", "date", "liste"].index(param.get("type", "string")),
+                    key=f"param_type_{idx}"
+                )
+            with col2:
+                param["required"] = st.checkbox(
+                    "Obligatoire",
+                    value=param.get("required", True),
+                    key=f"param_required_{idx}"
+                )
+            
+            # Description
+            param["description"] = st.text_area(
+                "Description (optionnel)",
+                value=param.get("description", ""),
+                height=60,
+                key=f"param_desc_{idx}"
+            )
+            
+            # ✅ OPTIONS ENRICHIES (pour type select)
+            if param["type"] in ["string", "liste"]:
+                st.markdown("---")
+                st.markdown("**💡 Options disponibles**")
+                
+                param["options_mode"] = st.radio(
+                    "Source des options",
+                    ["none", "manual", "from_column"],
+                    index=["none", "manual", "from_column"].index(param.get("options_mode", "none")),
+                    format_func=lambda x: {
+                        "none": "Aucune (saisie libre)",
+                        "manual": "Liste manuelle",
+                        "from_column": "Depuis colonne de gabarit"
+                    }[x],
+                    key=f"param_optmode_{idx}",
+                    horizontal=True
+                )
+                
+                # MODE MANUEL
+                if param["options_mode"] == "manual":
+                    manual_text = st.text_area(
+                        "Options (une par ligne)",
+                        value="\n".join(param.get("options_manual", [])) if param.get("options_manual") else "",
+                        height=100,
+                        placeholder="BOMBAY\nGORDON'S\nTANQUERAY",
+                        key=f"param_manual_{idx}"
+                    )
+                    param["options_manual"] = [line.strip() for line in manual_text.split("\n") if line.strip()]
+                    param["options_source"] = None
+                    
+                    if param["options_manual"]:
+                        st.caption(f"✓ {len(param['options_manual'])} option(s) définies")
+                
+                # MODE DEPUIS COLONNE
+                elif param["options_mode"] == "from_column":
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Index par défaut si source existe déjà
+                        current_source = param.get("options_source") or {}
+                        current_gab_name = current_source.get("gabarit", "")
+                        current_gab_ver = current_source.get("version", "v1")
+                        
+                        # Trouver l'index du gabarit actuel
+                        default_index = 0
+                        if current_gab_name:
+                            for i, opt in enumerate(gabarit_options):
+                                if opt != "(aucun)" and current_gab_name in opt and current_gab_ver in opt:
+                                    default_index = i
+                                    break
+                        
+                        selected_gab = st.selectbox(
+                            "Gabarit source",
+                            gabarit_options,
+                            index=default_index,
+                            key=f"param_gab_{idx}"
+                        )
+                    
+                    # Récupérer les colonnes du gabarit sélectionné
+                    column_options = ["(choisir)"]
+                    if selected_gab != "(aucun)":
+                        try:
+                            gab_parts = selected_gab.split(" (v")
+                            gab_name = gab_parts[0].strip()
+                            gab_ver = gab_parts[1].rstrip(")").strip()
+                            
+                            gab_obj = get_gabarit(gab_name, gab_ver)
+                            if gab_obj and gab_obj.columns:
+                                column_options = ["(choisir)"] + [c.name for c in gab_obj.columns]
+                        except Exception as e:
+                            st.error(f"Erreur chargement colonnes : {e}")
+                    
+                    with col2:
+                        # Index par défaut pour la colonne
+                        current_col = current_source.get("column", "")
+                        col_default_index = 0
+                        if current_col and current_col in column_options:
+                            col_default_index = column_options.index(current_col)
+                        
+                        selected_col = st.selectbox(
+                            "Colonne source",
+                            column_options,
+                            index=col_default_index,
+                            key=f"param_col_{idx}",
+                            disabled=(selected_gab == "(aucun)")
+                        )
+                    
+                    # Enregistrer la source
+                    if selected_gab != "(aucun)" and selected_col != "(choisir)":
+                        gab_parts = selected_gab.split(" (v")
+                        gab_name = gab_parts[0].strip()
+                        gab_ver = gab_parts[1].rstrip(")").strip()
+                        
+                        param["options_source"] = {
+                            "gabarit": gab_name,
+                            "version": gab_ver,
+                            "column": selected_col
+                        }
+                        param["options_manual"] = None
+                        
+                        # Prévisualisation des options
+                        try:
+                            temp_param = ParameterConfig(**param)
+                            options_preview = ParameterService.resolve_parameter_options(temp_param)
+                            if options_preview:
+                                st.success(f"✓ {len(options_preview)} valeur(s) unique(s) trouvées")
+                                with st.expander("Aperçu des 10 premières valeurs"):
+                                    st.write(", ".join(options_preview[:10]))
+                            else:
+                                st.warning("Aucune valeur trouvée dans cette colonne")
+                        except Exception as e:
+                            st.error(f"Erreur lors de la prévisualisation : {e}")
+                    else:
+                        param["options_source"] = None
+                
+                # MODE AUCUNE
+                else:
+                    param["options_manual"] = None
+                    param["options_source"] = None
+            
+            # ✅ VALEUR PAR DÉFAUT
+            st.markdown("---")
+            st.markdown("**⚙️ Valeur par défaut**")
 
-    # DataFrame source
-    param_df = pd.DataFrame(st.session_state.parameters or [],
-                            columns=["name", "type", "required", "balise_ppt"])
+            # ✅ Pour LISTE ou STRING avec options
+            if param.get("options_mode") in ["manual", "from_column"]:
+                try:
+                    temp_param = ParameterConfig(**param)
+                    available_options = ParameterService.resolve_parameter_options(temp_param)
+                    
+                    if available_options:
+                        current_default = param.get("default")
+                        default_index = 0
+                        if current_default and current_default in available_options:
+                            default_index = available_options.index(current_default)
+                        
+                        param["default"] = st.selectbox(
+                            "Valeur par défaut",
+                            available_options,
+                            index=default_index,
+                            key=f"param_default_sel_{idx}"
+                        )
+                    else:
+                        st.warning("Aucune option disponible pour définir une valeur par défaut")
+                        param["default"] = None
+                except Exception as e:
+                    st.error(f"Erreur chargement options : {e}")
+                    param["default"] = st.text_input(
+                        "Valeur par défaut",
+                        value=str(param.get("default", "")),
+                        key=f"param_default_txt_{idx}"
+                    )
 
-    # Valeurs par défaut si vide
-    if param_df.empty:
-        param_df = pd.DataFrame([{"name": "", "type": "string", "required": True, "balise_ppt": ""}])
+            elif param["type"] == "integer":
+                param["default"] = st.number_input(
+                    "Valeur par défaut",
+                    value=int(param.get("default", 0)) if param.get("default") is not None else 0,
+                    key=f"param_default_int_{idx}"
+                )
 
-    param_editor = st.data_editor(
-        param_df,
-        num_rows="dynamic",
-        width="stretch",
-        column_config={
-            "name": st.column_config.TextColumn("Nom", help="Nom interne du paramètre (ex: sous_marque)"),
-            "type": st.column_config.SelectboxColumn("Type", options=["string", "integer", "date", "list"]),
-            "required": st.column_config.CheckboxColumn("Obligatoire"),
-            "balise_ppt": st.column_config.TextColumn("Balise PPT", help="ex: [SousMarque]"),
-        }
-    )
+            elif param["type"] == "date":
+                from datetime import datetime
+                default_date = param.get("default")
+                if isinstance(default_date, str):
+                    try:
+                        default_date = datetime.fromisoformat(default_date).date()
+                    except:
+                        default_date = datetime.now().date()
+                else:
+                    default_date = datetime.now().date()
+                
+                param["default"] = st.date_input(
+                    "Valeur par défaut",
+                    value=default_date,
+                    key=f"param_default_date_{idx}"
+                ).isoformat()
 
-    # Sauvegarde dans la session (en nettoyant les lignes vides)
-    st.session_state.parameters = [
-        {
-            "name": str(row.get("name", "")).strip(),
-            "type": row.get("type") or "string",
-            "required": bool(row.get("required", True)),
-            "balise_ppt": str(row.get("balise_ppt", "")).strip()
-        }
-        for _, row in param_editor.iterrows()
-        if str(row.get("name", "")).strip() and str(row.get("balise_ppt", "")).strip()
-    ]
-
+            else:
+                # String sans options ou liste sans options
+                param["default"] = st.text_input(
+                    "Valeur par défaut",
+                    value=str(param.get("default", "")) if param.get("default") else "",
+                    key=f"param_default_str_{idx}"
+                )
+            
+            # Bouton suppression
+            st.markdown("---")
+            if st.button("🗑️ Supprimer ce paramètre", key=f"param_del_{idx}", use_container_width=True):
+                to_delete.append(idx)
+    
+    # Traiter les suppressions
+    if to_delete:
+        for i in sorted(to_delete, reverse=True):
+            del st.session_state.parameters[i]
+        st.rerun()
 
     st.divider()
 
@@ -281,7 +509,6 @@ if show_loops:
     st.header("4️⃣ Boucles (édition en tableau)")
     st.markdown("`slides` doit être une liste de codes séparés par des virgules (ex: A001, A002)")
 
-    # Convertit les boucles actuelles en DF
     loops_norm = []
     for loop in (st.session_state.loops or []):
         loops_norm.append({
@@ -302,7 +529,6 @@ if show_loops:
         }
     )
 
-    # Sauvegarde dans la session en listifiant slides
     def _split_slides(s: str) -> list[str]:
         return [x.strip() for x in str(s or "").split(",") if x.strip()]
 
@@ -315,7 +541,6 @@ if show_loops:
         for _, row in loops_editor.iterrows()
         if str(row.get("loop_id", "")).strip()
     ]
-
 
     st.divider()
 
@@ -366,7 +591,6 @@ if show_images:
                 })
                 st.rerun()
 
-    # Afficher les images
     if st.session_state.images:
         st.markdown("**Images configurées :**")
         for slide_id, images in st.session_state.images.items():
@@ -416,7 +640,6 @@ if show_mappings:
         if str(row.get("slide_id", "")).strip() and str(row.get("excel_range", "")).strip()
     ]
 
-
     st.divider()
 
 # ===== BOUTON DE GÉNÉRATION =====
@@ -440,8 +663,8 @@ if st.button(button_label, type="primary", use_container_width=True):
                 description=description,
                 parameters=[ParameterConfig(**p) for p in st.session_state.parameters],
                 data_source=DataSourceConfig(
-                    type="excel",  # Valeur par défaut
-                    required_tables=[]  # Liste vide
+                    type="excel",
+                    required_tables=[]
                 ),
                 loops=[LoopConfig(**loop) for loop in st.session_state.loops],
                 image_injections={
@@ -452,7 +675,7 @@ if st.button(button_label, type="primary", use_container_width=True):
             )
             
             if edit_mode:
-                # ========== MODE MISE À JOUR ==========
+                # MODE MISE À JOUR
                 with DatabaseService.get_session() as db:
                     service = TemplateService(db)
                     
@@ -468,7 +691,6 @@ if st.button(button_label, type="primary", use_container_width=True):
                         user_id=1
                     )
 
-                    # Enregistrer nouvelle image si fournie
                     if card_image is not None:
                         service.save_card_image(
                             template_id=template_id_to_edit,
@@ -483,7 +705,7 @@ if st.button(button_label, type="primary", use_container_width=True):
                     del st.session_state._template_loaded
             
             else:
-                # ========== MODE CRÉATION ==========
+                # MODE CRÉATION
                 import tempfile
                 from PIL import Image
 
@@ -501,7 +723,6 @@ if st.button(button_label, type="primary", use_container_width=True):
                         with open(excel_path, 'wb') as f:
                             f.write(excel_file.getbuffer())
                 else:
-                    # Fichiers vierges : utiliser masters par défaut
                     master_excel_path = project_root / "assets" / "master" / "master_template.xlsx"
                     master_ppt_path = project_root / "assets" / "master" / "master_template.pptx"
                     
@@ -516,7 +737,6 @@ if st.button(button_label, type="primary", use_container_width=True):
                     excel_path = master_excel_path
                     ppt_path = master_ppt_path
 
-                # Création template
                 with DatabaseService.get_session() as db:
                     service = TemplateService(db)
                     template = service.create_template(
@@ -527,7 +747,6 @@ if st.button(button_label, type="primary", use_container_width=True):
                     )
                     template_id = template.id
 
-                    # Gérer image de carte
                     if card_image:
                         assets_dir = project_root / "assets" / "background" / "card"
                         assets_dir.mkdir(parents=True, exist_ok=True)
@@ -558,7 +777,6 @@ if st.button(button_label, type="primary", use_container_width=True):
                 st.success(f"✅ Template '{name}' créé! (ID: {template_id})")
                 st.balloons()
                 
-                # Réinitialiser
                 st.session_state.parameters = []
                 st.session_state.loops = []
                 st.session_state.images = {}

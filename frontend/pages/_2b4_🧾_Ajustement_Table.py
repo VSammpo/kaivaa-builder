@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 import traceback
+from typing import Dict, Any, Optional, Tuple
 
 # ---------------------------------------------------------------------
 # Bootstrap import path
@@ -21,6 +22,9 @@ from backend.services.gabarit_registry import (
 
 st.set_page_config(page_title="Ajustement de la table", page_icon="🧾", layout="wide")
 
+from code_editor import code_editor
+from backend.services.parameter_service import ParameterService
+from backend.models.template_config import ParameterConfig
 
 # ============================ Navbar (5 boutons) ============================
 
@@ -469,25 +473,35 @@ def _get_current_usage_for_preview(template_id: int, gname: str, gver: str, usag
 
     return u
 
+def _apply_overlay(df: pd.DataFrame, code: str, params: dict | None = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    """
+    Exécute le script Python overlay sur le DataFrame.
 
-def _apply_overlay(df: pd.DataFrame, code: str) -> tuple[pd.DataFrame | None, str | None]:
+    Variables exposées au script :
+      - df : DataFrame (copie)
+      - pd : pandas
+      - params : dict des paramètres
+      - chaque paramètre exporté comme variable si son nom est un identifiant Python (ex: Secteur)
     """
-    Exécute le code utilisateur dans un contexte local avec 'pd' et 'df'.
-    Le script peut modifier 'df' en place ou réassigner df = ...
-    Retourne (df_result, error_message).
-    """
+    if not code or not code.strip():
+        return df, None
+
     try:
-        local_vars = {"pd": pd, "df": df.copy()}
+        local_vars = {"pd": pd, "df": df.copy(), "params": params or {}}
+
+        # ➕ rendre chaque paramètre accessible directement (ex: Secteur)
+        for k, v in (params or {}).items():
+            if isinstance(k, str) and k not in {"pd", "df", "params"} and k.isidentifier():
+                local_vars[k] = v
+
         exec(code, {}, local_vars)
         result = local_vars.get("df", None)
         if isinstance(result, pd.DataFrame):
             return result, None
-        if isinstance(local_vars.get("df"), pd.DataFrame):
-            return local_vars["df"], None
         return None, "Le script n'a pas produit de DataFrame 'df'."
     except Exception as ex:
-        tb = traceback.format_exc()
-        return None, f"{type(ex).__name__}: {ex}\n{tb}"
+        import traceback
+        return None, f"{type(ex).__name__}: {ex}\n{traceback.format_exc()}"
 
 
 def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
@@ -523,7 +537,7 @@ def _resolve_effective_columns_for_adjustment(u: dict) -> list[str]:
                     cols.append(outc)
     return list(dict.fromkeys(cols))
 
-def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None, str | None]:
+def _compose_full_pipeline(u: dict, *, full: bool, params: dict | None = None) -> tuple[pd.DataFrame | None, str | None]:
     """
     Pipeline final pour la PRÉVISUALISATION :
     Base + Enrichissements + Méthodes → Script → Renommages → TRI → Ordre/Exclusions.
@@ -543,7 +557,7 @@ def _compose_full_pipeline(u: dict, *, full: bool) -> tuple[pd.DataFrame | None,
     # 3) script utilisateur (overlay)
     code = (u.get("overlay_python") or "").strip()
     if code:
-        df2, err2 = _apply_overlay(df, code)
+        df2, err2 = _apply_overlay(df, code, params=params)
         if err2 is None and isinstance(df2, pd.DataFrame):
             df = df2
         else:
@@ -655,21 +669,87 @@ def _log_kpi(title: str, kv: dict):
 
 
 # ============================ Onglet 1 — Script Python ============================
-
 with tab_script:
     st.caption(f"Feuille : **{sheet}** • Table : **{table}**")
-    st.markdown("**Écrivez un script Python qui transforme `df` (DataFrame).** Vous avez accès à `pd` (pandas) et `df`. Le script peut modifier `df` en place ou faire `df = ...`.")
-    code_default = (usage.get("overlay_python") or "").strip()
-    code = st.text_area("Script Python", value=code_default, height=220,
-                        placeholder="Exemples :\n# df = df[df['Année'] >= 2023]\n# df['CA_par_salarie'] = df['CA'] / df['Effectif']")
+    
+    # ✅ AFFICHAGE DES PARAMÈTRES DISPONIBLES
+    st.markdown("### 📋 Paramètres disponibles")
 
+    with DatabaseService.get_session() as db:
+        ts = TemplateService(db)
+        template_config = ts.load_template_config(template_id)
+        params = template_config.parameters
+
+    if params:
+        st.markdown("**Chaque paramètre est utilisable de deux façons :**")
+        st.caption("• Accès direct (recommandé) : `NomParam`  • Accès dict : `params['NomParam']`")
+
+        cols = st.columns(3)
+        for idx, param in enumerate(params):
+            with cols[idx % 3]:
+                with st.container(border=True):
+                    st.markdown(f"**{param.name}**")
+                    st.caption(f"Type : {param.type}")
+                    if param.default:
+                        st.caption(f"Défaut : `{param.default}`")
+                    # options (si calculables)
+                    if getattr(param, "type", None) == "select" and getattr(param, "options_mode", "none") != "none":
+                        try:
+                            options = ParameterService.resolve_parameter_options(param)
+                            if options:
+                                st.caption(f"Options : {', '.join(map(str, options[:3]))}{'...' if len(options) > 3 else ''}")
+                        except Exception:
+                            pass
+
+        st.markdown("---")
+        st.info("💡 Exemples : `df = df[df['Marque'] == Sous_Marque]` **ou** `df = df[df['Marque'] == params['Sous_Marque']]`")
+    else:
+        st.info("Aucun paramètre défini pour ce template")
+
+    
+    st.markdown("---")
+    
+    # ✅ CODE EDITOR AVEC PERSISTANCE TOTALE
+    st.markdown("### 🔧 Script Python de transformation")
+    st.caption("💡 Variables : `df` (DataFrame), `pd` (pandas), `params` (dict), et chaque paramètre accessible par son nom (ex : `Secteur`).")
+    st.caption("⚠️ Modifie `df` (ex : `df = df[df['Col'] == Secteur]`)")
+
+
+    # ✅ Clé unique par table
+    persist_key = f"code_persist_{template_id}_{gname}_{gver}_{sheet}_{table}"
+
+    # ✅ Initialisation depuis DB si jamais chargé
+    if persist_key not in st.session_state:
+        st.session_state[persist_key] = (usage.get("overlay_python") or "").strip()
+
+    # ✅ Zone de texte SIMPLE (pas code_editor qui bug)
+    code_input = st.text_area(
+        "Code Python",
+        value=st.session_state[persist_key],
+        height=300,
+        key=f"code_area_{persist_key}",
+        placeholder="# Exemple :\n# df = df[df['Colonne'] == params['param_name']]"
+    )
+
+    # ✅ Mettre à jour la persistance
+    if code_input != st.session_state[persist_key]:
+        st.session_state[persist_key] = code_input
+
+    code = st.session_state[persist_key]
+    st.caption(f"📄 {len(code)} caractères")
+
+    st.markdown("---")
+
+    # Actions
     colL, colR = st.columns([2, 1], gap="large")
+
     with colL:
-        if st.button("💾 Enregistrer le script", type="primary", use_container_width=True, key="btn_save_overlay"):
+        if st.button("💾 Enregistrer le script", type="primary", use_container_width=True):
             with DatabaseService.get_session() as db:
                 ts = TemplateService(db)
                 cfg2 = ts.get_config(template_id)
                 usages2 = cfg2.get("gabarit_usages", []) or []
+                
                 for uu in usages2:
                     tgt2 = uu.get("excel_target") or {}
                     if (
@@ -680,31 +760,44 @@ with tab_script:
                     ):
                         uu["overlay_python"] = code
                         break
+                
                 cfg2["gabarit_usages"] = usages2
                 ts.update_config(template_id, cfg2)
+            
             st.success("✅ Script enregistré")
+            st.rerun()
 
-        # Tests
-        if st.button("🧪 Prévisualiser le script (base+enrich+métodes → script)", use_container_width=True, key="btn_run_overlay_full"):
-            df_final, err = _compose_until_overlay_and_methods(usage, full=True)
-            if err:
-                st.error(f"Erreur :\n\n{err}")
+        if st.button("🧪 Prévisualiser le script", use_container_width=True):
+            # Params avec valeurs par défaut
+            params_dict = {}
+            for param in template_config.parameters:
+                params_dict[param.name] = ParameterService.get_default_value(param)
+
+            # Usage modifié temporairement
+            usage_test = dict(usage)
+            usage_test["overlay_python"] = code
+
+            df_final, error = _compose_full_pipeline(usage_test, full=True, params=params_dict)
+
+            if error:
+                st.error(f"❌ Erreur :\n```\n{error}\n```")
             elif df_final is None or df_final.empty:
-                st.info("Exécution OK, mais aucun résultat affichable.")
+                st.warning("Aucun résultat")
             else:
-                st.success("Résultat après script — 20 premières lignes :")
+                st.success(f"✅ {len(df_final)} lignes, {len(df_final.columns)} colonnes")
                 st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
 
 
-
     with colR:
-        st.markdown("**Colonnes actuellement disponibles**")
+        st.markdown("**Colonnes disponibles**")
         cols_eff = _resolve_effective_columns_for_adjustment(usage)
         if cols_eff:
-            st.write(", ".join(cols_eff))
+            for col in cols_eff[:10]:
+                st.caption(f"• {col}")
+            if len(cols_eff) > 10:
+                st.caption(f"... et {len(cols_eff)-10} autres")
         else:
             st.caption("—")
-
 
 # ============================ Onglet 2 — AJUSTEMENT ============================
 with tab_adjust:
@@ -899,10 +992,17 @@ with tab_preview:
     st.caption(f"Feuille : **{sheet}** • Table : **{table}**")
     st.markdown("---")
 
+    params_dict = {p.name: ParameterService.get_default_value(p) for p in template_config.parameters}
+    if params_dict:
+        st.caption("Paramètres (valeurs par défaut) : " + ", ".join(params_dict.keys()))
+
+
+
     # Prévisualisation basée sur le pipeline "rapide" (full=False)
     usage_preview = _get_current_usage_for_preview(template_id, gname, gver, usage)
 
-    df_prev, err = _compose_full_pipeline(usage_preview, full=True)
+    df_prev, err = _compose_full_pipeline(usage_preview, full=True, params=params_dict)
+
     if err:
         st.error(f"Erreur pipeline :\n\n{err}")
     elif df_prev is None or df_prev.empty:

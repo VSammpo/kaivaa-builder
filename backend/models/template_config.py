@@ -1,3 +1,4 @@
+# backend/models/template_config.py
 """
 Modèles Pydantic pour la configuration des templates
 """
@@ -10,18 +11,49 @@ from datetime import datetime
 class ParameterConfig(BaseModel):
     """Configuration d'un paramètre de template"""
     name: str = Field(..., description="Nom du paramètre (ex: sous_marque)")
-    type: str = Field(..., description="Type: string, integer, date, list")
+    type: str = Field(..., description="Type: string, integer, date, select")
     required: bool = Field(True, description="Paramètre obligatoire")
     default: Optional[Any] = Field(None, description="Valeur par défaut")
-    allowed_values: Optional[List[str]] = Field(None, description="Valeurs autorisées (pour type list)")
     description: Optional[str] = Field(None, description="Description du paramètre")
     balise_ppt: str = Field(..., description="Balise dans PowerPoint (ex: [Sous_Marque])")
     
+    # NOUVEAUX CHAMPS pour options enrichies
+    options_mode: str = Field("none", description="Mode: 'none', 'manual', 'from_column'")
+    options_manual: Optional[List[str]] = Field(None, description="Options saisies manuellement")
+    options_source: Optional[Dict[str, str]] = Field(
+        None, 
+        description="Source pour options dynamiques: {'gabarit': 'NomGabarit', 'version': 'v1', 'column': 'NomColonne'}"
+    )
+    
     @validator('type')
     def validate_type(cls, v):
-        allowed_types = ['string', 'integer', 'date', 'list']
+        allowed_types = ['string', 'integer', 'date', 'liste']  # ✅ Remplacer 'select' par 'liste'
         if v not in allowed_types:
             raise ValueError(f"Type doit être parmi {allowed_types}")
+        return v
+    
+    @validator('options_mode')
+    def validate_options_mode(cls, v):
+        allowed_modes = ['none', 'manual', 'from_column']
+        if v not in allowed_modes:
+            raise ValueError(f"options_mode doit être parmi {allowed_modes}")
+        return v
+    
+    @validator('options_manual')
+    def validate_options_manual(cls, v, values):
+        if values.get('options_mode') == 'manual' and not v:
+            raise ValueError("options_manual requis quand options_mode='manual'")
+        return v
+    
+    @validator('options_source')
+    def validate_options_source(cls, v, values):
+        if values.get('options_mode') == 'from_column':
+            if not v:
+                raise ValueError("options_source requis quand options_mode='from_column'")
+            if not isinstance(v, dict):
+                raise ValueError("options_source doit être un dictionnaire")
+            if 'gabarit' not in v or 'column' not in v:
+                raise ValueError("options_source doit contenir 'gabarit' et 'column'")
         return v
 
 
@@ -108,9 +140,16 @@ class TemplateConfig(BaseModel):
                 "parameters": [
                     {
                         "name": "sous_marque",
-                        "type": "string",
+                        "type": "select",
                         "required": True,
-                        "balise_ppt": "[Sous_Marque]"
+                        "balise_ppt": "[Sous_Marque]",
+                        "options_mode": "from_column",
+                        "options_source": {
+                            "gabarit": "PRODUITS",
+                            "version": "v1",
+                            "column": "Sous_Marque"
+                        },
+                        "default": "BOMBAY"
                     }
                 ],
                 "data_source": {

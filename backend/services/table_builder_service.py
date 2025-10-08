@@ -109,13 +109,32 @@ def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str,
     return cur
 
 
-def _apply_overlay(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
-    """Exécute le script Python overlay sur le DataFrame"""
+def _apply_overlay(df: pd.DataFrame, code: str, params: dict | None = None):
     if not code or not code.strip():
         return df, None
-    
     try:
-        local_vars = {"pd": pd, "df": df.copy()}
+        local_vars = {"pd": pd, "df": df.copy(), "params": params or {}}
+        for k, v in (params or {}).items():
+            if not isinstance(k, str):
+                continue
+            if k in {"pd", "df", "params"}:
+                continue
+            if k.isidentifier():
+                # nom tel que passé
+                local_vars.setdefault(k, v)
+                # alias usuels
+                kk = k.lower()
+                ku = k.upper()
+                kt = k[:1].upper() + k[1:]
+                for alias in {kk, ku, kt}:
+                    if alias.isidentifier() and alias not in local_vars:
+                        local_vars[alias] = v
+
+        # ➕ rendre chaque paramètre accessible directement (ex: Secteur)
+        for k, v in (params or {}).items():
+            if isinstance(k, str) and k not in {"pd", "df", "params"} and k.isidentifier():
+                local_vars[k] = v
+
         exec(code, {}, local_vars)
         result = local_vars.get("df", None)
         if isinstance(result, pd.DataFrame):
@@ -123,20 +142,25 @@ def _apply_overlay(df: pd.DataFrame, code: str) -> Tuple[Optional[pd.DataFrame],
         return None, "Le script n'a pas produit de DataFrame 'df'."
     except Exception as ex:
         import traceback
-        tb = traceback.format_exc()
-        return None, f"{type(ex).__name__}: {ex}\n{tb}"
+        return None, f"{type(ex).__name__}: {ex}\n{traceback.format_exc()}"
 
 
 def build_table_from_usage(
     usage: dict,
     *,
     full: bool = True,
-    log_kpis: bool = False
+    log_kpis: bool = False,
+    params: dict | None = None  # ✅ NOUVEAU PARAMÈTRE
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
     Construit le DataFrame final à partir d'un usage de gabarit.
-    """
     
+    Args:
+        usage: Configuration de l'usage
+        full: Charger données complètes (True) ou preview (False)
+        log_kpis: Afficher les KPIs de construction
+        params: Paramètres du template pour injection dans le script
+    """
     gabarit_name = usage.get("gabarit_name", "")
     gabarit_version = usage.get("gabarit_version", "v1")
     
@@ -253,11 +277,11 @@ def build_table_from_usage(
     # 4. Script Python overlay
     code = (usage.get("overlay_python") or "").strip()
     if code:
-        df2, err2 = _apply_overlay(df, code)
+        df2, err2 = _apply_overlay(df, code, params=params)  # ✅ INJECTION params
         if err2 is None and isinstance(df2, pd.DataFrame):
             df = df2
             if log_kpis:
-                logger.info(f"🧪 Script Python appliqué")
+                logger.info(f"🧪 Script Python appliqué (avec {len(params or {})} paramètre(s))")
         else:
             return None, err2
     
