@@ -1,0 +1,27 @@
+created_at: 2025-10-08 13:37:28.523215
+created_by: null
+data_source:
+  connection_string: null
+  required_tables: []
+  type: excel
+description: ''
+estimated_generation_time: null
+excel_template_path: null
+image_injections: {}
+loops:
+- loop_id: Entreprisea
+  sheet_name: Boucles
+  slides:
+  - A001
+name: Acticité
+parameters:
+- allowed_values: null
+  balise_ppt: '[NACE]'
+  default: null
+  description: null
+  name: NACE (activité)
+  required: true
+  type: string
+ppt_template_path: null
+slide_mappings: []
+version: '1.0'

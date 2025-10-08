@@ -103,10 +103,25 @@ def render_template_subnav(active: str, template_id: int):
 
 render_template_subnav("detail", template_id)
 
-# ===== Titre + description
-st.title(f"🗂️ Détail du template — {tpl_name} (v{tpl_version})")
-if tpl_desc:
-    st.info(tpl_desc)
+# ===== Titre + description + actions
+col_title, col_actions = st.columns([4, 1])
+
+with col_title:
+    st.title(f"🗂️ Détail du template — {tpl_name} (v{tpl_version})")
+    if tpl_desc:
+        st.info(tpl_desc)
+
+with col_actions:
+    st.write("")  # Spacing pour alignement vertical
+    st.write("")
+    
+    # Bouton Supprimer
+    if st.button("🗑️ Supprimer", use_container_width=True, type="secondary", key="btn_delete_template"):
+        st.session_state.delete_template_detail_id = template_id
+        st.session_state.show_delete_modal_detail = True
+        st.rerun()
+
+st.divider()
 
 # ===== Layout 2 colonnes
 col_left, col_right = st.columns([1, 1], gap="large")
@@ -265,3 +280,63 @@ with col_right:
                         st.json(job["parameters"])
                     if job["error"]:
                         st.error(f"**Erreur** : {job['error']}")
+
+if st.session_state.get('show_delete_modal_detail'):
+    @st.dialog("⚠️ Confirmer la suppression")
+    def confirm_delete_detail():
+        st.warning(f"**Vous êtes sur le point de supprimer ce template :**")
+        st.markdown(f"### {tpl_name} (v{tpl_version})")
+        
+        if tpl_desc:
+            st.caption(tpl_desc)
+        
+        st.divider()
+        
+        # Avertissement si des exécutions existent
+        with DatabaseService.get_session() as db:
+            from backend.database.models import ExecutionJob
+            count_jobs = db.query(ExecutionJob).filter_by(template_id=template_id).count()
+        
+        if count_jobs > 0:
+            st.error(f"⚠️ Ce template a **{count_jobs}** exécution(s) dans l'historique. Elles seront également supprimées.")
+        
+        st.markdown("**Cette action est irréversible.** Tapez le nom exact du template pour confirmer :")
+        
+        confirmation = st.text_input(
+            "Nom du template",
+            key="delete_confirm_detail_input",
+            placeholder=tpl_name
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("Annuler", use_container_width=True, key="cancel_delete_detail"):
+                st.session_state.show_delete_modal_detail = False
+                if 'delete_template_detail_id' in st.session_state:
+                    del st.session_state.delete_template_detail_id
+                st.rerun()
+        
+        with col2:
+            if st.button("Supprimer définitivement", type="primary", use_container_width=True, key="confirm_delete_detail"):
+                if confirmation != tpl_name:
+                    st.error("❌ Le nom ne correspond pas")
+                else:
+                    try:
+                        with DatabaseService.get_session() as db:
+                            service = TemplateService(db)
+                            service.delete_template(template_id)
+                        
+                        st.success(f"✅ Template '{tpl_name}' supprimé")
+                        st.session_state.show_delete_modal_detail = False
+                        if 'delete_template_detail_id' in st.session_state:
+                            del st.session_state.delete_template_detail_id
+                        if 'selected_template_detail' in st.session_state:
+                            del st.session_state.selected_template_detail
+                        
+                        st.switch_page("pages/2_📚_Bibliotheque.py")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de la suppression : {e}")
+    
+    confirm_delete_detail()

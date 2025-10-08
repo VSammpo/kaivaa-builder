@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+from code_editor import code_editor
 
 # ==== Bootstrap
 project_root = Path(__file__).parent.parent.parent
@@ -225,7 +226,7 @@ view = st.session_state.current_view
 
 # --------------------------------- VUE LISTE ---------------------------------
 if view == "list":
-    st.subheader("Méthodes (ordre d’exécution)")
+    st.subheader("Méthodes (ordre d'exécution)")
     c_top = st.container()
     with c_top:
         if st.button("➕ Nouvelle méthode", type="primary", use_container_width=True):
@@ -320,13 +321,71 @@ elif view == "edit":
     outcol = st.text_input("Colonne de sortie *", value="" if not is_edit else next((m["output_column"] for m in methods if m["id"]==st.session_state.editing_method_id), ""))
     desc = st.text_area("Description (optionnel)", value="" if not is_edit else next((m.get("description","") for m in methods if m["id"]==st.session_state.editing_method_id), ""), height=80)
 
-    # Code
-    code = st.text_area(
-        "📝 Formule Python (le DataFrame à modifier s'appelle `df`)",
-        value="" if not is_edit else next((m.get("code","") for m in methods if m["id"]==st.session_state.editing_method_id), ""),
-        height=220,
-        placeholder="df['result'] = 1\n# utilisez params['x'] si vous avez déclaré des paramètres"
+    # ✅ Code avec code_editor
+    st.markdown("### 📝 Formule Python")
+    st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas), `params` (dict des paramètres)")
+    st.caption("⚠️ Le DataFrame doit être modifié in-place : `df['nouvelle_colonne'] = ...`")
+    
+    # Buffer unique pour cette méthode
+    code_buffer_key = f"method_code_buffer_{st.session_state.editing_method_id or 'new'}"
+    if code_buffer_key not in st.session_state:
+        if is_edit:
+            current_method = next((m for m in methods if m["id"]==st.session_state.editing_method_id), None)
+            st.session_state[code_buffer_key] = current_method.get("code", "") if current_method else ""
+        else:
+            st.session_state[code_buffer_key] = ""
+    
+    # Configuration du code_editor
+    custom_buttons = [
+        {
+            "name": "Copier",
+            "feather": "Copy",
+            "hasText": True,
+            "commands": ["copyAll"],
+            "style": {"top": "0.46rem", "right": "0.4rem"}
+        }
+    ]
+    
+    editor_result = code_editor(
+        st.session_state[code_buffer_key],
+        lang="python",
+        height=300,
+        theme="contrast",
+        shortcuts="vscode",
+        focus=False,
+        buttons=custom_buttons,
+        allow_reset=True,
+        options={
+            "wrap": True,
+            "showLineNumbers": True,
+            "highlightActiveLine": True,
+            "enableLiveAutocompletion": True,
+            "enableBasicAutocompletion": True,
+        },
+        key=f"method_code_editor_{st.session_state.editing_method_id or 'new'}",
+        response_mode=["blur", "submit"]
     )
+    
+    # ✅ Extraction robuste du contenu
+    if editor_result:
+        new_code = None
+        
+        if isinstance(editor_result, dict) and "text" in editor_result:
+            new_code = editor_result["text"]
+        elif isinstance(editor_result, dict) and "content" in editor_result:
+            new_code = editor_result["content"]
+        elif isinstance(editor_result, dict) and "code" in editor_result:
+            new_code = editor_result["code"]
+        elif isinstance(editor_result, str):
+            new_code = editor_result
+        elif isinstance(editor_result, dict) and "id" in editor_result:
+            new_code = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
+        
+        if new_code is not None and isinstance(new_code, str):
+            st.session_state[code_buffer_key] = new_code
+    
+    code = st.session_state[code_buffer_key]
+    st.caption(f"🔍 Code capturé : {len(code)} caractères")
 
     inferred = _infer_required_columns(code)
     if inferred:
@@ -473,12 +532,20 @@ elif view == "edit":
                     method_id=st.session_state.editing_method_id
                 )
                 st.success(f"Méthode '{saved['name']}' enregistrée")
+                
+                # ✅ Nettoyer le buffer après sauvegarde
+                if code_buffer_key in st.session_state:
+                    del st.session_state[code_buffer_key]
+                
                 st.session_state.current_view = "list"
                 st.rerun()
             except Exception as e:
                 st.error(f"Erreur lors de l'enregistrement : {e}")
 
     if st.button("↩️ Annuler", use_container_width=True):
+        # ✅ Nettoyer le buffer si on annule
+        if code_buffer_key in st.session_state:
+            del st.session_state[code_buffer_key]
         st.session_state.current_view = "list"
         st.rerun()
 

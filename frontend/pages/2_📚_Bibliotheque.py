@@ -155,14 +155,62 @@ else:
                                 st.switch_page("pages/_2a_📊_Detail_Livrable.py")
                         
                         with col_btn2:
-                            if st.button("✏️ Éditer", key=f"edit_{template['id']}", use_container_width=True):
-                                st.session_state.selected_template = template['id']
-                                st.switch_page("pages/_2b_➕_Form_Template.py")
+                            if st.button("🗑️ Supprimer", key=f"del_{template['id']}", 
+                                       use_container_width=True, type="secondary"):
+                                st.session_state.delete_template_id = template['id']
+                                st.session_state.show_delete_modal = True
+                                st.rerun()
 
 st.divider()
-st.caption("💡 Créez des projets pour orchestrer plusieurs livrables avec des pipelines data configurés")
 
-try:
-    st.page_link("pages/1_📁_Projets.py", label="Aller aux Projets", icon="📁")
-except Exception:
-    st.info("📁 Projets : utilise le menu latéral")
+# ===== MODAL DE CONFIRMATION SUPPRESSION =====
+if st.session_state.get('show_delete_modal'):
+    @st.dialog("⚠️ Confirmer la suppression")
+    def confirm_delete():
+        template_id = st.session_state.get('delete_template_id')
+        
+        # Récupérer le nom du template
+        template_to_delete = next((t for t in templates_data if t['id'] == template_id), None)
+        
+        if template_to_delete:
+            st.warning(f"**Vous êtes sur le point de supprimer le template :**")
+            st.markdown(f"### {template_to_delete['name']} (v{template_to_delete['version']})")
+            
+            st.divider()
+            st.markdown("**Cette action est irréversible.** Tapez le nom exact du template pour confirmer :")
+            
+            confirmation = st.text_input(
+                "Nom du template",
+                key="delete_confirm_input",
+                placeholder=template_to_delete['name']
+            )
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Annuler", use_container_width=True):
+                    st.session_state.show_delete_modal = False
+                    if 'delete_template_id' in st.session_state:
+                        del st.session_state.delete_template_id
+                    st.rerun()
+            
+            with col2:
+                if st.button("Supprimer définitivement", type="primary", use_container_width=True):
+                    if confirmation != template_to_delete['name']:
+                        st.error("❌ Le nom ne correspond pas")
+                    else:
+                        try:
+                            with DatabaseService.get_session() as db:
+                                service = TemplateService(db)
+                                service.delete_template(template_id)
+                            
+                            st.success(f"✅ Template '{template_to_delete['name']}' supprimé")
+                            st.session_state.show_delete_modal = False
+                            if 'delete_template_id' in st.session_state:
+                                del st.session_state.delete_template_id
+                            st.rerun()
+                        
+                        except Exception as e:
+                            st.error(f"❌ Erreur lors de la suppression : {e}")
+    
+    confirm_delete()

@@ -111,7 +111,7 @@ def set_default_preview(gabarit_name: str, gabarit_version: str, rows: list[dict
 
     data["defaults"] = defs
     _save_raw(data)
-
+ 
 
 def get_default_preview(gabarit_name: str, gabarit_version: str) -> dict | None:
     """

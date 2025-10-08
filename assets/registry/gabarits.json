@@ -1,9 +1,91 @@
 {
   "gabarits": [
     {
-      "name": "Ratios Financiers (BCE/INPI)",
+      "name": "SIREN",
       "version": "v1",
-      "description": "Données financières par entreprise (SIREN) et date de clôture de l'exercice.",
+      "description": "",
+      "columns": [
+        {
+          "name": "SIREN",
+          "type": "text",
+          "is_key": true
+        },
+        {
+          "name": "Nom_de_l'entreprise",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Tranche_effectif",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Taille_entreprise",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Région",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Département",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Code_postal",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Ville",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Latitude",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Longitude",
+          "type": "number",
+          "is_key": false
+        },
+        {
+          "name": "Sections_(NACE1)",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Divisions_(NACE2)",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Groupes_(NACE3)",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Classe_(NACE4)",
+          "type": "text",
+          "is_key": false
+        },
+        {
+          "name": "Code_NACE",
+          "type": "text",
+          "is_key": false
+        }
+      ]
+    },
+    {
+      "name": "Compte de résultat des entreprises",
+      "version": "v1",
+      "description": "",
       "columns": [
         {
           "name": "siren",
@@ -121,117 +203,29 @@
           "is_key": false
         }
       ]
-    },
-    {
-      "name": "NACE_REV_2",
-      "version": "v1",
-      "description": "Secteurs d'activités en france (code NACE)",
-      "columns": [
-        {
-          "name": "Code",
-          "type": "text",
-          "is_key": true
-        },
-        {
-          "name": "Code_Lvl4",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "NIV5",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "NIV4",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "NIV3",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "NIV2",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "NIV1",
-          "type": "text",
-          "is_key": false
-        }
-      ]
-    },
-    {
-      "name": "SIREN",
-      "version": "v1",
-      "description": "Base des entreprises SIREN en france.",
-      "columns": [
-        {
-          "name": "SIREN",
-          "type": "text",
-          "is_key": true
-        },
-        {
-          "name": "NACE_REV_2",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "Nom_Entreprise",
-          "type": "text",
-          "is_key": false
-        },
-        {
-          "name": "Latitude",
-          "type": "integer",
-          "is_key": false
-        },
-        {
-          "name": "Longitude",
-          "type": "integer",
-          "is_key": false
-        }
-      ]
     }
   ],
   "roles": [
     {
-      "gabarit_name": "Ratios Financiers (BCE/INPI)",
-      "gabarit_version": "v1",
-      "role": "fact"
-    },
-    {
-      "gabarit_name": "NACE_REV_2",
-      "gabarit_version": "v1",
-      "role": "dimension"
-    },
-    {
       "gabarit_name": "SIREN",
       "gabarit_version": "v1",
       "role": "dimension"
+    },
+    {
+      "gabarit_name": "Compte de résultat des entreprises",
+      "gabarit_version": "v1",
+      "role": "fact"
     }
   ],
   "relations": [
     {
-      "from_gabarit": "Ratios Financiers (BCE/INPI)",
+      "from_gabarit": "Compte de résultat des entreprises",
       "from_version": "v1",
       "to_gabarit": "SIREN",
       "to_version": "v1",
       "left_key": "siren",
       "right_key": "SIREN",
-      "relation_id": "Ratios Financiers (BCE/INPI)|v1->SIREN|v1::siren=SIREN"
-    },
-    {
-      "from_gabarit": "SIREN",
-      "from_version": "v1",
-      "to_gabarit": "NACE_REV_2",
-      "to_version": "v1",
-      "left_key": "NACE_REV_2",
-      "right_key": "Code",
-      "relation_id": "SIREN|v1->NACE_REV_2|v1::NACE_REV_2=Code"
+      "relation_id": "Compte de résultat des entreprises|v1->SIREN|v1::siren=SIREN"
     }
   ],
   "trash": {
@@ -369,6 +363,202 @@
           {
             "name": "Entreprises.Activité_détaillée",
             "type": "text",
+            "is_key": false
+          }
+        ]
+      },
+      {
+        "name": "Ratios Financiers (BCE/INPI)_Supr_n0001",
+        "version": "v1",
+        "description": "Données financières par entreprise (SIREN) et date de clôture de l'exercice.",
+        "columns": [
+          {
+            "name": "siren",
+            "type": "text",
+            "is_key": true
+          },
+          {
+            "name": "date_cloture_exercice",
+            "type": "date",
+            "is_key": true
+          },
+          {
+            "name": "Chiffre_d_affaires",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Marge_brute",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "EBE",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "EBIT",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Resultat_net",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Taux_d_endettement",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Ratio_de_liquidite",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Ratio_de_vetuste",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Autonomie_financiere",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Poids_BFR_exploitation_sur_CA",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Couverture_des_interets",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "CAF_sur_CA",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Capacite_de_remboursement",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Marge_EBE",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Resultat_courant_avant_impots_sur_CA",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Poids_BFR_exploitation_sur_CA_jours",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Rotation_des_stocks_jours",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Credit_clients_Jours",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "Credit_fournisseurs_Jours",
+            "type": "number",
+            "is_key": false
+          },
+          {
+            "name": "type_bilan",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "confidentiality",
+            "type": "text",
+            "is_key": false
+          }
+        ]
+      },
+      {
+        "name": "NACE_REV_2_Supr_n0001",
+        "version": "v1",
+        "description": "Secteurs d'activités en france (code NACE)",
+        "columns": [
+          {
+            "name": "Code",
+            "type": "text",
+            "is_key": true
+          },
+          {
+            "name": "Code_Lvl4",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "NIV5",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "NIV4",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "NIV3",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "NIV2",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "NIV1",
+            "type": "text",
+            "is_key": false
+          }
+        ]
+      },
+      {
+        "name": "SIREN_Supr_n0001",
+        "version": "v1",
+        "description": "Base des entreprises SIREN en france.",
+        "columns": [
+          {
+            "name": "SIREN",
+            "type": "text",
+            "is_key": true
+          },
+          {
+            "name": "NACE_REV_2",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "Nom_Entreprise",
+            "type": "text",
+            "is_key": false
+          },
+          {
+            "name": "Latitude",
+            "type": "integer",
+            "is_key": false
+          },
+          {
+            "name": "Longitude",
+            "type": "integer",
             "is_key": false
           }
         ]
@@ -1127,149 +1317,905 @@
         "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\000 - Nomenclature\\entreprises_manufacture.csv",
         "sep": ";",
         "encoding": "utf-8-sig",
-        "python": "# 1. Filtrer les lignes où 'Dénomination de l'unité légale' n'est pas None\ndf = df[df['Dénomination de l\\'unité légale'].notna()]\n\n# 2. Garder les colonnes nécessaires et dédupliquer sur SIREN\ndf = df[['SIREN', 'Dénomination de l\\'unité légale', 'Activité principale de l\\'établissement.1', 'Géolocalisation de l\\'établissement']].drop_duplicates(subset='SIREN', keep='first')\n\n# 3. Split la colonne Géolocalisation en Latitude et Longitude\ndf[['Latitude', 'Longitude']] = df['Géolocalisation de l\\'établissement'].str.split(',', expand=True)\n\n# 4. Convertir Latitude et Longitude en numérique\ndf['Latitude'] = pd.to_numeric(df['Latitude'], errors='coerce')\ndf['Longitude'] = pd.to_numeric(df['Longitude'], errors='coerce')\n\n# 5. Renommer les colonnes et supprimer la colonne Géolocalisation\ndf = df.rename(columns={\n    'Dénomination de l\\'unité légale': 'Nom_Entreprise',\n    'Activité principale de l\\'établissement.1': 'NACE_REV_2'\n})\n\ndf = df[['SIREN', 'NACE_REV_2', 'Nom_Entreprise', 'Latitude', 'Longitude']]\n\n# 6. Déduplication finale pour garantir l'unicité\ndf = df.drop_duplicates(subset='SIREN', keep='first').reset_index(drop=True)"
+        "python": "# Copie de travail (df -> dr)\r\ndr = df.copy()\r\n\r\n# 1) Latitude / Longitude (split si dispo)\r\ngeo_col = \"Géolocalisation de l'établissement\"\r\nif geo_col in dr.columns:\r\n    parts = dr[geo_col].astype(str).str.split(\",\", n=1, expand=True)\r\n    dr[\"Latitude\"] = parts[0].str.strip()\r\n    dr[\"Longitude\"] = parts[1].str.strip() if parts.shape[1] > 1 else None\r\n    dr = dr.drop(columns=[geo_col])\r\nelse:\r\n    if \"Latitude\" not in dr.columns:\r\n        dr[\"Latitude\"] = None\r\n    if \"Longitude\" not in dr.columns:\r\n        dr[\"Longitude\"] = None\r\n\r\n# 2) Alias Code postal / Ville (pas de modif de valeurs)\r\n# ✅ CORRECTION : Éviter les generator expressions qui ne voient pas dr\r\ncp_col = None\r\nfor c in [\"Code postal de l'établissement\", \"Code postal\"]:\r\n    if c in dr.columns:\r\n        cp_col = c\r\n        break\r\n\r\nville_col = None\r\nfor c in [\"Libellé de la commune de l'établissement\", \"Libellé de la commune\", \"Commune de l'établissement\"]:\r\n    if c in dr.columns:\r\n        ville_col = c\r\n        break\r\n\r\n# 3) Département (2 premiers caractères du code postal)\r\nif cp_col:\r\n    dr[\"Code_postal\"] = dr[cp_col]\r\n    dr[\"Département\"] = dr[\"Code_postal\"].astype(str).str.slice(0, 2)\r\nelse:\r\n    dr[\"Code_postal\"] = None\r\n    dr[\"Département\"] = None\r\n\r\n# 4) Pass-through NACE texte (priorité établissement, fallback unité légale)\r\ndr[\"Sections_(NACE1)\"] = dr[\"Section de l'établissement\"] if \"Section de l'établissement\" in dr.columns \\\r\n    else (dr[\"Section de l'unité légale\"] if \"Section de l'unité légale\" in dr.columns else None)\r\n\r\ndr[\"Divisions_(NACE2)\"] = dr[\"Division de l'établissement\"] if \"Division de l'établissement\" in dr.columns \\\r\n    else (dr[\"Division de l'unité légale\"] if \"Division de l'unité légale\" in dr.columns else None)\r\n\r\ndr[\"Groupes_(NACE3)\"] = dr[\"Groupe de l'établissement\"] if \"Groupe de l'établissement\" in dr.columns \\\r\n    else (dr[\"Groupe de l'unité légale\"] if \"Groupe de l'unité légale\" in dr.columns else None)\r\n\r\ndr[\"Classe_(NACE4)\"] = dr[\"Classe de l'établissement\"] if \"Classe de l'établissement\" in dr.columns \\\r\n    else (dr[\"Classe de l'unité légale\"] if \"Classe de l'unité légale\" in dr.columns else None)\r\n\r\n# 5) Champs directs (sans retraitement)\r\ndr[\"SIREN\"] = dr[\"SIREN\"] if \"SIREN\" in dr.columns else None\r\ndr[\"Nom_de_l'entreprise\"] = dr[\"Dénomination de l'unité légale\"] if \"Dénomination de l'unité légale\" in dr.columns else None\r\ndr[\"Tranche_effectif\"] = dr[\"Tranche de l'effectif de l'unité légale\"] if \"Tranche de l'effectif de l'unité légale\" in dr.columns else None\r\ndr[\"Taille_entreprise\"] = dr[\"Catégorie de l'entreprise\"] if \"Catégorie de l'entreprise\" in dr.columns else None\r\ndr[\"Région\"] = dr[\"Région de l'établissement\"] if \"Région de l'établissement\" in dr.columns else None\r\ndr[\"Ville\"] = dr[ville_col] if ville_col else None\r\ndr[\"Code_NACE\"] = dr[\"Activité principale de l'unité légale\"] if \"Activité principale de l'unité légale\" in dr.columns else None\r\n\r\n# 6) Projection finale (ordre exact ; crée les colonnes manquantes au besoin)\r\nfinal_cols = [\r\n    \"SIREN\",\r\n    \"Nom_de_l'entreprise\",\r\n    \"Tranche_effectif\",\r\n    \"Taille_entreprise\",\r\n    \"Région\",\r\n    \"Département\",\r\n    \"Code_postal\",\r\n    \"Ville\",\r\n    \"Latitude\",\r\n    \"Longitude\",\r\n    \"Sections_(NACE1)\",\r\n    \"Divisions_(NACE2)\",\r\n    \"Groupes_(NACE3)\",\r\n    \"Classe_(NACE4)\",\r\n    \"Code_NACE\",\r\n]\r\n\r\nfor c in final_cols:\r\n    if c not in dr.columns:\r\n        dr[c] = None\r\n\r\ndf = dr[final_cols]"
       },
       "preview": {
         "columns": [
           "SIREN",
-          "NACE_REV_2",
-          "Nom_Entreprise",
+          "Nom_de_l'entreprise",
+          "Tranche_effectif",
+          "Taille_entreprise",
+          "Région",
+          "Département",
+          "Code_postal",
+          "Ville",
           "Latitude",
-          "Longitude"
+          "Longitude",
+          "Sections_(NACE1)",
+          "Divisions_(NACE2)",
+          "Groupes_(NACE3)",
+          "Classe_(NACE4)",
+          "Code_NACE"
         ],
         "rows": [
           {
             "SIREN": 808694772,
-            "NACE_REV_2": "26.40Z",
-            "Nom_Entreprise": "TEQOYA",
-            "Latitude": 44.453208,
-            "Longitude": -0.369968
+            "Nom_de_l'entreprise": "TEQOYA",
+            "Tranche_effectif": "10 à 19 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Nouvelle-Aquitaine",
+            "Département": "33",
+            "Code_postal": "33730",
+            "Ville": "VILLANDRAUT",
+            "Latitude": "44.453208",
+            "Longitude": "-0.369968",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de produits électroniques grand public",
+            "Groupes_(NACE3)": "Fabrication de produits électroniques grand public",
+            "Classe_(NACE4)": "Fabrication de produits électroniques grand public",
+            "Code_NACE": "28.25Z"
           },
           {
             "SIREN": 423915032,
-            "NACE_REV_2": "18.13Z",
-            "Nom_Entreprise": "E.B.C.D SARL",
-            "Latitude": 45.577089,
-            "Longitude": -0.612369
+            "Nom_de_l'entreprise": "E.B.C.D SARL",
+            "Tranche_effectif": "1 ou 2 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Nouvelle-Aquitaine",
+            "Département": "17",
+            "Code_postal": "17260",
+            "Ville": "JAZENNES",
+            "Latitude": "45.577089",
+            "Longitude": "-0.612369",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Imprimerie et services annexes",
+            "Groupes_(NACE3)": "Activités de pré-presse",
+            "Classe_(NACE4)": "Activités de pré-presse",
+            "Code_NACE": "18.13Z"
           },
           {
             "SIREN": 513478693,
-            "NACE_REV_2": "25.99B",
-            "Nom_Entreprise": "ALU GOUTTIERES INNOVATION",
-            "Latitude": 43.508833,
-            "Longitude": 6.477832
+            "Nom_de_l'entreprise": "ALU GOUTTIERES INNOVATION",
+            "Tranche_effectif": "3 à 5 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Provence-Alpes-Côte d'Azur",
+            "Département": "83",
+            "Code_postal": "83720",
+            "Ville": "TRANS-EN-PROVENCE",
+            "Latitude": "43.508833",
+            "Longitude": "6.477832",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication d'autres ouvrages en métaux",
+            "Groupes_(NACE3)": "Fabrication d'autres produits métalliques n.c.a.",
+            "Classe_(NACE4)": "Fabrication d'autres articles métalliques",
+            "Code_NACE": "25.99B"
           },
           {
             "SIREN": 953922317,
-            "NACE_REV_2": "10.71C",
-            "Nom_Entreprise": "CAJMC",
-            "Latitude": 49.505866,
-            "Longitude": 4.362991
+            "Nom_de_l'entreprise": "CAJMC",
+            "Tranche_effectif": NaN,
+            "Taille_entreprise": NaN,
+            "Région": "Grand Est",
+            "Département": "08",
+            "Code_postal": "08300",
+            "Ville": "RETHEL",
+            "Latitude": "49.505866",
+            "Longitude": "4.362991",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de produits de boulangerie-pâtisserie et de pâtes alimentaires",
+            "Groupes_(NACE3)": "Fabrication de pain et de pâtisserie fraîche",
+            "Classe_(NACE4)": "Boulangerie et boulangerie-pâtisserie",
+            "Code_NACE": "10.71C"
           },
           {
             "SIREN": 351490560,
-            "NACE_REV_2": "28.22Z",
-            "Nom_Entreprise": "INGERSOLL RAND EQUIPEMENTS DE PRODUCTION",
-            "Latitude": 50.363141,
-            "Longitude": 3.099279
+            "Nom_de_l'entreprise": "INGERSOLL RAND EQUIPEMENTS DE PRODUCTION",
+            "Tranche_effectif": "50 à 99 salariés",
+            "Taille_entreprise": "ETI",
+            "Région": "Hauts-de-France",
+            "Département": "59",
+            "Code_postal": "59450",
+            "Ville": "SIN-LE-NOBLE",
+            "Latitude": "50.363141",
+            "Longitude": "3.099279",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication d'autres machines d'usage général",
+            "Groupes_(NACE3)": "Fabrication de matériel de levage et de manutention",
+            "Classe_(NACE4)": "Fabrication de matériel de levage et de manutention",
+            "Code_NACE": "28.22Z"
           },
           {
             "SIREN": 341713592,
-            "NACE_REV_2": "32.50B",
-            "Nom_Entreprise": "NAJA",
-            "Latitude": 46.606889,
-            "Longitude": 5.904641
+            "Nom_de_l'entreprise": "NAJA",
+            "Tranche_effectif": "20 à 49 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Bourgogne-Franche-Comté",
+            "Département": "39",
+            "Code_postal": "39150",
+            "Ville": "LA CHAUX-DU-DOMBIEF",
+            "Latitude": "46.606889",
+            "Longitude": "5.904641",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication d'instruments et de fournitures à usage médical et dentaire",
+            "Groupes_(NACE3)": "Fabrication d'instruments et de fournitures à usage médical et dentaire",
+            "Classe_(NACE4)": "Fabrication de lunettes",
+            "Code_NACE": "32.50B"
           },
           {
             "SIREN": 498808393,
-            "NACE_REV_2": "25.12Z",
-            "Nom_Entreprise": "SOLS INDUSTRIELS FRANCAIS PRODUCTION",
-            "Latitude": 48.354085,
-            "Longitude": 7.579559
+            "Nom_de_l'entreprise": "SOLS INDUSTRIELS FRANCAIS PRODUCTION",
+            "Tranche_effectif": NaN,
+            "Taille_entreprise": "PME",
+            "Région": "Grand Est",
+            "Département": "67",
+            "Code_postal": "67230",
+            "Ville": "HUTTENHEIM",
+            "Latitude": "48.354085",
+            "Longitude": "7.579559",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication d'éléments en métal pour la construction",
+            "Groupes_(NACE3)": "Fabrication de portes et fenêtres en métal",
+            "Classe_(NACE4)": "Fabrication de portes et fenêtres en métal",
+            "Code_NACE": "25.12Z"
           },
           {
             "SIREN": 499251916,
-            "NACE_REV_2": "33.20B",
-            "Nom_Entreprise": "VENTIL 72",
-            "Latitude": 47.979195,
-            "Longitude": 0.171284
+            "Nom_de_l'entreprise": "VENTIL 72",
+            "Tranche_effectif": "20 à 49 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Pays de la Loire",
+            "Département": "72",
+            "Code_postal": "72100",
+            "Ville": "LE MANS",
+            "Latitude": "47.979195",
+            "Longitude": "0.171284",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Installation de machines et d'équipements industriels",
+            "Groupes_(NACE3)": "Installation de machines et d'équipements industriels",
+            "Classe_(NACE4)": "Installation de machines et équipements mécaniques",
+            "Code_NACE": "33.20B"
+          },
+          {
+            "SIREN": 411641855,
+            "Nom_de_l'entreprise": NaN,
+            "Tranche_effectif": "1 ou 2 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Occitanie",
+            "Département": "30",
+            "Code_postal": "30430",
+            "Ville": "RIVIERES",
+            "Latitude": "44.222881",
+            "Longitude": "4.272096",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de produits de boulangerie-pâtisserie et de pâtes alimentaires",
+            "Groupes_(NACE3)": "Fabrication de pain et de pâtisserie fraîche",
+            "Classe_(NACE4)": "Boulangerie et boulangerie-pâtisserie",
+            "Code_NACE": "10.71C"
           },
           {
             "SIREN": 408481992,
-            "NACE_REV_2": "20.16Z",
-            "Nom_Entreprise": "GALLOO PLASTICS",
-            "Latitude": 50.790067,
-            "Longitude": 3.109778
+            "Nom_de_l'entreprise": "GALLOO PLASTICS",
+            "Tranche_effectif": "50 à 99 salariés",
+            "Taille_entreprise": "ETI",
+            "Région": "Hauts-de-France",
+            "Département": "59",
+            "Code_postal": "59250",
+            "Ville": "HALLUIN",
+            "Latitude": "50.790067",
+            "Longitude": "3.109778",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de produits chimiques de base, de produits azotés et d'engrais, de matières plastiques de base et de caoutchouc synthétique",
+            "Groupes_(NACE3)": "Fabrication de matières plastiques de base",
+            "Classe_(NACE4)": "Fabrication de matières plastiques de base",
+            "Code_NACE": "20.16Z"
           },
           {
             "SIREN": 320218100,
-            "NACE_REV_2": "27.12Z",
-            "Nom_Entreprise": "GROUPE SYSELEC",
-            "Latitude": 43.563033,
-            "Longitude": 2.268219
+            "Nom_de_l'entreprise": "GROUPE SYSELEC",
+            "Tranche_effectif": "20 à 49 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Occitanie",
+            "Département": "81",
+            "Code_postal": "81100",
+            "Ville": "CASTRES",
+            "Latitude": "43.563033",
+            "Longitude": "2.268219",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de moteurs, génératrices et transformateurs électriques et de matériel de distribution et de commande électrique",
+            "Groupes_(NACE3)": "Fabrication de matériel de distribution et de commande électrique",
+            "Classe_(NACE4)": "Fabrication de matériel de distribution et de commande électrique",
+            "Code_NACE": "27.12Z"
           },
           {
             "SIREN": 504725839,
-            "NACE_REV_2": "25.61Z",
-            "Nom_Entreprise": "ENCAPSULIX",
-            "Latitude": 43.436527,
-            "Longitude": 5.44297
+            "Nom_de_l'entreprise": "ENCAPSULIX",
+            "Tranche_effectif": "3 à 5 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Provence-Alpes-Côte d'Azur",
+            "Département": "13",
+            "Code_postal": "13109",
+            "Ville": "SIMIANE-COLLONGUE",
+            "Latitude": "43.436527",
+            "Longitude": "5.44297",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Traitement et revêtement des métaux ; usinage",
+            "Groupes_(NACE3)": "Traitement et revêtement des métaux",
+            "Classe_(NACE4)": "Traitement et revêtement des métaux",
+            "Code_NACE": "25.61Z"
           },
           {
             "SIREN": 819300997,
-            "NACE_REV_2": "31.09B",
-            "Nom_Entreprise": "ATELIER MC",
-            "Latitude": 48.868586,
-            "Longitude": 2.402662
+            "Nom_de_l'entreprise": "ATELIER MC",
+            "Tranche_effectif": NaN,
+            "Taille_entreprise": "PME",
+            "Région": "Île-de-France",
+            "Département": "75",
+            "Code_postal": "75020",
+            "Ville": "PARIS",
+            "Latitude": "48.868586",
+            "Longitude": "2.402662",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de meubles",
+            "Groupes_(NACE3)": "Fabrication d'autres meubles",
+            "Classe_(NACE4)": "Fabrication d'autres meubles et industries connexes de l'ameublement",
+            "Code_NACE": "31.09B"
           },
           {
             "SIREN": 918859398,
-            "NACE_REV_2": "33.20A",
-            "Nom_Entreprise": "VAUCHE & CO",
-            "Latitude": 45.257664,
-            "Longitude": 4.258349
+            "Nom_de_l'entreprise": "VAUCHE & CO",
+            "Tranche_effectif": NaN,
+            "Taille_entreprise": "PME",
+            "Région": "Auvergne-Rhône-Alpes",
+            "Département": "43",
+            "Code_postal": "43600",
+            "Ville": "SAINTE-SIGOLENE",
+            "Latitude": "45.257664",
+            "Longitude": "4.258349",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Installation de machines et d'équipements industriels",
+            "Groupes_(NACE3)": "Installation de machines et d'équipements industriels",
+            "Classe_(NACE4)": "Installation de structures métalliques, chaudronnées et de tuyauterie",
+            "Code_NACE": "33.20A"
           },
           {
             "SIREN": 912097359,
-            "NACE_REV_2": "10.61A",
-            "Nom_Entreprise": "MOULIN BIOVEZOU",
-            "Latitude": 44.291586,
-            "Longitude": 2.710407
+            "Nom_de_l'entreprise": "MOULIN BIOVEZOU",
+            "Tranche_effectif": "1 ou 2 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Occitanie",
+            "Département": "12",
+            "Code_postal": "12290",
+            "Ville": "PONT-DE-SALARS",
+            "Latitude": "44.291586",
+            "Longitude": "2.710407",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Travail des grains ; fabrication de produits amylacés",
+            "Groupes_(NACE3)": "Travail des grains",
+            "Classe_(NACE4)": "Meunerie",
+            "Code_NACE": "10.61A"
           },
           {
             "SIREN": 884241563,
-            "NACE_REV_2": "28.12Z",
-            "Nom_Entreprise": "DANFOSS POWER SOLUTIONS II",
-            "Latitude": 46.204202,
-            "Longitude": 6.270402
+            "Nom_de_l'entreprise": "DANFOSS POWER SOLUTIONS II",
+            "Tranche_effectif": "50 à 99 salariés",
+            "Taille_entreprise": "ETI",
+            "Région": "Auvergne-Rhône-Alpes",
+            "Département": "74",
+            "Code_postal": "74100",
+            "Ville": "VILLE-LA-GRAND",
+            "Latitude": "46.204202",
+            "Longitude": "6.270402",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de machines d'usage général",
+            "Groupes_(NACE3)": "Fabrication d'équipements hydrauliques et pneumatiques",
+            "Classe_(NACE4)": "Fabrication d'équipements hydrauliques et pneumatiques",
+            "Code_NACE": "28.12Z"
           },
           {
             "SIREN": 918947284,
-            "NACE_REV_2": "14.13Z",
-            "Nom_Entreprise": "LA BOITE A BOUTONS",
-            "Latitude": 44.161846,
-            "Longitude": 4.622056
+            "Nom_de_l'entreprise": "LA BOITE A BOUTONS",
+            "Tranche_effectif": NaN,
+            "Taille_entreprise": "PME",
+            "Région": "Occitanie",
+            "Département": "30",
+            "Code_postal": "30200",
+            "Ville": "BAGNOLS-SUR-CEZE",
+            "Latitude": "44.161846",
+            "Longitude": "4.622056",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de vêtements, autres qu'en fourrure",
+            "Groupes_(NACE3)": "Fabrication de vêtements de dessus",
+            "Classe_(NACE4)": "Fabrication de vêtements de dessus",
+            "Code_NACE": "14.13Z"
           },
           {
             "SIREN": 794911909,
-            "NACE_REV_2": "10.71C",
-            "Nom_Entreprise": "SLFAMILY",
-            "Latitude": 44.065636,
-            "Longitude": 1.097668
+            "Nom_de_l'entreprise": "SLFAMILY",
+            "Tranche_effectif": "250 à 499 salariés",
+            "Taille_entreprise": "ETI",
+            "Région": "Occitanie",
+            "Département": "82",
+            "Code_postal": "82100",
+            "Ville": "CASTELSARRASIN",
+            "Latitude": "44.065636",
+            "Longitude": "1.097668",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Fabrication de produits de boulangerie-pâtisserie et de pâtes alimentaires",
+            "Groupes_(NACE3)": "Fabrication de pain et de pâtisserie fraîche",
+            "Classe_(NACE4)": "Boulangerie et boulangerie-pâtisserie",
+            "Code_NACE": "10.71C"
           },
           {
             "SIREN": 811540202,
-            "NACE_REV_2": "33.20C",
-            "Nom_Entreprise": "ARNAUD SERVICES INDUSTRIELS MAINTENANCE TECHNIQUE EQUIPEMENT",
-            "Latitude": 45.813059,
-            "Longitude": 0.443674
+            "Nom_de_l'entreprise": "ARNAUD SERVICES INDUSTRIELS MAINTENANCE TECHNIQUE EQUIPEMENT",
+            "Tranche_effectif": "1 ou 2 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Nouvelle-Aquitaine",
+            "Département": "16",
+            "Code_postal": "16260",
+            "Ville": "CHASSENEUIL-SUR-BONNIEURE",
+            "Latitude": "45.813059",
+            "Longitude": "0.443674",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Installation de machines et d'équipements industriels",
+            "Groupes_(NACE3)": "Installation de machines et d'équipements industriels",
+            "Classe_(NACE4)": "Conception d'ensemble et assemblage sur site industriel d'équipements de contrôle des processus industriels",
+            "Code_NACE": "33.20C"
           },
           {
             "SIREN": 392342804,
-            "NACE_REV_2": "33.20D",
-            "Nom_Entreprise": "CODICOM",
-            "Latitude": 48.598933,
-            "Longitude": -2.82508
+            "Nom_de_l'entreprise": "CODICOM",
+            "Tranche_effectif": "20 à 49 salariés",
+            "Taille_entreprise": "PME",
+            "Région": "Bretagne",
+            "Département": "22",
+            "Code_postal": "22520",
+            "Ville": "BINIC-ETABLES-SUR-MER",
+            "Latitude": "48.598933",
+            "Longitude": "-2.82508",
+            "Sections_(NACE1)": "Industrie manufacturière",
+            "Divisions_(NACE2)": "Installation de machines et d'équipements industriels",
+            "Groupes_(NACE3)": "Installation de machines et d'équipements industriels",
+            "Classe_(NACE4)": "Installation d'équipements électriques, de matériels électroniques et optiques ou d'autres matériels",
+            "Code_NACE": "33.20D"
+          }
+        ]
+      }
+    },
+    {
+      "gabarit_name": "Compte de résultat des entreprises",
+      "gabarit_version": "v1",
+      "source": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\XXX - Performance entreprise\\ratios_inpi_bce.csv",
+        "sep": ";",
+        "encoding": "utf-8-sig"
+      },
+      "preview": {
+        "columns": [
+          "siren",
+          "date_cloture_exercice",
+          "Chiffre_d_affaires",
+          "Marge_brute",
+          "EBE",
+          "EBIT",
+          "Resultat_net",
+          "Taux_d_endettement",
+          "Ratio_de_liquidite",
+          "Ratio_de_vetuste",
+          "Autonomie_financiere",
+          "Poids_BFR_exploitation_sur_CA",
+          "Couverture_des_interets",
+          "CAF_sur_CA",
+          "Capacite_de_remboursement",
+          "Marge_EBE",
+          "Resultat_courant_avant_impots_sur_CA",
+          "Poids_BFR_exploitation_sur_CA_jours",
+          "Rotation_des_stocks_jours",
+          "Credit_clients_Jours",
+          "Credit_fournisseurs_Jours",
+          "type_bilan",
+          "confidentiality"
+        ],
+        "rows": [
+          {
+            "siren": 459800413,
+            "date_cloture_exercice": "2020-10-31",
+            "Chiffre_d_affaires": 5563918,
+            "Marge_brute": 5456090,
+            "EBE": 1732518,
+            "EBIT": 560229,
+            "Resultat_net": 384870,
+            "Taux_d_endettement": 28.376,
+            "Ratio_de_liquidite": 89.907,
+            "Ratio_de_vetuste": 18.449,
+            "Autonomie_financiere": 40.588,
+            "Poids_BFR_exploitation_sur_CA": -16.241,
+            "Couverture_des_interets": 0.365,
+            "CAF_sur_CA": 20.388,
+            "Capacite_de_remboursement": 0.364,
+            "Marge_EBE": 31.136,
+            "Resultat_courant_avant_impots_sur_CA": 10.316,
+            "Poids_BFR_exploitation_sur_CA_jours": -58.468,
+            "Rotation_des_stocks_jours": 2.034,
+            "Credit_clients_Jours": 13.731,
+            "Credit_fournisseurs_Jours": 20.726,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 460201338,
+            "date_cloture_exercice": "2020-12-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": -199369,
+            "EBIT": -202427,
+            "Resultat_net": 645948,
+            "Taux_d_endettement": 0.0,
+            "Ratio_de_liquidite": 163.566,
+            "Ratio_de_vetuste": NaN,
+            "Autonomie_financiere": 38.862,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": -1.658,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": 0.0,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": NaN,
+            "Credit_fournisseurs_Jours": 211.561,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 460201361,
+            "date_cloture_exercice": "2020-12-31",
+            "Chiffre_d_affaires": 1235486,
+            "Marge_brute": 1235486,
+            "EBE": 933312,
+            "EBIT": 753772,
+            "Resultat_net": 612933,
+            "Taux_d_endettement": 34.038,
+            "Ratio_de_liquidite": 1537.609,
+            "Ratio_de_vetuste": 76.926,
+            "Autonomie_financiere": 73.421,
+            "Poids_BFR_exploitation_sur_CA": -20.388,
+            "Couverture_des_interets": 8.253,
+            "CAF_sur_CA": 50.288,
+            "Capacite_de_remboursement": 8.381,
+            "Marge_EBE": 75.542,
+            "Resultat_courant_avant_impots_sur_CA": 54.958,
+            "Poids_BFR_exploitation_sur_CA_jours": -73.397,
+            "Rotation_des_stocks_jours": 0.0,
+            "Credit_clients_Jours": 0.0,
+            "Credit_fournisseurs_Jours": 47.197,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 460201478,
+            "date_cloture_exercice": "2023-03-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": 0,
+            "EBIT": 0,
+            "Resultat_net": 91506,
+            "Taux_d_endettement": 15.033,
+            "Ratio_de_liquidite": 103.786,
+            "Ratio_de_vetuste": 15.669,
+            "Autonomie_financiere": 27.883,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": NaN,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": NaN,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": NaN,
+            "Credit_fournisseurs_Jours": NaN,
+            "type_bilan": "C",
+            "confidentiality": "Partiellement confidentiel"
+          },
+          {
+            "siren": 460500424,
+            "date_cloture_exercice": "2015-12-31",
+            "Chiffre_d_affaires": 3626063,
+            "Marge_brute": 1038064,
+            "EBE": -539207,
+            "EBIT": -556970,
+            "Resultat_net": 24365,
+            "Taux_d_endettement": 0.432,
+            "Ratio_de_liquidite": 660.79,
+            "Ratio_de_vetuste": 8.179,
+            "Autonomie_financiere": 84.93,
+            "Poids_BFR_exploitation_sur_CA": 106.782,
+            "Couverture_des_interets": -1.901,
+            "CAF_sur_CA": -13.83,
+            "Capacite_de_remboursement": -0.02,
+            "Marge_EBE": -14.867,
+            "Resultat_courant_avant_impots_sur_CA": -15.492,
+            "Poids_BFR_exploitation_sur_CA_jours": 384.415,
+            "Rotation_des_stocks_jours": 224.926,
+            "Credit_clients_Jours": 40.08,
+            "Credit_fournisseurs_Jours": 29.005,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 460500770,
+            "date_cloture_exercice": "2016-12-31",
+            "Chiffre_d_affaires": 110461,
+            "Marge_brute": 110461,
+            "EBE": 106836,
+            "EBIT": 96299,
+            "Resultat_net": 114011,
+            "Taux_d_endettement": 4.638,
+            "Ratio_de_liquidite": 952023.81,
+            "Ratio_de_vetuste": 30.795,
+            "Autonomie_financiere": 4.432,
+            "Poids_BFR_exploitation_sur_CA": 6.62,
+            "Couverture_des_interets": 0.013,
+            "CAF_sur_CA": 112.752,
+            "Capacite_de_remboursement": 0.16,
+            "Marge_EBE": 96.718,
+            "Resultat_courant_avant_impots_sur_CA": 133.318,
+            "Poids_BFR_exploitation_sur_CA_jours": 23.834,
+            "Rotation_des_stocks_jours": 0.0,
+            "Credit_clients_Jours": 0.0,
+            "Credit_fournisseurs_Jours": 2.172,
+            "type_bilan": "S",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 461201162,
+            "date_cloture_exercice": "2021-12-31",
+            "Chiffre_d_affaires": 5029353,
+            "Marge_brute": 2105709,
+            "EBE": 410743,
+            "EBIT": 308120,
+            "Resultat_net": 275906,
+            "Taux_d_endettement": 0.063,
+            "Ratio_de_liquidite": 511.582,
+            "Ratio_de_vetuste": 17.346,
+            "Autonomie_financiere": 84.417,
+            "Poids_BFR_exploitation_sur_CA": 21.95,
+            "Couverture_des_interets": 0.443,
+            "CAF_sur_CA": 6.935,
+            "Capacite_de_remboursement": 0.008,
+            "Marge_EBE": 8.167,
+            "Resultat_courant_avant_impots_sur_CA": 6.167,
+            "Poids_BFR_exploitation_sur_CA_jours": 79.02,
+            "Rotation_des_stocks_jours": 7.385,
+            "Credit_clients_Jours": 63.386,
+            "Credit_fournisseurs_Jours": 52.674,
+            "type_bilan": "C",
+            "confidentiality": "Partiellement confidentiel"
+          },
+          {
+            "siren": 461501009,
+            "date_cloture_exercice": "2016-12-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": -28302,
+            "EBIT": -28298,
+            "Resultat_net": 45178,
+            "Taux_d_endettement": 0.043,
+            "Ratio_de_liquidite": 18845.579,
+            "Ratio_de_vetuste": NaN,
+            "Autonomie_financiere": 99.427,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": -136.213,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": 0.032,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": NaN,
+            "Credit_fournisseurs_Jours": 124.472,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 461800559,
+            "date_cloture_exercice": "2016-12-31",
+            "Chiffre_d_affaires": 8969123,
+            "Marge_brute": 3854501,
+            "EBE": -56940,
+            "EBIT": -126517,
+            "Resultat_net": 78176,
+            "Taux_d_endettement": 28.306,
+            "Ratio_de_liquidite": 164.803,
+            "Ratio_de_vetuste": 21.08,
+            "Autonomie_financiere": 37.889,
+            "Poids_BFR_exploitation_sur_CA": 24.856,
+            "Couverture_des_interets": -20.03,
+            "CAF_sur_CA": -0.31,
+            "Capacite_de_remboursement": -14.225,
+            "Marge_EBE": -0.635,
+            "Resultat_courant_avant_impots_sur_CA": 0.793,
+            "Poids_BFR_exploitation_sur_CA_jours": 89.481,
+            "Rotation_des_stocks_jours": 35.886,
+            "Credit_clients_Jours": 50.118,
+            "Credit_fournisseurs_Jours": 73.435,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 462200833,
+            "date_cloture_exercice": "2019-12-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": -1992,
+            "EBIT": -1992,
+            "Resultat_net": -1992,
+            "Taux_d_endettement": 222.709,
+            "Ratio_de_liquidite": 411.938,
+            "Ratio_de_vetuste": NaN,
+            "Autonomie_financiere": 23.465,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": 0.0,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": -229.285,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": NaN,
+            "Credit_fournisseurs_Jours": 18912.651,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 462200874,
+            "date_cloture_exercice": "2021-09-30",
+            "Chiffre_d_affaires": 862500,
+            "Marge_brute": 584536,
+            "EBE": 218424,
+            "EBIT": 151810,
+            "Resultat_net": 123768,
+            "Taux_d_endettement": 100.953,
+            "Ratio_de_liquidite": 688.066,
+            "Ratio_de_vetuste": 9.847,
+            "Autonomie_financiere": 43.383,
+            "Poids_BFR_exploitation_sur_CA": 150.952,
+            "Couverture_des_interets": 0.335,
+            "CAF_sur_CA": 12.621,
+            "Capacite_de_remboursement": 7.535,
+            "Marge_EBE": 25.325,
+            "Resultat_courant_avant_impots_sur_CA": 19.179,
+            "Poids_BFR_exploitation_sur_CA_jours": 543.428,
+            "Rotation_des_stocks_jours": 32.532,
+            "Credit_clients_Jours": 52.839,
+            "Credit_fournisseurs_Jours": 142.766,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 462500638,
+            "date_cloture_exercice": "2021-12-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": 0,
+            "EBIT": 0,
+            "Resultat_net": 286069,
+            "Taux_d_endettement": 0.218,
+            "Ratio_de_liquidite": 371.513,
+            "Ratio_de_vetuste": 18.561,
+            "Autonomie_financiere": 73.355,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": NaN,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": NaN,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": 326.728,
+            "Credit_fournisseurs_Jours": 546.516,
+            "type_bilan": "C",
+            "confidentiality": "Partiellement confidentiel"
+          },
+          {
+            "siren": 463201095,
+            "date_cloture_exercice": "2016-12-31",
+            "Chiffre_d_affaires": 2074891,
+            "Marge_brute": 1776316,
+            "EBE": -227275,
+            "EBIT": -181416,
+            "Resultat_net": -71130,
+            "Taux_d_endettement": 0.0,
+            "Ratio_de_liquidite": 86.013,
+            "Ratio_de_vetuste": 17.881,
+            "Autonomie_financiere": 9.643,
+            "Poids_BFR_exploitation_sur_CA": 14.958,
+            "Couverture_des_interets": -2.185,
+            "CAF_sur_CA": -2.172,
+            "Capacite_de_remboursement": 0.0,
+            "Marge_EBE": -5.752,
+            "Resultat_courant_avant_impots_sur_CA": -4.683,
+            "Poids_BFR_exploitation_sur_CA_jours": 53.85,
+            "Rotation_des_stocks_jours": 3.604,
+            "Credit_clients_Jours": 118.807,
+            "Credit_fournisseurs_Jours": 67.554,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 463201467,
+            "date_cloture_exercice": "2023-10-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": 0,
+            "EBIT": 0,
+            "Resultat_net": 996064,
+            "Taux_d_endettement": 10.964,
+            "Ratio_de_liquidite": 259.618,
+            "Ratio_de_vetuste": 18.084,
+            "Autonomie_financiere": 67.898,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": NaN,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": NaN,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": NaN,
+            "Credit_fournisseurs_Jours": NaN,
+            "type_bilan": "C",
+            "confidentiality": "Partiellement confidentiel (RAPCAC)"
+          },
+          {
+            "siren": 463500017,
+            "date_cloture_exercice": "2021-12-31",
+            "Chiffre_d_affaires": 809167,
+            "Marge_brute": 416410,
+            "EBE": 253420,
+            "EBIT": 8032,
+            "Resultat_net": 860,
+            "Taux_d_endettement": 15.459,
+            "Ratio_de_liquidite": 110.532,
+            "Ratio_de_vetuste": 49.877,
+            "Autonomie_financiere": 34.333,
+            "Poids_BFR_exploitation_sur_CA": 14.569,
+            "Couverture_des_interets": 3.25,
+            "CAF_sur_CA": 4.577,
+            "Capacite_de_remboursement": 1.182,
+            "Marge_EBE": 31.319,
+            "Resultat_courant_avant_impots_sur_CA": -0.025,
+            "Poids_BFR_exploitation_sur_CA_jours": 52.448,
+            "Rotation_des_stocks_jours": 45.012,
+            "Credit_clients_Jours": 131.97,
+            "Credit_fournisseurs_Jours": 66.702,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 463500249,
+            "date_cloture_exercice": "2024-06-30",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": 0,
+            "EBIT": 0,
+            "Resultat_net": -112928,
+            "Taux_d_endettement": 24.345,
+            "Ratio_de_liquidite": 227.888,
+            "Ratio_de_vetuste": 17.604,
+            "Autonomie_financiere": 50.56,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": NaN,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": NaN,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": 263.399,
+            "Credit_fournisseurs_Jours": 440.996,
+            "type_bilan": "C",
+            "confidentiality": "Partiellement confidentiel"
+          },
+          {
+            "siren": 463501536,
+            "date_cloture_exercice": "2017-12-31",
+            "Chiffre_d_affaires": 0,
+            "Marge_brute": 0,
+            "EBE": -288608,
+            "EBIT": -45135,
+            "Resultat_net": -38468,
+            "Taux_d_endettement": 0.0,
+            "Ratio_de_liquidite": 2572.281,
+            "Ratio_de_vetuste": 100.0,
+            "Autonomie_financiere": 96.709,
+            "Poids_BFR_exploitation_sur_CA": NaN,
+            "Couverture_des_interets": -0.01,
+            "CAF_sur_CA": NaN,
+            "Capacite_de_remboursement": 0.0,
+            "Marge_EBE": NaN,
+            "Resultat_courant_avant_impots_sur_CA": NaN,
+            "Poids_BFR_exploitation_sur_CA_jours": NaN,
+            "Rotation_des_stocks_jours": NaN,
+            "Credit_clients_Jours": 1229.351,
+            "Credit_fournisseurs_Jours": 16.241,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 463800938,
+            "date_cloture_exercice": "2017-12-31",
+            "Chiffre_d_affaires": 841438,
+            "Marge_brute": 656256,
+            "EBE": 23491,
+            "EBIT": 19677,
+            "Resultat_net": 2560,
+            "Taux_d_endettement": 7.256,
+            "Ratio_de_liquidite": 121.579,
+            "Ratio_de_vetuste": 13.756,
+            "Autonomie_financiere": 15.432,
+            "Poids_BFR_exploitation_sur_CA": 21.149,
+            "Couverture_des_interets": 5.253,
+            "CAF_sur_CA": -4.927,
+            "Capacite_de_remboursement": -0.155,
+            "Marge_EBE": 2.792,
+            "Resultat_courant_avant_impots_sur_CA": 2.273,
+            "Poids_BFR_exploitation_sur_CA_jours": 76.138,
+            "Rotation_des_stocks_jours": 132.746,
+            "Credit_clients_Jours": 43.068,
+            "Credit_fournisseurs_Jours": 49.009,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 464200369,
+            "date_cloture_exercice": "2024-12-31",
+            "Chiffre_d_affaires": 34640034,
+            "Marge_brute": 34640034,
+            "EBE": 3159181,
+            "EBIT": 4195949,
+            "Resultat_net": 4126539,
+            "Taux_d_endettement": 3.829,
+            "Ratio_de_liquidite": 119.682,
+            "Ratio_de_vetuste": 16.849,
+            "Autonomie_financiere": 24.177,
+            "Poids_BFR_exploitation_sur_CA": 71.189,
+            "Couverture_des_interets": 11.549,
+            "CAF_sur_CA": 8.088,
+            "Capacite_de_remboursement": 0.211,
+            "Marge_EBE": 9.095,
+            "Resultat_courant_avant_impots_sur_CA": 17.11,
+            "Poids_BFR_exploitation_sur_CA_jours": 256.28,
+            "Rotation_des_stocks_jours": 0.0,
+            "Credit_clients_Jours": 195.645,
+            "Credit_fournisseurs_Jours": 608.574,
+            "type_bilan": "C",
+            "confidentiality": "Public"
+          },
+          {
+            "siren": 464201458,
+            "date_cloture_exercice": "2018-03-31",
+            "Chiffre_d_affaires": 466080,
+            "Marge_brute": 466080,
+            "EBE": 72949,
+            "EBIT": 13702,
+            "Resultat_net": 10654,
+            "Taux_d_endettement": 13.461,
+            "Ratio_de_liquidite": 658.181,
+            "Ratio_de_vetuste": 26.911,
+            "Autonomie_financiere": 37.071,
+            "Poids_BFR_exploitation_sur_CA": 66.266,
+            "Couverture_des_interets": 2.979,
+            "CAF_sur_CA": 14.947,
+            "Capacite_de_remboursement": 1.018,
+            "Marge_EBE": 15.652,
+            "Resultat_courant_avant_impots_sur_CA": 2.605,
+            "Poids_BFR_exploitation_sur_CA_jours": 238.558,
+            "Rotation_des_stocks_jours": 0.0,
+            "Credit_clients_Jours": 18.429,
+            "Credit_fournisseurs_Jours": 16.28,
+            "type_bilan": "C",
+            "confidentiality": "Public"
           }
         ]
       }

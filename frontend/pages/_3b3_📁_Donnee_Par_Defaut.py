@@ -3,6 +3,7 @@ import streamlit as st
 import pandas as pd
 from pathlib import Path
 import sys
+from code_editor import code_editor
 
 # ==== Bootstrap
 project_root = Path(__file__).parent.parent.parent
@@ -97,20 +98,37 @@ def _try_load_source(fmt: str, path: str, sep: str | None, enc: str | None, head
         return None, str(e)
 
 def _apply_python(df: pd.DataFrame, code: str | None):
+    """
+    Applique un script Python sur un DataFrame.
+    Le script DOIT réassigner `df` pour que les modifications soient prises en compte.
+    """
     if not code or not isinstance(code, str) or not code.strip():
         return df, None
     try:
-        loc = {"df": df, "pd": pd}
+        loc = {"df": df.copy(), "pd": pd}
         exec(code, {}, loc)
         new_df = loc.get("df")
-        if isinstance(new_df, pd.DataFrame):
-            return new_df, None
-        return df, None
+        
+        if not isinstance(new_df, pd.DataFrame):
+            return None, (
+                f"Le script doit retourner un DataFrame (pas {type(new_df).__name__}). "
+                "Utilisez 'df = df[[...]]' (double crochets) pour garder un DataFrame"
+            )
+        
+        return new_df, None
+    
     except Exception as e:
-        return None, f"Erreur script Python : {e}"
+        import traceback
+        tb = traceback.format_exc()
+        return None, f"Erreur script Python : {e}\n{tb}"
 
 expected_cols = [c.name for c in (gabarit.columns or [])]
 current_default = get_default_source(gabarit.name, gabarit.version) or {}
+
+# ✅ INITIALISER le code Python avec une clé unique par gabarit
+buffer_key = f"python_code_buffer_{gab_name}_{gab_version}"
+if buffer_key not in st.session_state:
+    st.session_state[buffer_key] = current_default.get("python", "")
 
 use_default = st.checkbox("Activer une donnée par défaut", value=bool(current_default))
 
@@ -136,13 +154,78 @@ if use_default:
     else:
         sep, enc = None, None
 
-    with st.expander("Transformation Python (optionnel)", expanded=bool(current_default.get("python"))):
-        python_code = st.text_area(
-            "Code de transformation (df → df)",
-            value=current_default.get("python", ""),
-            height=150,
-            placeholder="# df = df.rename(columns={'A':'B'})",
+    expanded = bool(st.session_state.get(buffer_key) or current_default.get("python"))
+    with st.expander("Transformation Python (optionnel)", expanded=expanded):
+
+        st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas)")
+        st.caption("⚠️ Pour sélectionner une colonne : `df = df[['colonne']]` (double crochets)")
+        
+        # ✅ Configuration améliorée du code_editor
+        custom_buttons = [
+            {
+                "name": "Copier",
+                "feather": "Copy",
+                "hasText": True,
+                "commands": ["copyAll"],
+                "style": {"top": "0.46rem", "right": "0.4rem"}
+            }
+        ]
+        
+        editor_result = code_editor(
+            st.session_state[buffer_key],
+            lang="python",
+            height=300,
+            theme="contrast",  # Essayez aussi "dark" ou "light"
+            shortcuts="vscode",
+            focus=False,  # Important : évite les conflits
+            buttons=custom_buttons,
+            allow_reset=True,
+            options={
+                "wrap": True,
+                "showLineNumbers": True,
+                "highlightActiveLine": True,
+                "enableLiveAutocompletion": True,
+                "enableBasicAutocompletion": True,
+            },
+            key=f"python_code_editor_{gab_name}_{gab_version}",
+            response_mode=["blur", "submit"]  # ✅ CRUCIAL : capture le code au blur
         )
+        
+        # ✅ CORRECTION : Extraction robuste du contenu
+        if editor_result:
+            # Le code_editor retourne un dict avec différentes clés selon la version
+            new_code = None
+            
+            # Méthode 1 : clé 'text'
+            if isinstance(editor_result, dict) and "text" in editor_result:
+                new_code = editor_result["text"]
+            # Méthode 2 : clé 'content'
+            elif isinstance(editor_result, dict) and "content" in editor_result:
+                new_code = editor_result["content"]
+            # Méthode 3 : clé 'code'
+            elif isinstance(editor_result, dict) and "code" in editor_result:
+                new_code = editor_result["code"]
+            # Méthode 4 : valeur directe (string)
+            elif isinstance(editor_result, str):
+                new_code = editor_result
+            # Méthode 5 : dict avec clé 'id' (newer versions)
+            elif isinstance(editor_result, dict) and "id" in editor_result:
+                # Dans les nouvelles versions, le code est dans le dict sous différentes formes
+                new_code = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
+            
+            # Si on a récupéré du code, mettre à jour le buffer
+            if new_code is not None and isinstance(new_code, str):
+                st.session_state[buffer_key] = new_code
+        
+        # Debug : afficher ce qui est capturé
+        current_code = st.session_state[buffer_key]
+        st.caption(f"🔍 Code capturé : {len(current_code)} caractères")
+        
+        # Debug avancé (à retirer en production)
+        with st.expander("🐛 Debug", expanded=False):
+            st.write("**Type de editor_result:**", type(editor_result))
+            st.write("**Contenu de editor_result:**", editor_result)
+            st.write("**Buffer actuel:**", repr(current_code[:100]) if current_code else "vide")
 
     st.divider()
     col_preview, col_validate, col_save, col_clear = st.columns(4)
@@ -154,7 +237,11 @@ if use_default:
                 if err:
                     st.error(f"❌ {err}")
                 else:
-                    df2, perr = _apply_python(df, python_code)
+                    # ✅ Utiliser le code du buffer spécifique
+                    current_code = st.session_state[buffer_key]
+                    if current_code.strip():
+                        st.info(f"🔍 Application du script ({len(current_code)} caractères)")
+                    df2, perr = _apply_python(df, current_code)
                     if perr:
                         st.error(f"❌ {perr}")
                     else:
@@ -168,7 +255,9 @@ if use_default:
                 if err:
                     st.error(f"❌ {err}")
                 else:
-                    df2, perr = _apply_python(df, python_code)
+                    # ✅ Utiliser le code du buffer spécifique
+                    current_code = st.session_state[buffer_key]
+                    df2, perr = _apply_python(df, current_code)
                     if perr:
                         st.error(f"❌ {perr}")
                     else:
@@ -187,31 +276,39 @@ if use_default:
                 if err:
                     st.error(f"❌ {err}")
                 else:
-                    df20, perr = _apply_python(df20, python_code)
+                    # ✅ Utiliser le code du buffer spécifique
+                    current_code = st.session_state[buffer_key]
+                    df20_transformed, perr = _apply_python(df20, current_code)
                     if perr:
                         st.error(f"❌ {perr}")
                     else:
                         src = {"type": fmt, "path": str(Path(path).resolve())}
                         if fmt == "csv":
                             src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
-                        if python_code and python_code.strip():
-                            src["python"] = python_code
+                        
+                        # ✅ Enregistrer le code Python si non vide
+                        if current_code and current_code.strip():
+                            src["python"] = current_code
+                        
                         set_default_source(gabarit.name, gabarit.version, src)
-                        try:
-                            sample = df20.head(20)
-                            set_default_preview(
-                                gabarit.name, gabarit.version,
-                                rows=sample.to_dict(orient="records"),
-                                columns=list(sample.columns)
-                            )
-                            st.success("✅ Donnée par défaut enregistrée avec aperçu")
-                            st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
-                        except Exception as e:
-                            st.warning(f"Source enregistrée mais aperçu non sauvegardé : {e}")
+
+                        # Aperçu avec données transformées
+                        sample = df20_transformed.head(20)
+                        set_default_preview(
+                            gabarit.name, gabarit.version,
+                            rows=sample.to_dict(orient="records"),
+                            columns=list(sample.columns)
+                        )
+                        st.success("✅ Donnée par défaut enregistrée avec aperçu")
+                        # ✅ Recharger la page
+                        st.rerun()
 
     with col_clear:
         if st.button("🗑️ Retirer", use_container_width=True, disabled=not current_default):
             clear_default_source(gabarit.name, gabarit.version)
+            # ✅ Nettoyer le buffer
+            if buffer_key in st.session_state:
+                del st.session_state[buffer_key]
             st.success("✅ Donnée par défaut retirée")
             st.rerun()
 else:

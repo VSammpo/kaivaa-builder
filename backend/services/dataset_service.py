@@ -26,12 +26,16 @@ def _apply_source_python(df: pd.DataFrame, source: dict) -> pd.DataFrame:
     if not code or not isinstance(code, str) or not code.strip():
         return df
     try:
-        local_vars = {"df": df, "pd": pd}
+        local_vars = {"df": df.copy(), "pd": pd}  # ✅ Copie explicite
         exec(code, {}, local_vars)
         new_df = local_vars.get("df")
-        if isinstance(new_df, pd.DataFrame):
-            return new_df
-        return df
+        
+        # ✅ CORRECTION : Vérifier le type
+        if not isinstance(new_df, pd.DataFrame):
+            logger.error(f"[dataset_service] Le script Python doit retourner un DataFrame (pas {type(new_df).__name__})")
+            return df  # Retourner l'original en cas d'erreur
+        
+        return new_df
     except Exception as e:
         logger.exception(f"[dataset_service] Erreur script 'python' dans source: {e}")
         return df

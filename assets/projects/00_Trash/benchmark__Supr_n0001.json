@@ -1,6 +1,6 @@
 {
   "project_id": "benchmark",
-  "name": "Benchmark",
+  "name": "Benchmark_Supr_n0001",
   "description": "Analyse des entreprises de production de chocolat en france",
   "template_ids": [
     25
@@ -125,5 +125,5 @@
   ],
   "joins": [],
   "created_at": "2025-10-05T15:56:55+02:00",
-  "updated_at": "2025-10-06T18:30:28+02:00"
+  "updated_at": "2025-10-08T10:23:15+02:00"
 }
