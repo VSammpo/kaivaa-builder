@@ -602,8 +602,8 @@ def _compose_full_pipeline(u: dict, *, full: bool, params: dict | None = None) -
         df = df.loc[:, ~df.columns.duplicated(keep="first")]
 
 
-    # 6) Ordre / exclusions (après renommages)
-    src_order = u.get("final_order") or df.columns.tolist()
+    # 6) Ordre / exclusions (après renommages) — VERSION STRICTE
+    src_order = u.get("final_order") or []
     src_excl  = set(u.get("final_excludes") or [])
 
     # mapper l’ordre via les renommages
@@ -615,7 +615,7 @@ def _compose_full_pipeline(u: dict, *, full: bool, params: dict | None = None) -
             mapped_order.append(cc)
             seen.add(cc)
 
-    # exclusions : on exclut anciens noms et nouveaux
+    # exclusions : exclure anciens noms et nouveaux noms
     excl_names = set()
     for c in src_excl:
         excl_names.add(c)
@@ -623,8 +623,12 @@ def _compose_full_pipeline(u: dict, *, full: bool, params: dict | None = None) -
         if rc:
             excl_names.add(rc)
 
-    final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names] + \
-                 [c for c in df.columns if c not in mapped_order and c not in excl_names]
+    # STRICT : n'afficher que les colonnes sélectionnées, dans l’ordre défini
+    if mapped_order:
+        final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names]
+    else:
+        # si aucun ordre n’est défini, on garde tout (comportement “neutre”)
+        final_cols = [c for c in df.columns if c not in excl_names]
 
     _log_kpi("📦 Sortie pipeline (finale)", {
         "lignes": len(df),
@@ -632,6 +636,7 @@ def _compose_full_pipeline(u: dict, *, full: bool, params: dict | None = None) -
         "complete(full)": complete
     })
     return df[final_cols], None
+
 
 def _sample_value(col: str) -> str:
     """Exemple rapide depuis le preview de base."""
@@ -823,7 +828,6 @@ with tab_script:
         else:
             st.success(f"✅ {len(df_final)} lignes, {len(df_final.columns)} colonnes")
             st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
-
 
 
     with st.container():
