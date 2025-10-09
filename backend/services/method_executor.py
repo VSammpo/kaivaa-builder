@@ -43,10 +43,10 @@ def _build_params(param_schema: list[dict], param_values: dict[str, Any], df: pd
 
 def apply_method(df: pd.DataFrame, method: dict, params: dict[str, Any]) -> pd.DataFrame:
     """
-    Exécute une méthode 'colonne calculée':
-      - method['output_column'] = nom de la colonne
-      - method['code'] doit définir une variable 'value' (Series/array/scalar)
-      - affectation: df[output_column] = value
+    Exécute une méthode 'colonne calculée'. On supporte trois styles de code utilisateur :
+      A) Affectation directe : df[out] = ...
+      B) Variable 'value'   : value = ...
+      C) Expression seule   : (ex: df['x'] * 3)  → df[out] = <résultat>
     """
     code = (method or {}).get("code", "")
     required_cols = (method or {}).get("required_columns", []) or []
@@ -64,21 +64,44 @@ def apply_method(df: pd.DataFrame, method: dict, params: dict[str, Any]) -> pd.D
     norm_params = _build_params(param_schema, params or {}, df)
 
     df2 = df.copy()
-    # Exec sandbox: on attend que 'value' apparaisse
+
+    # --- 1) Essayer d'évaluer comme une simple expression (mode C)
+    #     Si le code est une expression valide, on affecte son résultat à df[out_col].
+    try:
+        compiled = compile(code, "<method>", "eval")
+    except SyntaxError:
+        compiled = None
+
+    if compiled is not None:
+        try:
+            result = eval(compiled, {}, {"df": df2, "pd": pd, "params": norm_params})
+            df2[out_col] = result
+            return df2
+        except Exception:
+            # on retombe sur le mode 'exec' (A/B)
+            pass
+
+    # --- 2) Exécuter comme script (modes A et B)
     loc = {"df": df2, "pd": pd, "params": norm_params, "value": None}
     try:
         exec(code, {}, loc)
     except Exception as e:
         raise MethodExecutionError(f"Erreur exécution méthode: {e}")
 
+    # 2a) Style B : 'value' fourni → on affecte df[out_col] = value
     value = loc.get("value", None)
-    if value is None:
-        raise MethodExecutionError("Le code de la méthode doit définir une variable 'value' (Series/array/scalar).")
+    if value is not None:
+        try:
+            df2[out_col] = value
+            return df2
+        except Exception as e:
+            raise MethodExecutionError(f"Impossible d'assigner la valeur à '{out_col}': {e}")
 
-    # Assignation
-    try:
-        df2[out_col] = value
-    except Exception as e:
-        raise MethodExecutionError(f"Impossible d'assigner la valeur à la colonne '{out_col}': {e}")
+    # 2b) Style A : l'utilisateur a déjà écrit df[out_col] = ... dans le code
+    if out_col in df2.columns:
+        return df2
 
-    return df2
+    # Rien n'a produit la colonne
+    raise MethodExecutionError(
+        "Le code doit soit écrire df[out] = ..., soit définir 'value', soit être une expression."
+    )

@@ -267,9 +267,11 @@ if view == "list":
                         st.session_state.testing_method_id = m["id"]
                         st.session_state.current_view = "test"
                         st.rerun()
+
+                # ➕ AJOUTER CETTE COLONNE SI ABSENTE
                 with header[4]:
                     if st.button("✏️ Éditer", key=f"edit_{m['id']}", use_container_width=True):
-                        # Pré-remplir param_list à partir du schema stocké
+                        # Pré-remplir la construction de param_schema pour l’UI
                         st.session_state.form_param_list = []
                         for p in (m.get("param_schema") or []):
                             entry = {
@@ -324,90 +326,204 @@ elif view == "edit":
     # ✅ Code avec code_editor
     st.markdown("### 📝 Formule Python")
     st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas), `params` (dict des paramètres)")
-    st.caption("⚠️ Le DataFrame doit être modifié in-place : `df['nouvelle_colonne'] = ...`")
-    
-    # Buffer unique pour cette méthode
+    st.caption("⚠️ Le DataFrame peut être modifié in-place (ex. `df['nouvelle_colonne'] = ...`) ; "
+            "mais vous pouvez aussi écrire simplement une **expression** ou une **variable `value`**.")
+    st.caption(f"💡 Si vous tapez **juste une expression**, elle sera automatiquement affectée à "
+            f"`df['{(outcol or 'result').strip()}']`.")
+
+
+    # ---- INITIALISATION PERSISTANTE (buffer + snapshot pour le badge) ----
     code_buffer_key = f"method_code_buffer_{st.session_state.editing_method_id or 'new'}"
+    saved_snapshot_key = f"method_saved_snapshot_{st.session_state.editing_method_id or 'new'}"
+
     if code_buffer_key not in st.session_state:
         if is_edit:
-            current_method = next((m for m in methods if m["id"]==st.session_state.editing_method_id), None)
+            current_method = next((m for m in methods if m["id"] == st.session_state.editing_method_id), None)
             st.session_state[code_buffer_key] = current_method.get("code", "") if current_method else ""
         else:
             st.session_state[code_buffer_key] = ""
-    
-    # Configuration du code_editor
+
+    if saved_snapshot_key not in st.session_state:
+        # première valeur "officiellement sauvée" affichée comme référence
+        st.session_state[saved_snapshot_key] = st.session_state[code_buffer_key]
+
+    def _render_status_badge():
+        is_dirty = st.session_state[code_buffer_key] != st.session_state[saved_snapshot_key]
+        label = "🟡 Édition en cours" if is_dirty else "🟢 Sauvegardé"
+        st.markdown(
+            """
+            <style>
+            .pill{display:inline-block;padding:.2rem .5rem;border-radius:999px;
+                font-size:.85rem;font-weight:600;border:1px solid rgba(0,0,0,.1);}
+            .pill.saved{background:#e8fff0;}
+            .pill.dirty{background:#fff8e6;}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        st.markdown(f'<span class="pill {"dirty" if is_dirty else "saved"}">{label}</span>', unsafe_allow_html=True)
+
+    _render_status_badge()
+
+    # ---- ÉCHANTILLON POUR APERÇU/TEST (évite variables non définies) ----
+    _editor_sample = _get_sample_for_editor(gabarit)          # helper défini plus haut dans ce fichier
+    _sample_cols = list(_editor_sample.columns) if not _editor_sample.empty else []
+
+    # ---- ÉDITEUR + BOUTONS regroupés dans UN FORM (synchro garantie) ----
     custom_buttons = [
-        {
-            "name": "Copier",
-            "feather": "Copy",
-            "hasText": True,
-            "commands": ["copyAll"],
-            "style": {"top": "0.46rem", "right": "0.4rem"}
-        }
+        {"name":"Copier","feather":"Copy","hasText":True,"commands":["copyAll"],"style":{"top":"0.46rem","right":"0.4rem"}}
     ]
-    
-    editor_result = code_editor(
-        st.session_state[code_buffer_key],
-        lang="python",
-        height=300,
-        theme="contrast",
-        shortcuts="vscode",
-        focus=False,
-        buttons=custom_buttons,
-        allow_reset=True,
-        options={
-            "wrap": True,
-            "showLineNumbers": True,
-            "highlightActiveLine": True,
-            "enableLiveAutocompletion": True,
-            "enableBasicAutocompletion": True,
-        },
-        key=f"method_code_editor_{st.session_state.editing_method_id or 'new'}",
-        response_mode=["blur", "submit"]
-    )
-    
-    # ✅ Extraction robuste du contenu
-    if editor_result:
-        new_code = None
-        
-        if isinstance(editor_result, dict) and "text" in editor_result:
-            new_code = editor_result["text"]
-        elif isinstance(editor_result, dict) and "content" in editor_result:
-            new_code = editor_result["content"]
-        elif isinstance(editor_result, dict) and "code" in editor_result:
-            new_code = editor_result["code"]
-        elif isinstance(editor_result, str):
-            new_code = editor_result
-        elif isinstance(editor_result, dict) and "id" in editor_result:
-            new_code = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
-        
-        if new_code is not None and isinstance(new_code, str):
-            st.session_state[code_buffer_key] = new_code
-    
+
+    with st.form(f"method_edit_form_{code_buffer_key}", clear_on_submit=False, border=True):
+        editor_result = code_editor(
+            st.session_state[code_buffer_key],
+            lang="python",
+            height=300,
+            theme="contrast",
+            shortcuts="vscode",
+            focus=False,
+            buttons=custom_buttons,
+            allow_reset=True,
+            options={
+                "wrap": True,
+                "showLineNumbers": True,
+                "highlightActiveLine": True,
+                "enableLiveAutocompletion": True,
+                "enableBasicAutocompletion": True,
+            },
+            key=f"method_code_editor_{st.session_state.editing_method_id or 'new'}",
+            response_mode=["submit","blur"]  # << capture AVANT le rerun
+        )
+
+        # Capture robuste -> met à jour le buffer AVANT de traiter les clics
+        if editor_result:
+            new_code = None
+            if isinstance(editor_result, dict):
+                new_code = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
+            elif isinstance(editor_result, str):
+                new_code = editor_result
+            if isinstance(new_code, str):
+                st.session_state[code_buffer_key] = new_code
+
+        st.caption(f"🔍 Code capturé : {len(st.session_state[code_buffer_key])} caractères")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            do_preview = st.form_submit_button("👁️ Aperçu", use_container_width=True)
+        with c2:
+            do_test = st.form_submit_button("🧪 Tester", use_container_width=True)
+        with c3:
+            do_save = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True)
+
+    # ---- TRAITEMENT DES ACTIONS (après le form) ----
     code = st.session_state[code_buffer_key]
-    st.caption(f"🔍 Code capturé : {len(code)} caractères")
+    try:
+        req_cols = _infer_required_columns(code)  # helper déjà présent plus haut chez toi
+        if not isinstance(req_cols, list):
+            req_cols = list(req_cols) if req_cols is not None else []
+    except NameError:
+        req_cols = []
+    except Exception:
+        req_cols = []
 
-    inferred = _infer_required_columns(code)
-    if inferred:
-        st.markdown("**Colonnes détectées :** " + " ".join([f"`{c}`" for c in inferred]))
 
-    # ------------------ PARAMS DYNAMIQUES (UI) ------------------
-    st.markdown("---")
-    st.subheader("⚙️ Paramètres (optionnel)")
+    # Colonnes référencées dans le code (ex. df['x'] → 'x')
+    req_cols = _infer_required_columns(code)  # helper défini plus haut
 
-    _editor_sample = _get_sample_for_editor(gabarit)
-    _sample_cols = list(_editor_sample.columns) if isinstance(_editor_sample, pd.DataFrame) else []
+    # petit utilitaire : s’assure que la colonne de sortie existe pour l’aperçu
+    def _ensure_outcol(df: pd.DataFrame, out: str | None) -> pd.DataFrame:
+        if not isinstance(df, pd.DataFrame):
+            df = pd.DataFrame()
+        oc = (out or "").strip() or "result"
+        if oc not in df.columns:
+            df = df.copy()
+            df[oc] = None
+        return df
 
-    if not st.session_state.form_param_list:
-        st.session_state.form_param_list = []
+    # ---- APERÇU (rendu visible) ----
+    if do_preview:
+        try:
+            df_prev = _editor_sample.copy()
+            # On appelle le moteur comme en prod (supporte df[out]=..., value=..., expression seule)
+            method_dict = {
+                "name": name or "(preview)",
+                "description": desc or "",
+                "output_column": (outcol or "result").strip(),
+                "param_schema": _param_schema_from_form(),
+                "required_columns": req_cols,
+                "code": code or "",
+            }
+            params_vals = _default_params_for_method(method_dict["param_schema"], df_prev)
+            df_prev = apply_method(df_prev, method_dict, params_vals)
 
-    if st.button("➕ Ajouter un paramètre", key="add_param_btn", use_container_width=True):
-        st.session_state.form_param_list.append({
-            "name": "", "label": "", "type": "text", "default": "",
-            "options_mode": "manual", "options_text": "",
-            "source_column": "", "options_python": "",
-        })
-        st.rerun()
+            st.success("Aperçu généré sur la donnée par défaut.")
+            if outcol and outcol in df_prev.columns:
+                st.dataframe(df_prev[[outcol]].head(20), use_container_width=True)
+            else:
+                st.dataframe(df_prev.head(20), use_container_width=True)
+        except MethodExecutionError as e:
+            st.error(f"Erreur pendant l’aperçu : {e}")
+        except Exception as e:
+            st.error(f"Erreur inattendue pendant l’aperçu : {e}")
+
+
+    # ---- TEST (sandbox + log visible) ----
+    if do_test:
+        try:
+            df_test = _editor_sample.copy()
+            method_dict = {
+                "name": name or "(test)",
+                "description": desc or "",
+                "output_column": (outcol or "result").strip(),
+                "param_schema": _param_schema_from_form(),
+                "required_columns": req_cols,
+                "code": code or "",
+            }
+            params_vals = _default_params_for_method(method_dict["param_schema"], df_test)
+            df_test = apply_method(df_test, method_dict, params_vals)
+
+            st.success("Test exécuté (sandbox).")
+            with st.expander("Voir le DataFrame test"):
+                st.dataframe(df_test.head(50), use_container_width=True)
+        except MethodExecutionError as e:
+            st.error(f"Erreur pendant le test : {e}")
+        except Exception as e:
+            st.error(f"Erreur inattendue pendant le test : {e}")
+
+
+    # ---- SAVE (upsert + badge → 'Sauvegardé') ----
+    if do_save:
+        try:
+            # Ordre courant (préserve l’ordre si édition)
+            current_order = None
+            if is_edit:
+                for mm in methods:
+                    if mm["id"] == st.session_state.editing_method_id:
+                        current_order = mm.get("order", 1)
+                        break
+
+            saved = upsert_method_for_gabarit(
+                gabarit.name, gabarit.version,
+                name=name.strip(),
+                description=(desc or "").strip(),
+                output_column=outcol.strip(),
+                param_schema=_param_schema_from_form(),
+                required_columns=req_cols,         # << remplace 'inferred'
+                code=code,
+                order=current_order,
+                method_id=st.session_state.editing_method_id
+            )
+
+            # Maj du snapshot => le badge passe au vert
+            st.session_state[saved_snapshot_key] = st.session_state[code_buffer_key]
+            st.success("Méthode enregistrée ✅")
+            st.toast("Sauvegarde effectuée", icon="💾")
+            _render_status_badge()
+
+        except Exception as e:
+            st.error(f"Échec sauvegarde : {e}")
+
+
 
     to_delete = []
     for idx, p in enumerate(st.session_state.form_param_list):
@@ -526,7 +642,7 @@ elif view == "edit":
                     description=desc.strip(),
                     output_column=outcol.strip(),
                     param_schema=_param_schema_from_form(),
-                    required_columns=inferred,
+                    required_columns=req_cols,
                     code=code,
                     order=current_order,
                     method_id=st.session_state.editing_method_id
