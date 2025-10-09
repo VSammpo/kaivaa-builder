@@ -155,162 +155,129 @@ if use_default:
         sep, enc = None, None
 
     expanded = bool(st.session_state.get(buffer_key) or current_default.get("python"))
-    with st.expander("Transformation Python (optionnel)", expanded=expanded):
+    with st.form(f"default_data_form_{gab_name}_{gab_version}", clear_on_submit=False, border=True):
 
-        st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas)")
-        st.caption("⚠️ Pour sélectionner une colonne : `df = df[['colonne']]` (double crochets)")
-        
-        # ✅ Configuration améliorée du code_editor
-        custom_buttons = [
-            {
-                "name": "Copier",
-                "feather": "Copy",
-                "hasText": True,
-                "commands": ["copyAll"],
-                "style": {"top": "0.46rem", "right": "0.4rem"}
-            }
-        ]
-        
-        editor_result = code_editor(
-            st.session_state[buffer_key],
-            lang="python",
-            height=300,
-            theme="contrast",  # Essayez aussi "dark" ou "light"
-            shortcuts="vscode",
-            focus=False,  # Important : évite les conflits
-            buttons=custom_buttons,
-            allow_reset=True,
-            options={
-                "wrap": True,
-                "showLineNumbers": True,
-                "highlightActiveLine": True,
-                "enableLiveAutocompletion": True,
-                "enableBasicAutocompletion": True,
-            },
-            key=f"python_code_editor_{gab_name}_{gab_version}",
-            response_mode=["blur", "submit"]  # ✅ CRUCIAL : capture le code au blur
-        )
-        
-        # ✅ CORRECTION : Extraction robuste du contenu
-        if editor_result:
-            # Le code_editor retourne un dict avec différentes clés selon la version
-            new_code = None
-            
-            # Méthode 1 : clé 'text'
-            if isinstance(editor_result, dict) and "text" in editor_result:
-                new_code = editor_result["text"]
-            # Méthode 2 : clé 'content'
-            elif isinstance(editor_result, dict) and "content" in editor_result:
-                new_code = editor_result["content"]
-            # Méthode 3 : clé 'code'
-            elif isinstance(editor_result, dict) and "code" in editor_result:
-                new_code = editor_result["code"]
-            # Méthode 4 : valeur directe (string)
-            elif isinstance(editor_result, str):
-                new_code = editor_result
-            # Méthode 5 : dict avec clé 'id' (newer versions)
-            elif isinstance(editor_result, dict) and "id" in editor_result:
-                # Dans les nouvelles versions, le code est dans le dict sous différentes formes
-                new_code = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
-            
-            # Si on a récupéré du code, mettre à jour le buffer
-            if new_code is not None and isinstance(new_code, str):
-                st.session_state[buffer_key] = new_code
-        
-        # Debug : afficher ce qui est capturé
-        current_code = st.session_state[buffer_key]
-        st.caption(f"🔍 Code capturé : {len(current_code)} caractères")
-        
-        # Debug avancé (à retirer en production)
-        with st.expander("🐛 Debug", expanded=False):
-            st.write("**Type de editor_result:**", type(editor_result))
-            st.write("**Contenu de editor_result:**", editor_result)
-            st.write("**Buffer actuel:**", repr(current_code[:100]) if current_code else "vide")
+        with st.expander("Transformation Python (optionnel)", expanded=expanded):
+            st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas)")
+            st.caption("⚠️ Vous devez réassigner `df` (ex. `df = df[['col1','col2']]` ou tout calcul renvoyant un DataFrame)")
 
-    st.divider()
-    col_preview, col_validate, col_save, col_clear = st.columns(4)
+            custom_buttons = [{
+                "name": "Copier", "feather": "Copy", "hasText": True,
+                "commands": ["copyAll"], "style": {"top": "0.46rem", "right": "0.4rem"}
+            }]
 
-    with col_preview:
-        if st.button("👁️ Aperçu", use_container_width=True, disabled=not path):
-            with st.spinner("Chargement..."):
-                df, err = _try_load_source(fmt, path, sep, enc, head=20)
-                if err:
-                    st.error(f"❌ {err}")
+            editor_result = code_editor(
+                st.session_state[buffer_key],
+                lang="python", height=300, theme="contrast", shortcuts="vscode",
+                focus=False, buttons=custom_buttons, allow_reset=True,
+                options={
+                    "wrap": True, "showLineNumbers": True, "highlightActiveLine": True,
+                    "enableLiveAutocompletion": True, "enableBasicAutocompletion": True,
+                },
+                key=f"python_code_editor_{gab_name}_{gab_version}",
+                response_mode=["submit", "blur"]  # <-- capture AVANT le rerun
+            )
+
+            # Extraction robuste du contenu vers le buffer
+            if editor_result:
+                new_code = None
+                if isinstance(editor_result, dict):
+                    new_code = (editor_result.get("text")
+                                or editor_result.get("content")
+                                or editor_result.get("code"))
+                elif isinstance(editor_result, str):
+                    new_code = editor_result
+                if isinstance(new_code, str):
+                    st.session_state[buffer_key] = new_code
+
+            current_code = st.session_state[buffer_key]
+            st.caption(f"🔍 Code capturé : {len(current_code)} caractères")
+
+        st.divider()
+        col_preview, col_validate, col_save = st.columns(3)
+        with col_preview:
+            do_preview = st.form_submit_button("👁️ Aperçu", use_container_width=True, disabled=not path)
+        with col_validate:
+            do_validate = st.form_submit_button("✅ Valider", use_container_width=True, disabled=not path)
+        with col_save:
+            do_save = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True, disabled=not path)
+
+            pass
+
+    # --- TRAITEMENT DES ACTIONS APRÈS LE FORM (la valeur de l'éditeur est déjà dans le buffer) ---
+    if do_preview:
+        with st.spinner("Chargement..."):
+            df, err = _try_load_source(fmt, path, sep, enc, head=20)
+            if err:
+                st.error(f"❌ {err}")
+            else:
+                current_code = st.session_state[buffer_key]
+                if current_code.strip():
+                    st.info(f"🔍 Application du script ({len(current_code)} caractères)")
+                df2, perr = _apply_python(df, current_code)
+                if perr:
+                    st.error(f"❌ {perr}")
                 else:
-                    # ✅ Utiliser le code du buffer spécifique
-                    current_code = st.session_state[buffer_key]
-                    if current_code.strip():
-                        st.info(f"🔍 Application du script ({len(current_code)} caractères)")
-                    df2, perr = _apply_python(df, current_code)
-                    if perr:
-                        st.error(f"❌ {perr}")
-                    else:
-                        st.success(f"✅ Aperçu chargé : {df2.shape[0]} lignes × {df2.shape[1]} colonnes")
-                        st.dataframe(df2, use_container_width=True, height=300)
+                    st.success(f"✅ Aperçu chargé : {df2.shape[0]} lignes × {df2.shape[1]} colonnes")
+                    st.dataframe(df2, use_container_width=True, height=300)
 
-    with col_validate:
-        if st.button("✅ Valider", use_container_width=True, disabled=not path):
-            with st.spinner("Validation..."):
-                df, err = _try_load_source(fmt, path, sep, enc, head=100)
-                if err:
-                    st.error(f"❌ {err}")
+    if do_validate:
+        with st.spinner("Validation..."):
+            df, err = _try_load_source(fmt, path, sep, enc, head=100)
+            if err:
+                st.error(f"❌ {err}")
+            else:
+                current_code = st.session_state[buffer_key]
+                df2, perr = _apply_python(df, current_code)
+                if perr:
+                    st.error(f"❌ {perr}")
                 else:
-                    # ✅ Utiliser le code du buffer spécifique
-                    current_code = st.session_state[buffer_key]
-                    df2, perr = _apply_python(df, current_code)
-                    if perr:
-                        st.error(f"❌ {perr}")
-                    else:
-                        aligned, warns = align_df_to_expected_columns(df2.copy(), expected_cols)
-                        if warns.get("missing"):
-                            st.warning(f"⚠️ Colonnes manquantes : {', '.join(warns['missing'])}")
-                        if warns.get("extra"):
-                            st.info(f"ℹ️ Colonnes supplémentaires : {', '.join(warns['extra'])}")
-                        if not warns.get("missing") and not warns.get("extra"):
-                            st.success("✅ Structure parfaitement alignée")
+                    aligned, warns = align_df_to_expected_columns(df2.copy(), expected_cols)
+                    if warns.get("missing"):
+                        st.warning(f"⚠️ Colonnes manquantes : {', '.join(warns['missing'])}")
+                    if warns.get("extra"):
+                        st.info(f"ℹ️ Colonnes supplémentaires : {', '.join(warns['extra'])}")
+                    if not warns.get("missing") and not warns.get("extra"):
+                        st.success("✅ Structure parfaitement alignée")
 
-    with col_save:
-        if st.button("💾 Enregistrer", use_container_width=True, disabled=not path, type="primary"):
-            with st.spinner("Enregistrement..."):
-                df20, err = _try_load_source(fmt, path, sep, enc, head=20)
-                if err:
-                    st.error(f"❌ {err}")
+    if do_save:
+        with st.spinner("Enregistrement..."):
+            df20, err = _try_load_source(fmt, path, sep, enc, head=20)
+            if err:
+                st.error(f"❌ {err}")
+            else:
+                current_code = st.session_state[buffer_key]
+                df20_transformed, perr = _apply_python(df20, current_code)
+                if perr:
+                    st.error(f"❌ {perr}")
                 else:
-                    # ✅ Utiliser le code du buffer spécifique
-                    current_code = st.session_state[buffer_key]
-                    df20_transformed, perr = _apply_python(df20, current_code)
-                    if perr:
-                        st.error(f"❌ {perr}")
-                    else:
-                        src = {"type": fmt, "path": str(Path(path).resolve())}
-                        if fmt == "csv":
-                            src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
-                        
-                        # ✅ Enregistrer le code Python si non vide
-                        if current_code and current_code.strip():
-                            src["python"] = current_code
-                        
-                        set_default_source(gabarit.name, gabarit.version, src)
+                    src = {"type": fmt, "path": str(Path(path).resolve())}
+                    if fmt == "csv":
+                        src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
+                    if current_code and current_code.strip():
+                        src["python"] = current_code
 
-                        # Aperçu avec données transformées
-                        sample = df20_transformed.head(20)
-                        set_default_preview(
-                            gabarit.name, gabarit.version,
-                            rows=sample.to_dict(orient="records"),
-                            columns=list(sample.columns)
-                        )
-                        st.success("✅ Donnée par défaut enregistrée avec aperçu")
-                        # ✅ Recharger la page
-                        st.rerun()
+                    set_default_source(gabarit.name, gabarit.version, src)
 
-    with col_clear:
+                    sample = df20_transformed.head(20)
+                    set_default_preview(
+                        gabarit.name, gabarit.version,
+                        rows=sample.to_dict(orient="records"),
+                        columns=list(sample.columns)
+                    )
+                    st.success("✅ Donnée par défaut enregistrée avec aperçu")
+                    st.rerun()
+
+    # --- Bouton Retirer (hors formulaire) ---
+    with st.container():
         if st.button("🗑️ Retirer", use_container_width=True, disabled=not current_default):
             clear_default_source(gabarit.name, gabarit.version)
-            # ✅ Nettoyer le buffer
             if buffer_key in st.session_state:
                 del st.session_state[buffer_key]
             st.success("✅ Donnée par défaut retirée")
             st.rerun()
+
+
 else:
     if current_default:
         st.info("La donnée par défaut est désactivée. Cochez la case ci-dessus pour la reconfigurer.")

@@ -689,17 +689,39 @@ with tab_script:
             with cols[idx % 3]:
                 with st.container(border=True):
                     st.markdown(f"**{param.name}**")
-                    st.caption(f"Type : {param.type}")
+                    # Affiche "Type" + la colonne source si le paramètre liste provient d'une colonne
+                    _src_hint = ""
+                    try:
+                        _mode = getattr(param, "options_mode", "none")
+                        # compat : type peut être "select" ou "liste" ; mode peut être "from_column" ou "column"
+                        if getattr(param, "type", "") in ("select", "liste") and _mode in ("from_column", "column"):
+                            _src = getattr(param, "options_source", None) or {}
+                            _col = _src.get("column") or getattr(param, "source_column", None)
+                            if _col:
+                                _src_hint = f" | Colonne source : `df['{_col}']`"
+                    except Exception:
+                        pass
+                    st.caption(f"Type : {param.type}{_src_hint}")
+
                     if param.default:
                         st.caption(f"Défaut : `{param.default}`")
-                    # options (si calculables)
+                    # options + méta (si calculables)
                     if getattr(param, "type", None) == "select" and getattr(param, "options_mode", "none") != "none":
+                        # 1) Afficher la colonne source si l'option est construite depuis une colonne
+                        if getattr(param, "options_mode", None) == "column":
+                            src_col = getattr(param, "source_column", None)
+                            if src_col:
+                                st.caption(f"📎 Construit depuis la colonne : `{src_col}`")
+
+                        # 2) Afficher une aperçu des options (quelle que soit l'origine)
                         try:
                             options = ParameterService.resolve_parameter_options(param)
                             if options:
                                 st.caption(f"Options : {', '.join(map(str, options[:3]))}{'...' if len(options) > 3 else ''}")
                         except Exception:
+                            # on n'échoue pas l'affichage si la résolution d'options plante
                             pass
+
 
         st.markdown("---")
         st.info("💡 Exemples : `df = df[df['Marque'] == Sous_Marque]` **ou** `df = df[df['Marque'] == params['Sous_Marque']]`")
@@ -709,86 +731,102 @@ with tab_script:
     
     st.markdown("---")
     
-    # ✅ CODE EDITOR AVEC PERSISTANCE TOTALE
+    # ✅ CODE EDITOR AVEC PERSISTANCE TOTALE (avec persistance + form)
     st.markdown("### 🔧 Script Python de transformation")
     st.caption("💡 Variables : `df` (DataFrame), `pd` (pandas), `params` (dict), et chaque paramètre accessible par son nom (ex : `Secteur`).")
-    st.caption("⚠️ Modifie `df` (ex : `df = df[df['Col'] == Secteur]`)")
+    st.caption("⚠️ Le script doit réassigner `df` (ex : `df = df[df['Col'] == Secteur]`).")
 
-
-    # ✅ Clé unique par table
+    # ✅ Clé unique par table (persistance)
     persist_key = f"code_persist_{template_id}_{gname}_{gver}_{sheet}_{table}"
 
-    # ✅ Initialisation depuis DB si jamais chargé
+    # ✅ Initialisation depuis DB si première fois
     if persist_key not in st.session_state:
         st.session_state[persist_key] = (usage.get("overlay_python") or "").strip()
 
-    # ✅ Zone de texte SIMPLE (pas code_editor qui bug)
-    code_input = st.text_area(
-        "Code Python",
-        value=st.session_state[persist_key],
-        height=300,
-        key=f"code_area_{persist_key}",
-        placeholder="# Exemple :\n# df = df[df['Colonne'] == params['param_name']]"
-    )
+    # ✅ Form => synchro garantie (pas d’effacement au 1er clic)
+    custom_buttons = [{
+        "name": "Copier", "feather": "Copy", "hasText": True,
+        "commands": ["copyAll"], "style": {"top": "0.46rem", "right": "0.4rem"}
+    }]
 
-    # ✅ Mettre à jour la persistance
-    if code_input != st.session_state[persist_key]:
-        st.session_state[persist_key] = code_input
+    with st.form(f"overlay_form_{persist_key}", clear_on_submit=False, border=True):
+        editor_result = code_editor(
+            st.session_state[persist_key],
+            lang="python", height=300, theme="contrast", shortcuts="vscode",
+            focus=False, buttons=custom_buttons, allow_reset=True,
+            options={"wrap": True, "showLineNumbers": True, "highlightActiveLine": True,
+                    "enableLiveAutocompletion": True, "enableBasicAutocompletion": True},
+            key=f"overlay_editor_{persist_key}",
+            response_mode=["submit", "blur"],  # <-- capture AVANT le rerun
+        )
+
+        # Extraction robuste -> met à jour le buffer AVANT de traiter les clics
+        if editor_result:
+            _new = None
+            if isinstance(editor_result, dict):
+                _new = editor_result.get("text") or editor_result.get("content") or editor_result.get("code")
+            elif isinstance(editor_result, str):
+                _new = editor_result
+            if isinstance(_new, str):
+                st.session_state[persist_key] = _new
+
+        st.caption(f"📄 {len(st.session_state[persist_key])} caractères")
+        st.markdown("---")
+
+        c1, c2 = st.columns([1, 1], gap="large")
+        with c1:
+            do_preview = st.form_submit_button("🧪 Prévisualiser le script", use_container_width=True)
+        with c2:
+            do_save = st.form_submit_button("💾 Enregistrer le script", type="primary", use_container_width=True)
 
     code = st.session_state[persist_key]
-    st.caption(f"📄 {len(code)} caractères")
 
-    st.markdown("---")
+    # === Actions après le form ===
+    if do_save:
+        with DatabaseService.get_session() as db:
+            ts = TemplateService(db)
+            cfg2 = ts.get_config(template_id)
+            usages2 = cfg2.get("gabarit_usages", []) or []
+            # mise à jour de l'usage ciblé
+            for uu in usages2:
+                tgt2 = uu.get("excel_target") or {}
+                if (
+                    uu.get("gabarit_name") == gname
+                    and (uu.get("gabarit_version") or "v1") == gver
+                    and (tgt2.get("sheet") or "") == sheet
+                    and (tgt2.get("table") or "") == table
+                ):
+                    uu["overlay_python"] = code
+                    break
+            cfg2["gabarit_usages"] = usages2
+            ts.update_config(template_id, cfg2)
 
-    # Actions
-    colL, colR = st.columns([2, 1], gap="large")
+        st.success("✅ Script enregistré")
+        st.rerun()
 
-    with colL:
-        if st.button("💾 Enregistrer le script", type="primary", use_container_width=True):
-            with DatabaseService.get_session() as db:
-                ts = TemplateService(db)
-                cfg2 = ts.get_config(template_id)
-                usages2 = cfg2.get("gabarit_usages", []) or []
-                
-                for uu in usages2:
-                    tgt2 = uu.get("excel_target") or {}
-                    if (
-                        uu.get("gabarit_name") == gname
-                        and (uu.get("gabarit_version") or "v1") == gver
-                        and (tgt2.get("sheet") or "") == sheet
-                        and (tgt2.get("table") or "") == table
-                    ):
-                        uu["overlay_python"] = code
-                        break
-                
-                cfg2["gabarit_usages"] = usages2
-                ts.update_config(template_id, cfg2)
-            
-            st.success("✅ Script enregistré")
-            st.rerun()
+    if do_preview:
+        # Params avec valeurs par défaut
+        params_dict = {}
+        for param in template_config.parameters:
+            params_dict[param.name] = ParameterService.get_default_value(param)
 
-        if st.button("🧪 Prévisualiser le script", use_container_width=True):
-            # Params avec valeurs par défaut
-            params_dict = {}
-            for param in template_config.parameters:
-                params_dict[param.name] = ParameterService.get_default_value(param)
+        # Usage modifié temporairement
+        usage_test = dict(usage)
+        usage_test["overlay_python"] = code
 
-            # Usage modifié temporairement
-            usage_test = dict(usage)
-            usage_test["overlay_python"] = code
+        df_final, error = _compose_full_pipeline(usage_test, full=True, params=params_dict)
 
-            df_final, error = _compose_full_pipeline(usage_test, full=True, params=params_dict)
-
-            if error:
-                st.error(f"❌ Erreur :\n```\n{error}\n```")
-            elif df_final is None or df_final.empty:
-                st.warning("Aucun résultat")
-            else:
-                st.success(f"✅ {len(df_final)} lignes, {len(df_final.columns)} colonnes")
-                st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
+        if error:
+            st.error(f"❌ Erreur :\n```\n{error}\n```")
+        elif df_final is None or df_final.empty:
+            st.warning("Aucun résultat")
+        else:
+            st.success(f"✅ {len(df_final)} lignes, {len(df_final.columns)} colonnes")
+            st.dataframe(df_final.head(20), use_container_width=True, hide_index=True)
 
 
-    with colR:
+
+    with st.container():
         st.markdown("**Colonnes disponibles**")
         cols_eff = _resolve_effective_columns_for_adjustment(usage)
         if cols_eff:
@@ -798,6 +836,7 @@ with tab_script:
                 st.caption(f"... et {len(cols_eff)-10} autres")
         else:
             st.caption("—")
+
 
 # ============================ Onglet 2 — AJUSTEMENT ============================
 with tab_adjust:
@@ -873,7 +912,7 @@ with tab_adjust:
             new_state = st.checkbox(
                 label=f"Inclure {col}",
                 value=included,
-                key=f"incl_{usage_key}_{idx}",
+                key=f"incl_{usage_key}_{col}",
                 label_visibility="collapsed",
             )
             if new_state != included:
@@ -889,7 +928,7 @@ with tab_adjust:
                 "Nouveau nom",
                 value=final_renames.get(col, ""),
                 placeholder=col,
-                key=f"rename_{usage_key}_{idx}",
+                key=f"rename_{usage_key}_{col}",
                 label_visibility="collapsed",
                 disabled=not new_state,
             )
