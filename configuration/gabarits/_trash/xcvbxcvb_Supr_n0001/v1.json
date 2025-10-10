@@ -1,0 +1,17 @@
+{
+  "name": "xcvbxcvb_Supr_n0001",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "vnb",
+      "type": "text",
+      "is_key": false
+    }
+  ],
+  "title": "xcvbxcvb",
+  "methods": [],
+  "defaults": {},
+  "relations": [],
+  "role": "mixed"
+}

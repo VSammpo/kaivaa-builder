@@ -8,129 +8,87 @@ import pandas as pd
 
 from backend.models.gabarits import TableGabarit
 
-_REG_DIR = Path("assets/registry")
-_REG_FILE = _REG_DIR / "gabarits.json"
+# --- NOUVEAU STOCKAGE FILE-BASED ---
+CONF_DIR = Path("configuration")
+GAB_DIR = CONF_DIR / "gabarits"
 
-def _ensure_storage() -> None:
-    _REG_DIR.mkdir(parents=True, exist_ok=True)
-    if not _REG_FILE.exists():
-        _REG_FILE.write_text(json.dumps({"gabarits": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+def _gab_path(name: str, version: str) -> Path:
+    return GAB_DIR / name / f"{(version or 'v1')}.json"
 
-def _load_raw() -> Dict[str, Any]:
-    _ensure_storage()
-    return json.loads(_REG_FILE.read_text(encoding="utf-8"))
+def _ensure_dirs() -> None:
+    GAB_DIR.mkdir(parents=True, exist_ok=True)
 
-def _save_raw(data: Dict[str, Any]) -> None:
-    _ensure_storage()
-    _REG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+def _read_json(p: Path) -> dict:
+    return json.loads(p.read_text(encoding="utf-8"))
 
-def _normalize(data: dict) -> dict:
-    data.setdefault("gabarits", [])
-    data.setdefault("roles", [])
-    data.setdefault("relations", [])
-    data.setdefault("defaults", [])
-    data.setdefault("trash", {"gabarits": []})
-    return data
+def _write_json(p: Path, data: dict) -> None:
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(p)
 
-def _load_raw() -> dict:
-    _ensure_storage()
-    data = json.loads(_REG_FILE.read_text(encoding="utf-8"))
-    return _normalize(data)
+def _normalize_gabarit_payload(d: dict) -> dict:
+    d = dict(d or {})
+    d.setdefault("name", "")
+    d.setdefault("version", "v1")
+    d.setdefault("title", d.get("name", ""))
+    d.setdefault("description", "")
+    d.setdefault("columns", [])
+    d.setdefault("methods", [])        # méthodes propres au gabarit
+    d.setdefault("defaults", {})       # {source, preview}
+    d.setdefault("relations", [])      # relations sortantes
+    d.setdefault("role", None)         # "fact"/"dimension"/"mixed"/None
+    return d
 
-def _save_raw(data: dict) -> None:
-    _ensure_storage()
-    data = _normalize(data)
-    _REG_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def set_default_source(gabarit_name: str, gabarit_version: str, source: dict | None) -> None:
-    """
-    Enregistre (ou retire) la source par défaut pour un gabarit.
-    Si source is None -> supprime aussi l'éventuel preview mémorisé.
-    """
-    data = _load_raw()
-    defs = data.get("defaults", [])
-    key = (gabarit_name, gabarit_version or "v1")
-
-    # Filtrer l'entrée existante
-    new_defs = []
-    existing_preview = None
-    for d in defs:
-        if d.get("gabarit_name") == key[0] and (d.get("gabarit_version") or "v1") == key[1]:
-            existing_preview = d.get("preview")  # on le garde si on réécrit la source
-            continue
-        new_defs.append(d)
-
-    # Si on retire la source -> on retire aussi le preview
+    p = _gab_path(gabarit_name, gabarit_version)
+    data = _normalize_gabarit_payload(_read_json(p) if p.exists() else {"name": gabarit_name, "version": gabarit_version})
     if source is None:
-        data["defaults"] = new_defs
-        _save_raw(data)
-        return
-
-    # On réinsère l'entrée, en conservant le preview existant si présent
-    entry = {
-        "gabarit_name": key[0],
-        "gabarit_version": key[1],
-        "source": source,
-    }
-    if existing_preview:
-        entry["preview"] = existing_preview
-
-    new_defs.append(entry)
-    data["defaults"] = new_defs
-    _save_raw(data)
+        data.setdefault("defaults", {}).pop("source", None)
+        data.setdefault("defaults", {}).pop("preview", None)  # on retire aussi l'aperçu si on retire la source
+    else:
+        d = data.setdefault("defaults", {})
+        d["source"] = source
+    _write_json(p, data)
 
 def set_default_preview(gabarit_name: str, gabarit_version: str, rows: list[dict], columns: list[str]) -> None:
-    """
-    Mémorise un mini-apercu (rows max 20) pour la donnée par défaut du gabarit.
-    Crée l'entrée si elle n'existe pas encore (avec source vide).
-    """
-    data = _load_raw()
-    defs = data.get("defaults", [])
-    v = (gabarit_version or "v1")
-
-    found = False
-    for d in defs:
-        if d.get("gabarit_name") == gabarit_name and (d.get("gabarit_version") or "v1") == v:
-            d["preview"] = {
-                "columns": list(columns or []),
-                "rows": list(rows or [])[:20],
-            }
-            found = True
-            break
-
-    if not found:
-        defs.append({
-            "gabarit_name": gabarit_name,
-            "gabarit_version": v,
-            "source": {},
-            "preview": {
-                "columns": list(columns or []),
-                "rows": list(rows or [])[:20],
-            }
-        })
-
-    data["defaults"] = defs
-    _save_raw(data)
- 
+    p = _gab_path(gabarit_name, gabarit_version)
+    data = _normalize_gabarit_payload(_read_json(p) if p.exists() else {"name": gabarit_name, "version": gabarit_version})
+    d = data.setdefault("defaults", {})
+    d["preview"] = {"columns": list(columns or []), "rows": list(rows or [])[:20]}
+    _write_json(p, data)
 
 def get_default_preview(gabarit_name: str, gabarit_version: str) -> dict | None:
     """
-    Retourne un dict {"columns": [...], "rows": [...]} ou None si absent.
+    Lit directement le JSON du gabarit et renvoie defaults.preview.
     """
-    data = _load_raw()
-    v = (gabarit_version or "v1")
-    for d in data.get("defaults", []):
-        if d.get("gabarit_name") == gabarit_name and (d.get("gabarit_version") or "v1") == v:
-            return d.get("preview") or None
-    return None
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return None
+    try:
+        data = _read_json(p)
+        d = data.get("defaults") or {}
+        return d.get("preview")
+    except Exception:
+        return None
 
 
 def get_default_source(gabarit_name: str, gabarit_version: str) -> dict | None:
-    data = _load_raw()
-    for d in data.get("defaults", []):
-        if d.get("gabarit_name")==gabarit_name and (d.get("gabarit_version") or "v1")==(gabarit_version or "v1"):
-            return d.get("source") or None
-    return None
+    """
+    Lit directement le JSON du gabarit et renvoie defaults.source
+    (on n'utilise pas TableGabarit pour éviter les attributs absents).
+    """
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return None
+    try:
+        data = _read_json(p)
+        d = data.get("defaults") or {}
+        return d.get("source")
+    except Exception:
+        return None
+
 
 def clear_default_source(gabarit_name: str, gabarit_version: str) -> None:
     set_default_source(gabarit_name, gabarit_version, None)
@@ -150,100 +108,156 @@ def _next_supr_suffix(existing_names: list[str], base: str) -> str:
     return f"{base}_Supr_n{str(k).zfill(4)}"
 
 def count_links(gabarit_name: str, gabarit_version: str) -> int:
-    data = _load_raw()
+    """
+    Version file-based : compte les relations 'from' et 'to' en scannant tous les fichiers
+    configuration/gabarits/<Nom>/<version>.json.
+    """
+    _ensure_dirs()
     v = (gabarit_version or "v1").strip()
-    rels = data.get("relations", [])
-    n = 0
-    for r in rels:
-        if (r.get("from_gabarit")==gabarit_name and (r.get("from_version") or "v1")==v) or \
-           (r.get("to_gabarit")==gabarit_name and (r.get("to_version") or "v1")==v):
-            n += 1
-    return n
+    total = 0
+    if not GAB_DIR.exists():
+        return 0
+    for gdir in GAB_DIR.iterdir():
+        if not gdir.is_dir():
+            continue
+        for jf in gdir.glob("*.json"):
+            try:
+                data = _normalize_gabarit_payload(_read_json(jf))
+                for r in data.get("relations", []) or []:
+                    if (
+                        (r.get("from_gabarit") == gabarit_name and (r.get("from_version") or "v1") == v)
+                        or
+                        (r.get("to_gabarit") == gabarit_name and (r.get("to_version") or "v1") == v)
+                    ):
+                        total += 1
+            except Exception:
+                continue
+    return total
 
 def soft_delete_gabarit(gabarit_name: str, gabarit_version: str) -> dict:
     """
-    Supprime 'logiquement' un gabarit:
-      - retire le gabarit actif
-      - enlève son rôle
-      - supprime toutes les relations (from/to) qui le mentionnent
-      - déplace une copie dans trash.gabarits avec un nom renommé 'Nom_Supr_nXXXX'
-    Retourne {"old_name":..., "new_name":..., "removed_relations": N}
+    Archive le gabarit sous configuration/gabarits/_trash/<Nom_Supr_nXXXX>/<version>.json
+    et supprime toutes les relations (in/out) qui le mentionnent. Retourne un dict:
+    { old_name, new_name, removed_relations } où removed_relations est un int.
     """
-    data = _load_raw()
     v = (gabarit_version or "v1").strip()
-
-    # 1) récupérer l'objet gabarit
-    gabs = data.get("gabarits", [])
-    idx = None
-    for i, g in enumerate(gabs):
-        if g.get("name")==gabarit_name and (g.get("version") or "v1")==v:
-            idx = i
-            break
-    if idx is None:
+    p = _gab_path(gabarit_name, v)
+    if not p.exists():
         raise FileNotFoundError("Gabarit introuvable")
 
-    gab = gabs.pop(idx)  # retirer de la liste active
+    # charger le gabarit
+    data = _normalize_gabarit_payload(_read_json(p))
+    base = gabarit_name
 
-    # 2) retirer le rôle
-    roles = [r for r in data.get("roles", []) if not (r.get("gabarit_name")==gabarit_name and (r.get("gabarit_version") or "v1")==v)]
-    data["roles"] = roles
+    # calcul du suffixe nXXXX
+    trash_root = GAB_DIR / "_trash"
+    trash_root.mkdir(parents=True, exist_ok=True)
+    prefix = f"{base}_Supr_n"
+    # chercher le prochain index
+    k = 1
+    existing = [d.name for d in trash_root.iterdir() if d.is_dir() and d.name.startswith(prefix)]
+    if existing:
+        try:
+            k = max(int(x.split(prefix, 1)[-1]) for x in existing) + 1
+        except Exception:
+            k = len(existing) + 1
+    new_name = f"{base}_Supr_n{str(k).zfill(4)}"
 
-    # 3) retirer toutes les relations (from/to) qui le mentionnent
-    rels = data.get("relations", [])
-    before = len(rels)
-    rels = [r for r in rels if not (
-        (r.get("from_gabarit")==gabarit_name and (r.get("from_version") or "v1")==v) or
-        (r.get("to_gabarit")==gabarit_name and (r.get("to_version") or "v1")==v)
-    )]
-    removed = before - len(rels)
-    data["relations"] = rels
+    # MAJ du nom dans le JSON
+    data["name"] = new_name
 
-    # 4) renommer et pousser dans la trash
-    trash_list = data.setdefault("trash", {}).setdefault("gabarits", [])
-    active_names = [x.get("name") for x in trash_list if x.get("name", "").startswith(f"{gabarit_name}_Supr_n")]
-    new_name = _next_supr_suffix(active_names, gabarit_name)
+    # écrire dans la corbeille
+    dest = trash_root / new_name / f"{v}.json"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(dest, data)
 
-    gab["name"] = new_name
-    trash_list.append(gab)
+    # supprimer l'ancien fichier + dossier si vide
+    try:
+        p.unlink()
+        try:
+            p.parent.rmdir()
+        except Exception:
+            pass
+    except Exception:
+        pass
 
-    data["gabarits"] = gabs
-    _save_raw(data)
+    # Purger les relations (in/out) dans TOUS les gabarits actifs (hors _trash)
+    removed = 0
+    if GAB_DIR.exists():
+        for gdir in GAB_DIR.iterdir():
+            if not gdir.is_dir():
+                continue
+            if gdir.name.startswith("_"):  # ignore corbeille
+                continue
+            for jf in gdir.glob("*.json"):
+                try:
+                    d = _normalize_gabarit_payload(_read_json(jf))
+                    rels = d.get("relations", []) or []
+                    before = len(rels)
+                    rels = [r for r in rels if not (
+                        (r.get("from_gabarit") == gabarit_name and (r.get("from_version") or "v1") == v)
+                        or
+                        (r.get("to_gabarit") == gabarit_name and (r.get("to_version") or "v1") == v)
+                    )]
+                    if len(rels) != before:
+                        removed += (before - len(rels))
+                        d["relations"] = rels
+                        _write_json(jf, d)
+                except Exception:
+                    continue
 
     return {"old_name": gabarit_name, "new_name": new_name, "removed_relations": removed}
 
 def list_gabarits() -> List[TableGabarit]:
-    data = _load_raw()
-    return [TableGabarit(**g) for g in data.get("gabarits", [])]
+    _ensure_dirs()
+    out: List[TableGabarit] = []
+    if not GAB_DIR.exists():
+        return out
+    for gdir in sorted([p for p in GAB_DIR.iterdir() if p.is_dir()]):
+        if gdir.name.startswith("_"):      # ignore _trash, _index, etc.
+            continue
+        for jf in sorted(gdir.glob("*.json")):
+            try:
+                data = _normalize_gabarit_payload(_read_json(jf))
+                out.append(TableGabarit(**data))
+            except Exception:
+                continue
+    return out
+
 
 def get_gabarit(name: str, version: str = "v1") -> Optional[TableGabarit]:
-    for g in list_gabarits():
-        if g.name == name and g.version == version:
-            return g
-    return None
+    p = _gab_path((name or "").strip(), (version or "v1").strip())
+    if not p.exists():
+        return None
+    try:
+        data = _normalize_gabarit_payload(_read_json(p))
+        return TableGabarit(**data)
+    except Exception:
+        return None
 
 def upsert_gabarit(gabarit: TableGabarit) -> None:
-    data = _load_raw()
-    items = data.get("gabarits", [])
-    items = [g for g in items if not (g.get("name") == gabarit.name and g.get("version") == gabarit.version)]
-    items.append(gabarit.model_dump(mode="json"))
-    data["gabarits"] = items
-    _save_raw(data)
-    logger.info(f"Gabarit upsert: {gabarit.name} v{gabarit.version}")
+    _ensure_dirs()
+    payload = _normalize_gabarit_payload(gabarit.model_dump(mode="json"))
+    p = _gab_path(payload["name"], payload["version"])
+    _write_json(p, payload)
+    logger.info(f"Gabarit upsert: {payload['name']} {payload['version']} -> {p}")
 
 def delete_gabarit(name: str, version: str = "v1") -> bool:
-    data = _load_raw()
-    items = data.get("gabarits", [])
-    new_items = [g for g in items if not (g.get("name") == name and g.get("version") == version)]
-    if len(new_items) == len(items):
+    p = _gab_path((name or "").strip(), (version or "v1").strip())
+    if not p.exists():
         return False
-    data["gabarits"] = new_items
-    _save_raw(data)
-    logger.info(f"Gabarit supprimé: {name} v{version}")
+    p.unlink()
+    # si le dossier est vide, on le supprime
+    try:
+        p.parent.rmdir()
+    except Exception:
+        pass
+    logger.info(f"Gabarit supprimé: {name} {version}")
     return True
 
 # === Méthodes & dépendances de colonnes (MVP) ================================
 
-from typing import Iterable, Set, Dict, Any, List
+from typing import Iterable, Set
 
 def _safe_get(d: Dict[str, Any], *path, default=None):
     cur = d
@@ -333,42 +347,36 @@ __all__ = [
     "get_method_requirements", "load_registry"
 ]
 
+
 def set_role(gabarit_name: str, gabarit_version: str, role: str) -> None:
-    """
-    role ∈ {'fact','dimension','mixed'} – stocké dans le registre (clé: name+version)
-    """
     role = (role or "").strip().lower()
     assert role in {"fact", "dimension", "mixed"}, "role invalide"
-
-    data = _load_raw()
-    roles = data.get("roles", [])
-    # on remplace l'existant pour (name, version)
-    roles = [r for r in roles
-             if not (r.get("gabarit_name") == gabarit_name and (r.get("gabarit_version") or "v1") == (gabarit_version or "v1"))]
-    roles.append({
-        "gabarit_name": gabarit_name,
-        "gabarit_version": gabarit_version or "v1",
-        "role": role,
-    })
-    data["roles"] = roles
-    _save_raw(data)
-
+    p = _gab_path(gabarit_name, gabarit_version)
+    data = _normalize_gabarit_payload(_read_json(p) if p.exists() else {"name": gabarit_name, "version": gabarit_version})
+    data["role"] = role
+    _write_json(p, data)
 
 def get_role(gabarit_name: str, gabarit_version: str) -> str | None:
-    data = _load_raw()
-    for r in data.get("roles", []):
-        if r.get("gabarit_name") == gabarit_name and (r.get("gabarit_version") or "v1") == (gabarit_version or "v1"):
-            return r.get("role")
-    return None
-
+    """
+    Lit directement le JSON du gabarit et renvoie le champ 'role' (si présent).
+    On ne passe pas par TableGabarit pour éviter les attributs absents du modèle.
+    """
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return None
+    try:
+        data = _read_json(p)
+        role = (data or {}).get("role")
+        return (role or None)
+    except Exception:
+        return None
 
 def add_relation(from_gabarit: str, from_version: str,
                  to_gabarit: str, to_version: str,
                  left_key: str, right_key: str) -> dict:
-    """
-    Enregistre une relation (clé↔clé) au niveau 'catalogue'.
-    Retourne l'item créé, avec 'relation_id' stable.
-    """
+    p = _gab_path(from_gabarit, from_version)
+    data = _normalize_gabarit_payload(_read_json(p) if p.exists() else {"name": from_gabarit, "version": from_version})
+    rels = data.setdefault("relations", [])
     item = {
         "from_gabarit": (from_gabarit or "").strip(),
         "from_version": (from_version or "v1").strip(),
@@ -377,203 +385,55 @@ def add_relation(from_gabarit: str, from_version: str,
         "left_key": (left_key or "").strip(),
         "right_key": (right_key or "").strip(),
     }
-    # id stable
+    # id stable pour éviter les doublons exacts
     item["relation_id"] = (
         f"{item['from_gabarit']}|{item['from_version']}->"
         f"{item['to_gabarit']}|{item['to_version']}::"
         f"{item['left_key']}={item['right_key']}"
     )
-
-    data = _load_raw()
-    rels = data.get("relations", [])
-
-    # anti-dup EXACT
-    if not any(r == item for r in rels):
+    if not any(r.get("relation_id") == item["relation_id"] for r in rels if isinstance(r, dict)):
         rels.append(item)
-        data["relations"] = rels
-        _save_raw(data)
+        _write_json(p, data)
     return item
-
 
 def delete_relation(from_gabarit: str, from_version: str,
                     to_gabarit: str, to_version: str,
                     left_key: str, right_key: str) -> bool:
-    data = _load_raw()
-    rels = data.get("relations", [])
+    p = _gab_path(from_gabarit, from_version)
+    if not p.exists():
+        return False
+    data = _read_json(p)
+    rels = data.get("relations") or []
     before = len(rels)
-    rels = [r for r in rels if not (
-        r.get("from_gabarit") == (from_gabarit or "").strip()
-        and (r.get("from_version") or "v1") == (from_version or "v1").strip()
-        and r.get("to_gabarit") == (to_gabarit or "").strip()
-        and (r.get("to_version") or "v1") == (to_version or "v1").strip()
-        and r.get("left_key") == (left_key or "").strip()
-        and r.get("right_key") == (right_key or "").strip()
-    )]
-    changed = len(rels) != before
-    if changed:
+    rels = [
+        r for r in rels if not (
+            (r.get("from_gabarit")==from_gabarit and (r.get("from_version") or "v1")==from_version) and
+            (r.get("to_gabarit")==to_gabarit and (r.get("to_version") or "v1")==to_version) and
+            (r.get("left_key")==left_key and r.get("right_key")==right_key)
+        )
+    ]
+    if len(rels) != before:
         data["relations"] = rels
-        _save_raw(data)
-    return changed
-
+        _write_json(p, data)
+        return True
+    return False
 
 def get_relations(gabarit_name: str, gabarit_version: str) -> list[dict]:
     """
-    Relations SORTANTES (FROM = ce gabarit).
+    Lit directement le JSON du gabarit et renvoie la liste 'relations'.
+    Évite de passer par TableGabarit (qui ne porte pas ce champ).
     """
-    data = _load_raw()
-    rels = data.get("relations", [])
-    return [
-        r for r in rels
-        if r.get("from_gabarit") == (gabarit_name or "").strip()
-        and (r.get("from_version") or "v1") == (gabarit_version or "v1").strip()
-    ]
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return []
+    try:
+        data = _read_json(p)
+        rels = data.get("relations") or []
+        # on garantit une liste de dicts
+        return [dict(r) for r in rels if isinstance(r, dict)]
+    except Exception:
+        return []
 
-# ====== MÉTHODES DE GABARIT ==================================================
-# Stockage dans le même registre JSON, sous clés:
-#  - "methods": [ { "id", "name", "description", "output_column", "param_schema": [...], "required_columns": [...], "code" } ]
-#  - "gabarit_method_links": [ { "gabarit_name", "gabarit_version", "method_id", "order", "enabled": bool } ]
-
-import uuid
-
-def _ensure_methods_keys(data: dict) -> dict:
-    if "methods" not in data:
-        data["methods"] = []
-    if "gabarit_method_links" not in data:
-        data["gabarit_method_links"] = []
-    return data
-
-def list_methods() -> list[dict]:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    return data.get("methods", [])
-
-def get_method(method_id: str) -> dict | None:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    for m in data["methods"]:
-        if m.get("id") == method_id:
-            return m
-    return None
-
-def upsert_method(
-    name: str,
-    description: str,
-    param_schema: list[dict],
-    required_columns: list[str],
-    code: str,
-    output_column: str | None = None,
-    method_id: str | None = None,
-) -> dict:
-    """
-    Méthode = colonne calculée.
-    - output_column: nom de la colonne à créer/écraser
-    - code: snippet Python qui doit définir une variable 'value'
-            (Series/array/scalar) qui sera assignée à df[output_column]
-    - param_schema: liste d'objets:
-        - name: str
-        - type: "text"|"number"|"boolean"|"select"|"select_from_column"
-        - default: any (optionnel)
-        - options: list[str] (si type == "select")
-        - source_column: str (si type == "select_from_column")
-        - label: str (optionnel)
-    """
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    methods = data["methods"]
-
-    payload = {
-        "name": name,
-        "description": description,
-        "output_column": (output_column or "").strip(),
-        "param_schema": param_schema or [],
-        "required_columns": required_columns or [],
-        "code": code or "",
-    }
-
-    if method_id:
-        # update
-        found = False
-        for i, m in enumerate(methods):
-            if m.get("id") == method_id:
-                payload["id"] = method_id
-                methods[i] = payload
-                found = True
-                break
-        if not found:
-            raise ValueError(f"Method not found: {method_id}")
-        data["methods"] = methods
-        _save_raw(data)
-        return methods[i]
-    else:
-        mid = str(uuid.uuid4())
-        payload["id"] = mid
-        methods.append(payload)
-        data["methods"] = methods
-        _save_raw(data)
-        return payload
-
-def delete_method(method_id: str) -> None:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    methods = [m for m in data["methods"] if m.get("id") != method_id]
-    links = [l for l in data["gabarit_method_links"] if l.get("method_id") != method_id]
-    data["methods"] = methods
-    data["gabarit_method_links"] = links
-    _save_raw(data)
-
-def attach_method_to_gabarit(gabarit_name: str, gabarit_version: str, method_id: str, order: int = 1, enabled: bool = True) -> None:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    links = data["gabarit_method_links"]
-
-    # remove existing identical link
-    links = [l for l in links if not (
-        l.get("gabarit_name") == gabarit_name and
-        (l.get("gabarit_version") or "v1") == (gabarit_version or "v1") and
-        l.get("method_id") == method_id
-    )]
-
-    links.append({
-        "gabarit_name": gabarit_name,
-        "gabarit_version": gabarit_version or "v1",
-        "method_id": method_id,
-        "order": int(order),
-        "enabled": bool(enabled),
-    })
-    data["gabarit_method_links"] = links
-    _save_raw(data)
-
-def detach_method_from_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> None:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    links = [
-        l for l in data["gabarit_method_links"]
-        if not (
-            l.get("gabarit_name") == gabarit_name and
-            (l.get("gabarit_version") or "v1") == (gabarit_version or "v1") and
-            l.get("method_id") == method_id
-        )
-    ]
-    data["gabarit_method_links"] = links
-    _save_raw(data)
-
-def list_gabarit_methods(gabarit_name: str, gabarit_version: str) -> list[dict]:
-    data = _load_raw()
-    data = _ensure_methods_keys(data)
-    links = [
-        l for l in data["gabarit_method_links"]
-        if l.get("gabarit_name") == gabarit_name and (l.get("gabarit_version") or "v1") == (gabarit_version or "v1")
-    ]
-    methods_index = {m["id"]: m for m in data.get("methods", [])}
-    enriched = []
-    for l in sorted(links, key=lambda x: x.get("order", 1)):
-        m = methods_index.get(l["method_id"])
-        if m:
-            enriched.append({
-                "link": l,
-                "method": m,
-            })
-    return enriched
 
 # ====== MÉTHODES PAR GABARIT =================================================
 # Stockage dans le registre JSON sous clé:
@@ -596,20 +456,31 @@ def _ensure_gab_methods_key(data: dict) -> dict:
 def _gab_key(gabarit_name: str, gabarit_version: str) -> str:
     return f"{gabarit_name}|{gabarit_version or 'v1'}"
 
+
 def list_methods_for_gabarit(gabarit_name: str, gabarit_version: str) -> list[dict]:
-    data = _load_raw()
-    _ensure_gab_methods_key(data)
-    arr = data["gabarit_methods"].get(_gab_key(gabarit_name, gabarit_version), [])
-    # tri par order croissant
-    return sorted(arr, key=lambda m: m.get("order", 1))
+    """
+    Lit directement le fichier configuration/gabarits/<name>/<version>.json
+    pour récupérer la liste 'methods'. On évite TableGabarit (qui ne porte pas ce champ).
+    """
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return []
+    try:
+        data = _read_json(p)
+        arr = data.get("methods") or []
+        arr = [dict(m) for m in arr if isinstance(m, dict)]
+        return sorted(arr, key=lambda m: m.get("order", 1))
+    except Exception:
+        return []
+
 
 def get_method_for_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> dict | None:
-    data = _load_raw()
-    _ensure_gab_methods_key(data)
-    for m in data["gabarit_methods"].get(_gab_key(gabarit_name, gabarit_version), []):
+    methods = list_methods_for_gabarit(gabarit_name, gabarit_version)
+    for m in methods:
         if m.get("id") == method_id:
             return m
     return None
+
 
 def upsert_method_for_gabarit(
     gabarit_name: str,
@@ -624,24 +495,15 @@ def upsert_method_for_gabarit(
     order: int | None = None,
     method_id: str | None = None,
 ) -> dict:
-    """
-    Crée ou met à jour une 'méthode-colonne' propre au gabarit.
-    Champs:
-      - output_column: nom de la colonne calculée
-      - code: snippet Python définissant 'value'
-      - order: ordre d'exécution (entier)
-    """
-    data = _load_raw()
-    _ensure_gab_methods_key(data)
-    key = _gab_key(gabarit_name, gabarit_version)
-    arr = data["gabarit_methods"].get(key, [])
+    p = _gab_path(gabarit_name, gabarit_version)
+    data = _normalize_gabarit_payload(_read_json(p) if p.exists() else {"name": gabarit_name, "version": gabarit_version})
+    ms = list(data.get("methods") or [])
 
     if method_id:
         # update
-        found = False
-        for i, m in enumerate(arr):
+        for i, m in enumerate(ms):
             if m.get("id") == method_id:
-                new_m = {
+                ms[i] = {
                     "id": method_id,
                     "name": name,
                     "description": description,
@@ -651,17 +513,16 @@ def upsert_method_for_gabarit(
                     "code": code or "",
                     "order": int(order if order is not None else m.get("order", 1)),
                 }
-                arr[i] = new_m
-                found = True
                 break
-        if not found:
+        else:
             raise ValueError(f"Method not found in gabarit: {method_id}")
-        data["gabarit_methods"][key] = arr
-        _save_raw(data)
-        return new_m
+        data["methods"] = ms
+        _write_json(p, data)
+        return ms[i]
     else:
+        import uuid
         mid = str(uuid.uuid4())
-        new_order = int(order) if order is not None else (arr[-1].get("order", 0) + 1 if arr else 1)
+        new_order = int(order) if order is not None else (ms[-1].get("order", 0) + 1 if ms else 1)
         entry = {
             "id": mid,
             "name": name,
@@ -672,26 +533,25 @@ def upsert_method_for_gabarit(
             "code": code or "",
             "order": new_order,
         }
-        arr.append(entry)
-        data["gabarit_methods"][key] = arr
-        _save_raw(data)
+        ms.append(entry)
+        data["methods"] = ms
+        _write_json(p, data)
         return entry
 
 def delete_method_for_gabarit(gabarit_name: str, gabarit_version: str, method_id: str) -> None:
-    data = _load_raw()
-    _ensure_gab_methods_key(data)
-    key = _gab_key(gabarit_name, gabarit_version)
-    arr = data["gabarit_methods"].get(key, [])
-    arr = [m for m in arr if m.get("id") != method_id]
-    data["gabarit_methods"][key] = arr
-    _save_raw(data)
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return
+    data = _normalize_gabarit_payload(_read_json(p))
+    data["methods"] = [m for m in (data.get("methods") or []) if m.get("id") != method_id]
+    _write_json(p, data)
 
 def reorder_methods_for_gabarit(gabarit_name: str, gabarit_version: str, ordered_ids: list[str]) -> None:
-    """Applique un nouvel ordre aux méthodes du gabarit selon la liste d'ids fournie."""
-    data = _load_raw()
-    _ensure_gab_methods_key(data)
-    key = _gab_key(gabarit_name, gabarit_version)
-    arr = data["gabarit_methods"].get(key, [])
+    p = _gab_path(gabarit_name, gabarit_version)
+    if not p.exists():
+        return
+    data = _normalize_gabarit_payload(_read_json(p))
+    arr = list(data.get("methods") or [])
     idx = {m["id"]: m for m in arr}
     new_arr = []
     for pos, mid in enumerate(ordered_ids, start=1):
@@ -699,13 +559,13 @@ def reorder_methods_for_gabarit(gabarit_name: str, gabarit_version: str, ordered
             m = idx[mid]
             m["order"] = pos
             new_arr.append(m)
-    # rajoute les éventuelles méthodes non citées en fin
     for m in arr:
         if m["id"] not in ordered_ids:
             m["order"] = len(new_arr) + 1
             new_arr.append(m)
-    data["gabarit_methods"][key] = new_arr
-    _save_raw(data)
+    data["methods"] = new_arr
+    _write_json(p, data)
+
 
 # --- AJOUT : façade full dataframe --------------------------------------------
 

@@ -252,12 +252,18 @@ class ReportService:
             "pptx_path": str(output_dir / f"{base_name}.pptx")
         }
 
-
     def _prepare_excel(self, parameters: Dict[str, Any], output_path: str) -> Path:
         """Prépare le fichier Excel avec les paramètres"""
         import shutil
         
-        template_excel = self.template_dir / "master.xlsx"
+        # ✅ CORRECTION : Charger depuis configuration/templates/<Nom>/<Version>/master.xlsx
+        from pathlib import Path
+        config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
+        template_excel = config_root / self.config.name / self.config.version / "master.xlsx"
+        
+        if not template_excel.exists():
+            raise FileNotFoundError(f"Fichier Excel master introuvable : {template_excel}")
+        
         shutil.copy2(template_excel, output_path)
         
         logger.info(f"Excel copié : {output_path}")
@@ -281,7 +287,7 @@ class ReportService:
             wb.save()
         
         return Path(output_path)
-    
+
     def _load_data(self, excel_path: Path) -> Dict[str, Any]:
         """Charge les données depuis Excel"""
         connector = ExcelConnector(str(excel_path))
@@ -297,12 +303,20 @@ class ReportService:
         
         return data
     
+    
     def _generate_powerpoint(self, excel_path: Path, output_path: str, parameters: Dict[str, Any]) -> Path:
         """Génère le PowerPoint final en préservant les slides qui seront bouclées"""
         import shutil
         import os
         
-        template_ppt = self.template_dir / "master.pptx"
+        # ✅ CORRECTION : Charger depuis configuration/templates/<Nom>/<Version>/master.pptx
+        from pathlib import Path
+        config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
+        template_ppt = config_root / self.config.name / self.config.version / "master.pptx"
+        
+        if not template_ppt.exists():
+            raise FileNotFoundError(f"Fichier PowerPoint master introuvable : {template_ppt}")
+        
         shutil.copy2(template_ppt, output_path)
         
         logger.info(f"PowerPoint copié : {output_path}")
@@ -355,6 +369,7 @@ class ReportService:
         
         return Path(output_path)
     
+
     def _apply_loops(self, ppt_path: Path, excel_path: Path) -> None:
         """Applique les boucles en gardant Excel ET PowerPoint ouverts simultanément"""
         if not self.config.loops:
@@ -490,20 +505,38 @@ class ReportService:
                     logger.error(f"Tableau 'Loop' introuvable dans '{loop_config.sheet_name}'")
                     return None
                 
-                # Chercher la ligne correspondant au loop_id
-                for row in table.DataBodyRange.Rows:
-                    id_value = row.Columns(1).Value
-                    if id_value and str(id_value).strip() == loop_config.loop_id:
-                        count_value = row.Columns(3).Value  # Colonne "Nombre de tests"
-                        return int(count_value) if count_value else 0
+                # ✅ CORRECTION : Utiliser Range.Value au lieu d'énumérer les Rows
+                try:
+                    data_range = table.DataBodyRange
+                    if data_range is None:
+                        logger.warning("Table Loop vide (DataBodyRange = None)")
+                        return None
+                    
+                    # Lire toutes les données d'un coup
+                    values = data_range.Value
+                    if not values:
+                        return None
+                    
+                    # Chercher la ligne correspondant au loop_id
+                    for row in values:
+                        if not row or len(row) < 3:
+                            continue
+                        id_value = row[0]  # Colonne 1 : loop_id
+                        if id_value and str(id_value).strip() == loop_config.loop_id:
+                            count_value = row[2]  # Colonne 3 : Nombre de tests
+                            return int(count_value) if count_value else 0
+                    
+                    logger.error(f"Loop ID '{loop_config.loop_id}' non trouvé dans tableau Loop")
+                    return None
                 
-                logger.error(f"Loop ID '{loop_config.loop_id}' non trouvé dans tableau Loop")
-                return None
+                except Exception as e:
+                    logger.error(f"Erreur lecture données Loop : {e}")
+                    return None
         
         except Exception as e:
             logger.error(f"Erreur lecture Loop : {e}")
             return None
-    
+
     def _update_loop_iteration(self, excel_path: Path, loop_config: LoopConfig, iteration: int) -> None:
         """Met à jour la valeur d'itération dans le tableau Loop"""
         try:
@@ -807,6 +840,7 @@ class ReportService:
         except Exception as e:
             logger.warning(f"Erreur rafraîchissement graphiques : {e}")
 
+
     def _update_loop_iteration_with_wb(self, excel_wb, loop_config: LoopConfig, iteration: int) -> None:
         """Met à jour la valeur d'itération dans le tableau Loop avec workbook ouvert"""
         try:
@@ -821,10 +855,20 @@ class ReportService:
             if not table:
                 return
             
-            for row in table.DataBodyRange.Rows:
-                id_value = row.Columns(1).Value
+            # ✅ CORRECTION : Trouver la bonne ligne et mettre à jour directement
+            data_range = table.DataBodyRange
+            if data_range is None:
+                return
+            
+            # Parcourir les lignes pour trouver le loop_id
+            for i in range(1, data_range.Rows.Count + 1):
+                id_cell = data_range.Rows(i).Columns(1)
+                id_value = id_cell.Value
+                
                 if id_value and str(id_value).strip() == loop_config.loop_id:
-                    row.Columns(2).Value = iteration
+                    # Mettre à jour la colonne 2 (iteration)
+                    iter_cell = data_range.Rows(i).Columns(2)
+                    iter_cell.Value = iteration
                     
                     # Forcer le recalcul complet
                     excel_wb.app.calculate()

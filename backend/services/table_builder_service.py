@@ -22,6 +22,49 @@ from backend.services.gabarit_registry import (
 )
 from backend.services.dataset_service import get_default_dataframe_for_gabarit
 
+# === DEBUG ENRICHISSEMENTS ===
+DEBUG_ENRICH = True
+
+def _debug_merge(left_df, right_df, *, how: str, left_on: str, right_on: str, tag: str = ""):
+    """Remplace un pd.merge pour tracer ce qui se passe lors des enrichissements."""
+    import logging
+    logger = logging.getLogger("kaivaa.enrich")
+    try:
+        l_nonnull = left_df[left_on].notna().sum() if left_on in left_df.columns else 0
+        r_nonnull = right_df[right_on].notna().sum() if right_on in right_df.columns else 0
+        l_dtype = str(left_df[left_on].dtype) if left_on in left_df.columns else "?"
+        r_dtype = str(right_df[right_on].dtype) if right_on in right_df.columns else "?"
+
+        if left_on in left_df.columns:
+            l_sample = list(map(str, left_df[left_on].dropna().astype(str).head(5).unique()))
+        else:
+            l_sample = []
+        if right_on in right_df.columns:
+            r_sample = list(map(str, right_df[right_on].dropna().astype(str).head(5).unique()))
+        else:
+            r_sample = []
+
+        if DEBUG_ENRICH:
+            logger.info(
+                f"[ENRICH{(':'+tag) if tag else ''}] how={how} "
+                f"left({len(left_df)} rows) on={left_on}[{l_dtype}] nnz={l_nonnull} sample={l_sample} "
+                f"right({len(right_df)} rows) on={right_on}[{r_dtype}] nnz={r_nonnull} sample={r_sample}"
+            )
+        out = left_df.merge(
+            right_df,
+            how=how,
+            left_on=left_on,
+            right_on=right_on,
+            suffixes=("_L", "_R"),
+        )
+        if DEBUG_ENRICH:
+            logger.info(f"[ENRICH{(':'+tag) if tag else ''}] result rows={len(out)} cols={len(out.columns)}")
+        return out
+    except Exception as e:
+        if DEBUG_ENRICH:
+            logger.exception(f"[ENRICH{(':'+tag) if tag else ''}] merge failed: {e}")
+        raise
+
 
 def _normalize_key(series: pd.Series, colname: str) -> pd.Series:
     """Normalise les clés pour les jointures (SIREN/SIRET, etc.)"""
@@ -239,13 +282,16 @@ def build_table_from_usage(
             right_subset = df_to[right_cols].drop_duplicates()
             
             # MERGE
-            df = df.merge(
+            # MERGE (avec debug)
+            df = _debug_merge(
+                df,
                 right_subset,
+                how="left",
                 left_on=left_key,
                 right_on=right_key,
-                how="left",
+                tag=f"{frm}->{to}"
             )
-            
+
             # Supprimer la clé de droite
             if right_key in df.columns:
                 df.drop(columns=[right_key], inplace=True)
@@ -277,14 +323,21 @@ def build_table_from_usage(
     # 4. Script Python overlay
     code = (usage.get("overlay_python") or "").strip()
     if code:
-        df2, err2 = _apply_overlay(df, code, params=params)  # ✅ INJECTION params
+        df2, err2 = _apply_overlay(df, code, params=params)
         if err2 is None and isinstance(df2, pd.DataFrame):
             df = df2
             if log_kpis:
                 logger.info(f"🧪 Script Python appliqué (avec {len(params or {})} paramètre(s))")
         else:
             return None, err2
-    
+
+    # ✅ 4-bis. Sécuriser les noms de colonnes (AVANT renommages/tri)
+    if df.columns.duplicated().any():
+        dup_names = list(df.columns[df.columns.duplicated(keep=False)])
+        if log_kpis:
+            logger.warning(f"⚠️ Noms de colonnes dupliqués détectés : {', '.join(map(str, dup_names[:5]))}")
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
     # 5. Renommages de colonnes
     ren: dict[str, str] = usage.get("final_renames") or {}
     if ren:
@@ -314,12 +367,7 @@ def build_table_from_usage(
             if log_kpis:
                 logger.info(f"📊 Tri appliqué sur {len(by)} colonne(s)")
     
-    # 6-bis. Sécuriser les noms de colonnes (supprimer les doublons)
-    if df.columns.duplicated().any():
-        dup_names = list(df.columns[df.columns.duplicated(keep=False)])
-        if log_kpis:
-            logger.warning(f"⚠️ Noms de colonnes dupliqués détectés : {', '.join(map(str, dup_names[:5]))}")
-        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+
     
     # 7. Ordre final / exclusions
     src_order = usage.get("final_order") or df.columns.tolist()

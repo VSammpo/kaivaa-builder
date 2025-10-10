@@ -1,0 +1,17 @@
+{
+  "name": "ezsrtgerg_Supr_n0001",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "sdf",
+      "type": "text",
+      "is_key": false
+    }
+  ],
+  "title": "ezsrtgerg",
+  "methods": [],
+  "defaults": {},
+  "relations": [],
+  "role": "mixed"
+}

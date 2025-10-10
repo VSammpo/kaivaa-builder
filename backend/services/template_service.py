@@ -15,6 +15,48 @@ from backend.generator.template_generator import TemplateGenerator
 import re
 from zoneinfo import ZoneInfo
 from datetime import datetime
+from backend.services.database_service import DatabaseService
+# === Helpers de chemin/version ===
+from pathlib import Path
+
+def _templates_root_dir() -> Path:
+    # Utilise configuration/templates comme racine file-based
+    return Path(__file__).resolve().parents[2] / "configuration" / "templates"
+
+def _ensure_version_layout(name: str, version: str) -> Path:
+    """
+    Garantit l’arborescence versionnée et migre l'ancien fichier <version>.json
+    qui aurait pu être écrit à la racine du template vers <Version>/config.json.
+    """
+    root = _templates_root_dir() / name
+    version_dir = root / str(version)
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    legacy_json = root / f"{version}.json"
+    cfg_path = version_dir / "config.json"
+
+    # Migration silencieuse si un ancien fichier existe
+    if legacy_json.exists() and not cfg_path.exists():
+        try:
+            cfg_path.write_bytes(legacy_json.read_bytes())
+            legacy_json.unlink()
+        except Exception:
+            pass  # on n'arrête pas l'app si la migration échoue
+
+    # Si par erreur un <version>.json existe encore, on l'efface
+    if legacy_json.exists():
+        try:
+            legacy_json.unlink()
+        except Exception:
+            pass
+
+    return version_dir
+
+# --- NOUVEL EMPLACEMENT DES FICHIERS DE TEMPLATES ---
+def _templates_root_dir() -> Path:
+    # si PathConfig.TEMPLATES existe, on l’ignore ici au profit de configuration/templates
+    return Path(__file__).resolve().parents[2] / "configuration" / "templates"
+
 
 class TemplateService:
     """Service CRUD pour les templates"""
@@ -49,18 +91,142 @@ class TemplateService:
         """
         logger.info(f"Création du template '{config.name}'")
         
-        # Vérifier si le nom existe déjà
-        existing = self.db.query(Template).filter_by(name=config.name).first()
+        generator = TemplateGenerator(template_config=config)
+
+
+
+        # Vérifier unicité par (nom, version)
+        existing = (
+            self.db.query(Template)
+            .filter(Template.name == config.name, Template.version == config.version)
+            .first()
+        )
         if existing:
-            raise ValueError(f"Un template nommé '{config.name}' existe déjà")
+            raise ValueError(f"Un template '{config.name}' en version '{config.version}' existe déjà")
+
         
         # Générer les fichiers du template
-        generator = TemplateGenerator(config)
         created_files = generator.generate(
             ppt_source=ppt_source,
             excel_source=excel_source,
             create_new=(ppt_source is None and excel_source is None)
         )
+
+        # === CORRECTION : Gérer tous les dossiers legacy (templates/ ET template/) ===
+        try:
+            from backend.config import PathConfig
+            project_root = Path(PathConfig.ROOT)
+        except Exception:
+            project_root = Path(__file__).resolve().parents[2]
+
+        # ✅ 1. Déplacer depuis templates/ (pluriel)
+        legacy_dir_plural = project_root / "templates" / config.name
+        if legacy_dir_plural.exists():
+            import shutil
+            target_dir = PathConfig.TEMPLATES / config.name
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            shutil.move(str(legacy_dir_plural), str(target_dir))
+            try:
+                legacy_dir_plural.parent.rmdir()  # Supprime templates/ si vide
+            except Exception:
+                pass
+
+        # ✅ 2. Déplacer depuis template/ (singulier)
+        legacy_dir_singular = project_root / "template" / config.name
+        if legacy_dir_singular.exists():
+            import shutil
+            target_dir = PathConfig.TEMPLATES / config.name
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            # Fusionner avec l'existant si nécessaire
+            if target_dir.exists():
+                for item in legacy_dir_singular.iterdir():
+                    shutil.move(str(item), str(target_dir / item.name))
+            else:
+                shutil.move(str(legacy_dir_singular), str(target_dir))
+            try:
+                legacy_dir_singular.rmdir()  # Supprime template/ si vide
+            except Exception:
+                pass
+
+        # ✅ 3. Supprimer les dossiers racine s'ils sont vides
+        for legacy_root in [project_root / "templates", project_root / "template"]:
+            try:
+                if legacy_root.exists() and not any(legacy_root.iterdir()):
+                    legacy_root.rmdir()
+            except Exception:
+                pass
+
+        # === Sortie sous configuration/templates/<Nom>/<Version>/... ===
+        version_dir = _ensure_version_layout(config.name, config.version)
+
+        conf_dest  = version_dir / "config.json"
+        ppt_dest   = version_dir / "master.pptx"
+        excel_dest = version_dir / "master.xlsx"
+
+        from shutil import move
+        if created_files.get('config'):
+            move(str(created_files['config']), str(conf_dest))
+        if created_files.get('ppt'):
+            move(str(created_files['ppt']), str(ppt_dest))
+        if created_files.get('excel'):
+            move(str(created_files['excel']), str(excel_dest))
+
+        created_files = {
+            'config': conf_dest if conf_dest.exists() else None,
+            'ppt': ppt_dest if ppt_dest.exists() else None,
+            'excel': excel_dest if excel_dest.exists() else None,
+        }
+
+
+
+
+        # === Déplacer aussi les artefacts restants générés dans l'ancien dossier racine ===
+        from shutil import move
+        project_root = Path(__file__).resolve().parents[2]
+
+        # Traiter templates/ ET template/ (singulier)
+        for legacy_base in ("templates", "template"):
+            legacy_root = project_root / legacy_base / config.name
+            if legacy_root.exists() and legacy_root.is_dir():
+                for item in legacy_root.iterdir():
+                    try:
+                        if item.is_dir():
+                            # ex: queries/
+                            dest = version_dir / item.name
+                            dest.mkdir(parents=True, exist_ok=True)
+                            for sub in item.iterdir():
+                                move(str(sub), str(dest / sub.name))
+                            try:
+                                item.rmdir()
+                            except Exception:
+                                pass
+                        else:
+                            # ex: README, autres fichiers
+                            move(str(item), str(version_dir / item.name))
+                    except Exception:
+                        # on ne bloque pas la création si un move échoue
+                        pass
+                # supprimer le dossier '<legacy_base>/<Nom>' s'il est vide
+                try:
+                    legacy_root.rmdir()
+                except Exception:
+                    pass
+
+        # tenter aussi de supprimer les dossiers racine 'templates' et 'template' s'ils sont vides
+        for maybe_empty in (project_root / "templates", project_root / "template"):
+            try:
+                next(maybe_empty.iterdir())
+            except StopIteration:
+                try:
+                    maybe_empty.rmdir()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+
         
         # Créer l'entrée en base
         template = Template(
@@ -185,43 +351,79 @@ class TemplateService:
         logger.success(f"Template '{template.name}' mis à jour")
         return template
     
-    def delete_template(self, template_id: int, hard_delete: bool = False) -> bool:
-        """
-        Supprime un template.
-        
-        Args:
-            template_id: ID du template
-            hard_delete: Si True, suppression définitive, sinon désactivation
-            
-        Returns:
-            True si succès
-        """
+    def delete_template(self, template_id: int, *, hard_delete: bool = False) -> bool:
         template = self.get_template(template_id)
         if not template:
             raise ValueError(f"Template {template_id} non trouvé")
-        
+
         if hard_delete:
             logger.warning(f"Suppression DÉFINITIVE du template '{template.name}'")
-            
-            # Supprimer les fichiers physiques
-            template_dir = PathConfig.TEMPLATES / template.name
+            template_dir = _templates_root_dir() / template.name
             if template_dir.exists():
                 import shutil
                 shutil.rmtree(template_dir)
                 logger.info(f"Dossier supprimé : {template_dir}")
-            
-            # Supprimer de la base
             self.db.delete(template)
             self.db.commit()
-            
             logger.success(f"Template '{template.name}' supprimé définitivement")
         else:
-            logger.info(f"Désactivation du template '{template.name}'")
-            template.is_active = False
-            self.db.commit()
-            logger.success(f"Template '{template.name}' désactivé")
-        
+            logger.info(f"Soft delete du template '{template.name}'")
+            info = self.soft_delete_template(template_id)
+            logger.success(f"Template archivé sous _trash ({info['new_name']})")
+
         return True
+
+    
+    def soft_delete_template(self, template_id: int) -> dict:
+        """
+        Archive le template :
+        - déplace configuration/templates/<Nom>/<Version> vers configuration/templates/_trash/<Nom_Supr_nXXXX>/<Version>
+        - renomme le Template en base pour <Nom_Supr_nXXXX> + is_active=False
+        Retour: { "old_name": ..., "new_name": ..., "version": ... }
+        """
+        import shutil
+        with DatabaseService.get_session() as db:
+            tpl = db.query(Template).filter(Template.id == template_id).first()
+            if not tpl:
+                raise ValueError("Template introuvable")
+
+            old_name = tpl.name
+            version = tpl.version or "v1"
+
+            root = _templates_root_dir()
+            src_dir = root / old_name / str(version)
+
+            trash_root = root / "_trash"
+            trash_root.mkdir(parents=True, exist_ok=True)
+
+            prefix = f"{old_name}_Supr_n"
+            existing = [p.name for p in trash_root.iterdir() if p.is_dir() and p.name.startswith(prefix)]
+            if existing:
+                try:
+                    k = max(int(x.split(prefix, 1)[-1]) for x in existing) + 1
+                except Exception:
+                    k = len(existing) + 1
+            else:
+                k = 1
+            new_name = f"{old_name}_Supr_n{str(k).zfill(4)}"
+
+            dest_dir = trash_root / new_name / str(version)
+            dest_dir.parent.mkdir(parents=True, exist_ok=True)
+
+            if src_dir.exists():
+                shutil.move(str(src_dir), str(dest_dir))
+                try:
+                    (root / old_name).rmdir()
+                except Exception:
+                    pass
+
+            tpl.name = new_name
+            tpl.is_active = False
+            db.add(tpl)
+            db.commit()
+
+        return {"old_name": old_name, "new_name": new_name, "version": version}
+
     
     def get_template_stats(self, template_id: int) -> Dict[str, Any]:
         """
@@ -366,69 +568,76 @@ class TemplateService:
 
     def get_config(self, template_id: int) -> dict:
         """
-        Retourne le JSON config du template, toujours avec des clés par défaut.
-        IMPORTANT: self.db est une Session SQLAlchemy, ne pas appeler get_session() ici.
+        Lit la config file-based : configuration/templates/<Nom>/<Version>/config.json
+        (migre/élimine un éventuel <version>.json à la racine du template).
         """
-        tpl = self.db.query(Template).get(template_id)
-        cfg = tpl.config or {}
-        if not isinstance(cfg, dict):
-            cfg = {}
+        with DatabaseService.get_session() as db:
+            tpl = db.query(Template).filter(Template.id == template_id).first()
+            if not tpl:
+                return {}
+            name = tpl.name
+            version = tpl.version or "1.0"
 
-        # Compat legacy: ancienne clé 'contracts' (on la garde vide, mais on n'en dépend plus)
-        if "contracts" not in cfg or not isinstance(cfg["contracts"], dict):
-            cfg["contracts"] = {}
+        version_dir = _ensure_version_layout(name, version)
+        cfg_path = version_dir / "config.json"
+        if not cfg_path.exists():
+            return {"name": name, "version": version, "parameters": [], "gabarit_usages": []}
 
-        # Clés MVP: usages & sources de gabarits par livrable
-        if "gabarit_usages" not in cfg or not isinstance(cfg["gabarit_usages"], list):
-            cfg["gabarit_usages"] = []
-        
-        if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
-            cfg["gabarit_sources"] = []
-        
-        # Rôles de tables (fact/dimension/mixed) par gabarit
-        if "gabarit_roles" not in cfg or not isinstance(cfg["gabarit_roles"], list):
-            cfg["gabarit_roles"] = []  # [{gabarit_name, gabarit_version, table_role}]
+        import json
+        try:
+            return json.loads(cfg_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
 
-        # Relations autorisées (catalogue) entre gabarits (sans type de jointure)
-        if "gabarit_relations" not in cfg or not isinstance(cfg["gabarit_relations"], list):
-            cfg["gabarit_relations"] = []  # [{from_gabarit, from_version, to_gabarit, to_version, left_key, right_key, cardinality?}]
-
-
-        return cfg
 
 
     def update_config(self, template_id: int, new_config: dict) -> None:
         """
-        Écrase la config du template par new_config (et garantit les clés par défaut).
+        Écrit configuration/templates/<Nom>/<Version>/config.json
+        (fusion simple avec l'existant) et supprime tout <version>.json résiduel.
         """
-        cfg = new_config or {}
-        if not isinstance(cfg, dict):
-            cfg = {}
+        with DatabaseService.get_session() as db:
+            tpl = db.query(Template).filter(Template.id == template_id).first()
+            if not tpl:
+                return
+            name = tpl.name
+            version = tpl.version or "1.0"
 
-        # Compat legacy
-        if "contracts" not in cfg or not isinstance(cfg["contracts"], dict):
-            cfg["contracts"] = {}
+        import json, logging
+        logger = logging.getLogger("kaivaa.template")
 
-        # Clés MVP
-        if "gabarit_usages" not in cfg or not isinstance(cfg["gabarit_usages"], list):
-            cfg["gabarit_usages"] = []
-        if "gabarit_sources" not in cfg or not isinstance(cfg["gabarit_sources"], list):
-            cfg["gabarit_sources"] = []
+        version_dir = _ensure_version_layout(name, version)
+        cfg_path = version_dir / "config.json"
 
-        # Rôles de tables (fact/dimension/mixed) par gabarit
-        if "gabarit_roles" not in cfg or not isinstance(cfg["gabarit_roles"], list):
-            cfg["gabarit_roles"] = []  # [{gabarit_name, gabarit_version, table_role}]
+        current = {}
+        if cfg_path.exists():
+            try:
+                current = json.loads(cfg_path.read_text(encoding="utf-8"))
+            except Exception:
+                current = {}
 
-        # Relations autorisées (catalogue) entre gabarits (sans type de jointure)
-        if "gabarit_relations" not in cfg or not isinstance(cfg["gabarit_relations"], list):
-            cfg["gabarit_relations"] = []  # [{from_gabarit, from_version, to_gabarit, to_version, left_key, right_key, cardinality?}]
+        merged = dict(current)
+        for k, v in (new_config or {}).items():
+            merged[k] = v
 
+        merged.setdefault("name", name)
+        merged.setdefault("version", version)
+        merged.setdefault("parameters", current.get("parameters", []))
+        merged.setdefault("gabarit_usages", current.get("gabarit_usages", []))
 
-        tpl = self.db.query(Template).get(template_id)
-        tpl.config = cfg
-        self.db.add(tpl)
-        self.db.commit()
-        self.db.refresh(tpl)
+        tmp = cfg_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(cfg_path)
+
+        # Nettoyage si un ancien <version>.json subsiste
+        legacy_json = (_templates_root_dir() / name / f"{version}.json")
+        if legacy_json.exists():
+            try:
+                legacy_json.unlink()
+            except Exception:
+                pass
+
+        logger.info(f"[template_service] update_config -> {cfg_path}")
 
 
     def list_gabarit_sources(self, template_id: int) -> list[dict]:
@@ -525,63 +734,72 @@ class TemplateService:
 
     def upsert_gabarit_usage(
         self,
+        *,
         template_id: int,
         gabarit_name: str,
-        gabarit_version: str,
+        gabarit_version: str = "v1",
         excel_sheet: str,
         excel_table: str,
         columns_enabled: list[str] | None = None,
         methods: list[str] | None = None,
         enrichments: list[dict] | None = None,
-        overlay_python: str | None = None,
         final_order: list[str] | None = None,
         final_excludes: list[str] | None = None,
-    ) -> None:
+    ) -> dict:
         """
-        Unicité par (gabarit_name, gabarit_version, excel_sheet, excel_table).
-        Permet plusieurs tables pour un même gabarit.
+        Upsert d'un 'usage' (gabarit + feuille + table) dans le JSON de config du template.
+        On préserve les champs existants non fournis (ex: overlay_python).
         """
-        cfg = self.get_config(template_id)
-        usages = cfg.get("gabarit_usages", [])
-        if not isinstance(usages, list):
-            usages = []
+        config = self.get_config(template_id) or {}
+        allu = list(config.get("gabarit_usages") or [])
 
-        gname = (gabarit_name or "").strip()
-        gver  = (gabarit_version or "v1").strip()
-        sheet = (excel_sheet or "").strip()
-        table = (excel_table or "").strip()
+        key = (
+            gabarit_name,
+            (gabarit_version or "v1"),
+            excel_sheet.strip(),
+            excel_table.strip(),
+        )
 
-        # retrouver ancien usage avec la même clé complète
-        old = None
-        new_usages = []
-        for u in usages:
-            same = (
-                u.get("gabarit_name") == gname
-                and (u.get("gabarit_version") or "v1") == gver
-                and ((u.get("excel_target") or {}).get("sheet", "") or "") == sheet
-                and ((u.get("excel_target") or {}).get("table", "") or "") == table
-            )
-            if same:
-                old = u
-            else:
-                new_usages.append(u)
-
-        usage = {
-            "gabarit_name": gname,
-            "gabarit_version": gver,
-            "columns_enabled": [c for c in (columns_enabled or []) if str(c).strip()],
-            "methods": [m for m in (methods or []) if str(m).strip()],
-            "excel_target": {"sheet": sheet, "table": table},
-            "enrichments": enrichments or [],
-            "overlay_python": (overlay_python or "").strip(),
-            # préserver l'ajustement si non fourni
-            "final_order": list(final_order) if final_order is not None else list((old or {}).get("final_order") or []),
-            "final_excludes": [c for c in (final_excludes if final_excludes is not None else (old or {}).get("final_excludes") or []) if str(c).strip()],
+        # construire la charge utile (normalisée)
+        payload = {
+            "gabarit_name": gabarit_name,
+            "gabarit_version": (gabarit_version or "v1"),
+            "excel_target": {"sheet": key[2], "table": key[3]},
+            "columns_enabled": list(columns_enabled or []),
+            "methods": list(methods or []),
+            "enrichments": list(enrichments or []),
         }
+        if final_order is not None:
+            payload["final_order"] = list(final_order)
+        if final_excludes is not None:
+            payload["final_excludes"] = list(final_excludes)
 
-        new_usages.append(usage)
-        cfg["gabarit_usages"] = new_usages
-        self.update_config(template_id, cfg)
+        # rechercher si un usage existe déjà pour cette clé
+        idx = None
+        for i, u in enumerate(allu):
+            tgt = (u.get("excel_target") or {})
+            k = (
+                u.get("gabarit_name"),
+                (u.get("gabarit_version") or "v1"),
+                (tgt.get("sheet") or "").strip(),
+                (tgt.get("table") or "").strip(),
+            )
+            if k == key:
+                idx = i
+                break
+
+        if idx is None:
+            # création
+            allu.append(payload)
+        else:
+            # mise à jour en préservant les champs non gérés ici (ex: overlay_python)
+            current = dict(allu[idx])
+            current.update(payload)
+            allu[idx] = current
+
+        config["gabarit_usages"] = allu
+        self.update_config(template_id, config)
+        return payload
 
 
     def update_usage_final_view(
@@ -1036,3 +1254,48 @@ class TemplateService:
                 result.append(new_name)
         
         return result
+    
+    def cache_parameter_options(self, template_id: int, param_name: str, values: list[str], source: dict) -> None:
+        """
+        Persiste dans configuration/templates/<Nom>/<Version>/config.json
+        la liste 'values' pour le paramètre 'param_name' sous la clé parameters[].options_cache.
+        """
+        cfg = self.get_config(template_id) or {}
+        plist = list(cfg.get("parameters") or [])
+
+        updated = False
+        for p in plist:
+            if p.get("name") == param_name:
+                p["options_cache"] = {
+                    "values": list(values or [])[:500],  # borne raisonnable
+                    "source": {
+                        "gabarit": (source or {}).get("gabarit"),
+                        "version": (source or {}).get("version"),
+                        "column":  (source or {}).get("column"),
+                    },
+                }
+                updated = True
+                break
+
+        if not updated:
+            plist.append({
+                "name": param_name,
+                "options_mode": "from_column",
+                "options_source": {
+                    "gabarit": (source or {}).get("gabarit"),
+                    "version": (source or {}).get("version"),
+                    "column":  (source or {}).get("column"),
+                },
+                "options_cache": {
+                    "values": list(values or [])[:500],
+                    "source": {
+                        "gabarit": (source or {}).get("gabarit"),
+                        "version": (source or {}).get("version"),
+                        "column":  (source or {}).get("column"),
+                    },
+                },
+            })
+
+        cfg["parameters"] = plist
+        self.update_config(template_id, cfg)
+

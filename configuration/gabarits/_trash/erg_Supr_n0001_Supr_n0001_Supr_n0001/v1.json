@@ -1,0 +1,17 @@
+{
+  "name": "erg_Supr_n0001_Supr_n0001_Supr_n0001",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "ezrg",
+      "type": "text",
+      "is_key": false
+    }
+  ],
+  "title": "erg",
+  "methods": [],
+  "defaults": {},
+  "relations": [],
+  "role": "mixed"
+}

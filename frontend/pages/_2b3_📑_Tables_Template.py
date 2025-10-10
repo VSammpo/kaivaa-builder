@@ -354,19 +354,32 @@ reachable = compute_reachable_targets(g.name, g.version, max_depth=4)
 target_labels = sorted([f"{nm} (v{ver})" for (nm,ver) in reachable.keys()])
 label_to_tuple = { f"{nm} (v{ver})": (nm,ver) for (nm,ver) in reachable.keys() }
 
-if ("tpl_enrich_rows" not in st.session_state) or (edit_key and st.session_state.get("_inject_loaded_for") != (g.name, g.version)):
+# Clé d'initialisation **unique par usage** (évite d'écraser/perdre les enrichissements
+# quand on navigue vers un autre template/sheet/table puis on revient)
+_loaded_key = (template_id, g.name, g.version, (default_sheet or "").strip(), (default_table or "").strip())
 
+
+if ("tpl_enrich_rows" not in st.session_state) or (st.session_state.get("_inject_loaded_for") != _loaded_key):
     rows = []
     if existing and existing.get("enrichments"):
         for e in existing["enrichments"]:
             path = e.get("path") or []
             if path:
-                last = path[-1]
-                rows.append({"join": e.get("join","left"), "target": (last[2], "v1"), "columns": e.get("columns",[])})
+                last = path[-1]                 # [from, left_key, to, right_key]
+                rows.append({
+                    "join": e.get("join", "left"),
+                    "target": (last[2], "v1"),   # table cible + version
+                    "columns": e.get("columns", [])
+                })
             else:
-                rows.append({"join": e.get("join","left"), "target": None, "columns": e.get("columns",[])})
+                rows.append({
+                    "join": e.get("join", "left"),
+                    "target": None,
+                    "columns": e.get("columns", [])
+                })
     st.session_state.tpl_enrich_rows = rows
-    st.session_state._inject_loaded_for = (g.name, g.version)
+    st.session_state._inject_loaded_for = _loaded_key
+
 
 if st.button("➕ Ajouter un enrichissement", use_container_width=True):
     st.session_state.tpl_enrich_rows.append({"join":"left", "target": None, "columns": []})

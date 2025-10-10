@@ -17,24 +17,27 @@ class ParameterService:
     def resolve_parameter_options(param: ParameterConfig) -> List[str]:
         """
         Résout les options disponibles pour un paramètre.
-        
-        Args:
-            param: Configuration du paramètre
-            
-        Returns:
-            Liste des options disponibles (vide si mode='none')
+        PRIORITÉ au cache 'options_cache' s'il est présent (zéro recalcul).
+        Sinon, fallback sur le comportement existant.
         """
-        if param.options_mode == "none":
+        cache = getattr(param, "options_cache", None)
+        if isinstance(cache, dict):
+            vals = cache.get("values")
+            if isinstance(vals, list) and vals:
+                return vals
+
+        mode = getattr(param, "options_mode", "none")
+        if mode == "none":
             return []
-        
-        elif param.options_mode == "manual":
+        elif mode == "manual":
             return param.options_manual or []
-        
-        elif param.options_mode == "from_column":
+        elif mode == "from_column":
+            # NOTE: calcul potentiellement lourd -> ne sera appelé que si pas de cache
             return ParameterService._resolve_options_from_gabarit(param)
-        
+
         return []
-    
+
+
     @staticmethod
     def _resolve_options_from_gabarit(param: ParameterConfig) -> List[str]:
         """

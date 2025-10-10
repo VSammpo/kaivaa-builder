@@ -26,6 +26,36 @@ from backend.models.template_config import (
 
 st.set_page_config(page_title="Paramètres généraux", page_icon="⚙️", layout="wide")
 
+# --- Helpers de chemin/version ---
+from pathlib import Path
+
+def _templates_root_dir() -> Path:
+    # déjà présent chez toi normalement ; sinon garde celui-ci
+    from pathlib import Path
+    return Path(__file__).resolve().parents[2] / "configuration" / "templates"
+
+def _ensure_version_layout(name: str, version: str) -> Path:
+    """
+    Garantit l’arborescence versionnée et migre l'ancien fichier <version>.json
+    qui pourrait traîner à la racine du template vers <Version>/config.json.
+    """
+    root = _templates_root_dir() / name
+    version_dir = root / str(version)
+    version_dir.mkdir(parents=True, exist_ok=True)
+
+    legacy_json = root / f"{version}.json"
+    cfg_path = version_dir / "config.json"
+
+    if legacy_json.exists() and not cfg_path.exists():
+        try:
+            cfg_path.write_bytes(legacy_json.read_bytes())
+            legacy_json.unlink()
+        except Exception:
+            pass  # on ne casse pas si la migration échoue
+
+    return version_dir
+
+
 def render_template_subnav(active: str, template_id: int | None):
     cols = st.columns([1,1,1,1,1])
     with cols[0]:
@@ -393,105 +423,182 @@ if show_params:
                             disabled=(selected_gab == "(aucun)")
                         )
                     
-                    # Enregistrer la source
-                    if selected_gab != "(aucun)" and selected_col != "(choisir)":
-                        gab_parts = selected_gab.split(" (v")
-                        gab_name = gab_parts[0].strip()
-                        gab_ver = gab_parts[1].rstrip(")").strip()
-                        
-                        param["options_source"] = {
-                            "gabarit": gab_name,
-                            "version": gab_ver,
-                            "column": selected_col
-                        }
-                        param["options_manual"] = None
-                        
-                        # Prévisualisation des options
-                        try:
-                            temp_param = ParameterConfig(**param)
-                            options_preview = ParameterService.resolve_parameter_options(temp_param)
-                            if options_preview:
-                                st.success(f"✓ {len(options_preview)} valeur(s) unique(s) trouvées")
-                                with st.expander("Aperçu des 10 premières valeurs"):
-                                    st.write(", ".join(options_preview[:10]))
+                        # Enregistrer la source
+                        if selected_gab != "(aucun)" and selected_col != "(choisir)":
+                            gab_parts = selected_gab.split(" (v")
+                            gab_name = gab_parts[0].strip()
+                            gab_ver = gab_parts[1].rstrip(")").strip()
+
+                            param["options_source"] = {
+                                "gabarit": gab_name,
+                                "version": gab_ver,
+                                "column": selected_col
+                            }
+                            param["options_manual"] = None
+
+                            # === Calcul sur BOUTON + Mise en CACHE persistante ===
+                            do_cache = st.button(
+                                "⚡ Calculer & mettre en cache les propositions",
+                                key=f"param_cache_{idx}",
+                                use_container_width=True
+                            )
+
+                            if do_cache:
+                                try:
+                                    from backend.services.parameter_service import ParameterService, ParameterConfig
+                                    tmp_param = ParameterConfig(**param)
+                                    values = ParameterService._resolve_options_from_gabarit(tmp_param)
+
+                                    if values:
+                                        st.success(f"✓ {len(values)} valeur(s) unique(s) trouvées")
+                                        with st.expander("Aperçu (jusqu'à 200)", expanded=False):
+                                            st.write(", ".join(values[:200]))
+                                    else:
+                                        st.warning("Aucune valeur trouvée dans cette colonne")
+
+                                    # 💾 PERSISTENCE immédiate dans le JSON
+                                    from backend.services.template_service import TemplateService
+                                    from backend.services.database_service import DatabaseService
+
+                                    tid = template_id_to_edit if edit_mode else st.session_state.get("selected_template")
+                                    if not tid:
+                                        st.error("⚠️ Impossible de sauvegarder : template ID manquant")
+                                    else:
+                                        with DatabaseService.get_session() as db:
+                                            svc = TemplateService(db)
+                                            cfg = svc.get_config(tid)
+                                            plist = list(cfg.get("parameters") or [])
+
+                                            found = False
+                                            for i, p in enumerate(plist):
+                                                if p.get("name") == param.get("name"):
+                                                    q = dict(p)
+                                                    q["options_cache"] = {
+                                                        "values": values[:500],
+                                                        "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
+                                                    }
+                                                    plist[i] = q
+                                                    found = True
+                                                    break
+                                            if not found:
+                                                newp = dict(param)
+                                                newp["options_cache"] = {
+                                                    "values": values[:500],
+                                                    "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
+                                                }
+                                                plist.append(newp)
+
+                                            cfg["parameters"] = plist
+                                            svc.update_config(tid, cfg)
+
+                                        # ✅ CORRECTION : Mettre à jour le cache dans la session en cours
+                                        param["options_cache"] = {
+                                            "values": values[:500],
+                                            "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
+                                        }
+                                        
+                                        st.toast("Propositions mises en cache ✅")
+                                        st.rerun()  # ✅ Recharger pour afficher le selectbox
+                                except Exception as e:
+                                    st.error(f"Erreur cache : {e}")
+
+                            # Affichage du cache existant (aucun calcul ici)
+                            cache = param.get("options_cache")
+                            if isinstance(cache, dict) and isinstance(cache.get("values"), list) and cache["values"]:
+                                st.caption(f"Cache existant : {len(cache['values'])} valeur(s)")
+                                with st.expander("Voir un aperçu (jusqu'à 200)", expanded=False):
+                                    st.write(", ".join(list(cache["values"])[:200]))
                             else:
-                                st.warning("Aucune valeur trouvée dans cette colonne")
-                        except Exception as e:
-                            st.error(f"Erreur lors de la prévisualisation : {e}")
-                    else:
-                        param["options_source"] = None
+                                st.caption("Aucun cache enregistré pour ce paramètre.")
+
                 
                 # MODE AUCUNE
                 else:
                     param["options_manual"] = None
                     param["options_source"] = None
             
-            # ✅ VALEUR PAR DÉFAUT
+            # === VALEUR PAR DÉFAUT ===
             st.markdown("---")
             st.markdown("**⚙️ Valeur par défaut**")
 
-            # ✅ Pour LISTE ou STRING avec options
-            if param.get("options_mode") in ["manual", "from_column"]:
-                try:
-                    temp_param = ParameterConfig(**param)
-                    available_options = ParameterService.resolve_parameter_options(temp_param)
-                    
-                    if available_options:
-                        current_default = param.get("default")
-                        default_index = 0
-                        if current_default and current_default in available_options:
-                            default_index = available_options.index(current_default)
-                        
-                        param["default"] = st.selectbox(
-                            "Valeur par défaut",
-                            available_options,
-                            index=default_index,
-                            key=f"param_default_sel_{idx}"
-                        )
-                    else:
-                        st.warning("Aucune option disponible pour définir une valeur par défaut")
-                        param["default"] = None
-                except Exception as e:
-                    st.error(f"Erreur chargement options : {e}")
-                    param["default"] = st.text_input(
+            mode = param.get("options_mode", "none")
+            cache = param.get("options_cache")
+
+            # 1️⃣ OPTIONS DEPUIS COLONNE (from_column)
+            if mode == "from_column":
+                # Vérifier si un cache existe
+                has_cache = isinstance(cache, dict) and isinstance(cache.get("values"), list) and len(cache.get("values", [])) > 0
+                
+                if has_cache:
+                    opts = list(cache["values"])
+                    cur = param.get("default")
+                    idx_default = opts.index(cur) if (cur in opts) else 0
+                    param["default"] = st.selectbox(
                         "Valeur par défaut",
-                        value=str(param.get("default", "")),
-                        key=f"param_default_txt_{idx}"
+                        opts,
+                        index=idx_default,
+                        key=f"param_default_sel_{idx}",
+                    )
+                else:
+                    # Aucun cache → afficher un avertissement + champ texte temporaire
+                    st.info("⚠️ Aucun cache disponible. Cliquez d'abord sur '⚡ Calculer & mettre en cache les propositions'.")
+                    param["default"] = st.text_input(
+                        "Valeur par défaut (temporaire)",
+                        value=str(param.get("default", "")) if param.get("default") else "",
+                        key=f"param_default_nocache_{idx}",
+                        help="Cette valeur sera utilisée en attendant le calcul du cache"
                     )
 
-            elif param["type"] == "integer":
-                param["default"] = st.number_input(
-                    "Valeur par défaut",
-                    value=int(param.get("default", 0)) if param.get("default") is not None else 0,
-                    key=f"param_default_int_{idx}"
-                )
-
-            elif param["type"] == "date":
-                from datetime import datetime
-                default_date = param.get("default")
-                if isinstance(default_date, str):
-                    try:
-                        default_date = datetime.fromisoformat(default_date).date()
-                    except:
-                        default_date = datetime.now().date()
+            # 2️⃣ OPTIONS MANUELLES
+            elif mode == "manual":
+                opts = [v for v in (param.get("options_manual") or []) if v]
+                if opts:
+                    cur = param.get("default")
+                    idx_default = opts.index(cur) if (cur in opts) else 0
+                    param["default"] = st.selectbox(
+                        "Valeur par défaut",
+                        opts,
+                        index=idx_default,
+                        key=f"param_default_manual_sel_{idx}",
+                    )
                 else:
-                    default_date = datetime.now().date()
-                
-                param["default"] = st.date_input(
-                    "Valeur par défaut",
-                    value=default_date,
-                    key=f"param_default_date_{idx}"
-                ).isoformat()
+                    param["default"] = st.text_input(
+                        "Valeur par défaut",
+                        value=str(param.get("default", "")) if param.get("default") else "",
+                        key=f"param_default_manual_txt_{idx}",
+                    )
 
+            # 3️⃣ PAS D'OPTIONS → widgets selon le type
             else:
-                # String sans options ou liste sans options
-                param["default"] = st.text_input(
-                    "Valeur par défaut",
-                    value=str(param.get("default", "")) if param.get("default") else "",
-                    key=f"param_default_str_{idx}"
-                )
+                if param.get("type") == "integer":
+                    param["default"] = st.number_input(
+                        "Valeur par défaut",
+                        value=int(param.get("default", 0)) if param.get("default") is not None else 0,
+                        key=f"param_default_int_{idx}",
+                    )
+                elif param.get("type") == "date":
+                    from datetime import datetime, date
+                    default_date = param.get("default")
+                    if isinstance(default_date, str):
+                        try:
+                            default_date = datetime.fromisoformat(default_date).date()
+                        except Exception:
+                            default_date = date.today()
+                    elif not isinstance(default_date, date):
+                        default_date = date.today()
+                    param["default"] = st.date_input(
+                        "Valeur par défaut",
+                        value=default_date,
+                        key=f"param_default_date_{idx}",
+                    ).isoformat()
+                else:  # string ou liste sans options
+                    param["default"] = st.text_input(
+                        "Valeur par défaut",
+                        value=str(param.get("default", "")) if param.get("default") else "",
+                        key=f"param_default_text_{idx}",
+                    )
             
-            # Bouton suppression
+            # Bouton suppression (UN SEUL, à la fin de l'expander)
             st.markdown("---")
             if st.button("🗑️ Supprimer ce paramètre", key=f"param_del_{idx}", use_container_width=True):
                 to_delete.append(idx)

@@ -25,6 +25,7 @@ st.set_page_config(page_title="Ajustement de la table", page_icon="🧾", layout
 from code_editor import code_editor
 from backend.services.parameter_service import ParameterService
 from backend.models.template_config import ParameterConfig
+from backend.services.table_builder_service import _debug_merge
 
 # ============================ Navbar (5 boutons) ============================
 
@@ -296,16 +297,19 @@ def _compose_with_enrichments(
                 })
 
             # MERGE
-            df = df.merge(
+            df = _debug_merge(
+                df,
                 right_subset,
+                how="left",
                 left_on=left_key,
                 right_on=right_key,
-                how="left",
+                tag=f"{frm}->{to}"
             )
 
             # On ne garde pas la clé de droite après la jointure
             if right_key in df.columns:
                 df.drop(columns=[right_key], inplace=True)
+
 
             # mémoriser les colonnes effectivement ajoutées par les enrichissements
             added_enriched_cols.update([c for c in cols_to_add if c in df.columns])
