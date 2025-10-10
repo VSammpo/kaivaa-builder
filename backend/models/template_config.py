@@ -17,7 +17,7 @@ class ParameterConfig(BaseModel):
     description: Optional[str] = Field(None, description="Description du paramètre")
     balise_ppt: str = Field(..., description="Balise dans PowerPoint (ex: [Sous_Marque])")
     
-    # NOUVEAUX CHAMPS pour options enrichies
+    # CHAMPS pour options enrichies
     options_mode: str = Field("none", description="Mode: 'none', 'manual', 'from_column'")
     options_manual: Optional[List[str]] = Field(None, description="Options saisies manuellement")
     options_source: Optional[Dict[str, str]] = Field(
@@ -25,9 +25,15 @@ class ParameterConfig(BaseModel):
         description="Source pour options dynamiques: {'gabarit': 'NomGabarit', 'version': 'v1', 'column': 'NomColonne'}"
     )
     
+    # ✅ AJOUT CRITIQUE : Cache des options précalculées
+    options_cache: Optional[Dict[str, Any]] = Field(
+        None, 
+        description="Cache des options calculées: {'values': [...], 'source': {...}}"
+    )
+    
     @validator('type')
     def validate_type(cls, v):
-        allowed_types = ['string', 'integer', 'date', 'liste']  # ✅ Remplacer 'select' par 'liste'
+        allowed_types = ['string', 'integer', 'date', 'liste']
         if v not in allowed_types:
             raise ValueError(f"Type doit être parmi {allowed_types}")
         return v
@@ -55,7 +61,6 @@ class ParameterConfig(BaseModel):
             if 'gabarit' not in v or 'column' not in v:
                 raise ValueError("options_source doit contenir 'gabarit' et 'column'")
         return v
-
 
 class DataSourceConfig(BaseModel):
     """Configuration de la source de données"""

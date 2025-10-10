@@ -474,7 +474,7 @@ if show_params:
                                                 if p.get("name") == param.get("name"):
                                                     q = dict(p)
                                                     q["options_cache"] = {
-                                                        "values": values[:500],
+                                                        "values": values[:],
                                                         "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
                                                     }
                                                     plist[i] = q
@@ -483,7 +483,7 @@ if show_params:
                                             if not found:
                                                 newp = dict(param)
                                                 newp["options_cache"] = {
-                                                    "values": values[:500],
+                                                    "values": values[:],
                                                     "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
                                                 }
                                                 plist.append(newp)
@@ -493,7 +493,7 @@ if show_params:
 
                                         # ✅ CORRECTION : Mettre à jour le cache dans la session en cours
                                         param["options_cache"] = {
-                                            "values": values[:500],
+                                            "values": values[:],
                                             "source": {"gabarit": gab_name, "version": gab_ver, "column": selected_col},
                                         }
                                         
