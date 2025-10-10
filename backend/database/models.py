@@ -110,6 +110,7 @@ class ExecutionJob(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     template_id = Column(Integer, ForeignKey("templates.id"))
+    project_id = Column(String, nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
     
     # Paramètres d'exécution

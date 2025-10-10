@@ -39,12 +39,21 @@ except Exception:
     def _apply_source_python(df: pd.DataFrame, source: dict) -> pd.DataFrame:
         return df
 
+
+try:
+    from backend.services.gabarit_registry import get_default_source
+except Exception:
+    def get_default_source(gabarit_name: str, gabarit_version: str):
+        return None
+    
+
 try:
     from backend.utils.file_utils import ensure_directories
 except Exception:
     def ensure_directories(*paths: Path) -> None:
         for p in paths:
             Path(p).parent.mkdir(parents=True, exist_ok=True)
+
 
 # ==================== CONFIGURATION CHEMINS ====================
 PARIS = ZoneInfo("Europe/Paris")
@@ -506,6 +515,102 @@ class ProjectService:
             "columns_filled": columns_filled,
             "profile": profile
         }
+    
+
+    def build_dataframe(
+        self,
+        project_id: str,
+        gabarit_name: Optional[str] = None,
+        gabarit_version: str = "v1",
+        expected_columns: Optional[List[str]] = None,
+        *,
+        usage: Optional[Dict[str, Any]] = None,
+        template_id: Optional[int] = None,
+        limit: Optional[int] = None
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """
+        Construit le DataFrame en mode PROJET pour un gabarit donné.
+        - Résout la source: PROJET (client) prioritaire, sinon source DÉFAUT du gabarit
+        - Charge le DF via _load_dataframe_from_source
+        - Applique le code Python éventuel (_apply_source_python)
+        - Aligne/filtre les colonnes si expected_columns est fourni
+        Retourne: (df, meta)
+        """
+
+        # 1) Support d'appel via `usage` (ReportService transmet souvent un dict usage)
+        if usage:
+            gabarit_name = usage.get("gabarit_name") or gabarit_name
+            gabarit_version = usage.get("gabarit_version") or gabarit_version or "v1"
+            cols_from_usage = usage.get("columns_enabled")
+            if cols_from_usage and isinstance(cols_from_usage, list) and cols_from_usage:
+                expected_columns = cols_from_usage
+
+        if not gabarit_name:
+            raise ValueError("build_dataframe: gabarit_name obligatoire")
+
+        # 2) Résoudre la source: PROJET (client) > DÉFAUT GABARIT
+        source_entry = self.get_data_source(project_id, gabarit_name, gabarit_version)
+        source_cfg = None
+
+        if source_entry and isinstance(source_entry.get("source_config"), dict):
+            source_cfg = dict(source_entry["source_config"])  # shallow copy
+            logger.debug(f"[ProjectService] Source PROJET utilisée pour {gabarit_name}:{gabarit_version}")
+        else:
+            default_src = get_default_source(gabarit_name, gabarit_version)
+            if default_src:
+                source_cfg = dict(default_src)
+                logger.debug(f"[ProjectService] Source DÉFAUT utilisée pour {gabarit_name}:{gabarit_version}")
+
+        if not source_cfg:
+            raise RuntimeError(
+                f"Aucune source disponible pour {gabarit_name}:{gabarit_version} "
+                f"(ni côté projet, ni côté gabarit)."
+            )
+
+        # 3) Charger le DataFrame depuis la source
+        df = _load_dataframe_from_source(source_cfg)
+        if df is None:
+            raise RuntimeError(
+                f"Échec de chargement de la source pour {gabarit_name}:{gabarit_version}."
+            )
+
+        # 4) Appliquer le code Python éventuel défini sur la source
+        try:
+            df = _apply_source_python(df, source_cfg)
+        except Exception as e:
+            logger.warning(f"[ProjectService] _apply_source_python a échoué: {e}")
+
+        # 5) Optionnel: limiter (utile pour des previews/tests)
+        if isinstance(limit, int) and limit > 0:
+            df = df.head(limit)
+
+        # 6) Aligner/filtrer les colonnes si attendu fourni
+        meta: Dict[str, Any] = {}
+        if expected_columns and isinstance(expected_columns, list) and expected_columns:
+            try:
+                df, meta = align_df_to_expected_columns(df, expected_columns)
+            except Exception as e:
+                logger.warning(f"[ProjectService] align_df_to_expected_columns a échoué: {e}")
+                # fallback: garder df brut pour ne pas bloquer
+
+            # Filtrer strictement si la liste attendue est fournie
+            try:
+                keep = [c for c in expected_columns if c in df.columns]
+                if keep:
+                    df = df[keep]
+            except Exception:
+                pass
+
+        # 7) Méta + retour
+        meta.setdefault("rows", len(df))
+        meta.setdefault("columns", list(df.columns))
+        meta.setdefault("source_type", source_entry["source_type"] if source_entry else "default")
+        try:
+            df.attrs["kaivaa_meta"] = meta
+        except Exception:
+            pass
+        return df
+
     
     def _load_and_profile_source(self, source_config: Dict[str, Any], head: int = 1000) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Charge une source et génère un profil."""

@@ -288,14 +288,20 @@ else:
                                 st.error(f"Erreur : {e}")
                         
                         with col_a1:
-                            if job['output_excel_path'] and Path(job['output_excel_path']).exists():
-                                if st.button("📊 Excel", key=f"open_xls_{job['id']}", use_container_width=True):
-                                    open_file(job['output_excel_path'])
-                        
+                            if st.button("📊 Excel",
+                                        key=f"open_xls_{job['id']}",
+                                        use_container_width=True,
+                                        disabled=(not bool(job.get('output_excel_path')) or job['status'] != "completed")):
+                                open_file(job['output_excel_path'])
+
                         with col_a2:
-                            if job['output_ppt_path'] and Path(job['output_ppt_path']).exists():
-                                if st.button("📄 PPT", key=f"open_ppt_{job['id']}", use_container_width=True):
-                                    open_file(job['output_ppt_path'])
+                            if st.button("📄 PPT",
+                                        key=f"open_ppt_{job['id']}",
+                                        use_container_width=True,
+                                        disabled=(not bool(job.get('output_ppt_path')) or job['status'] != "completed")):
+                                open_file(job['output_ppt_path'])
+
+
     else:
         st.info("Aucune génération pour le moment. Configurez les données puis générez un livrable.")
 
@@ -410,6 +416,308 @@ if st.session_state.get('show_project_settings'):
     
     project_settings_modal()
 
+# ===== MODALE GÉNÉRATION =====
+if st.session_state.get('generate_deliverable'):
+    @st.dialog("▶️ Générer un livrable", width="large")
+    def generate_modal():
+        # ✅ CORRECTION : Vérifier que la clé existe ET est valide
+        template_id = st.session_state.get('generate_deliverable')
+        
+        if not template_id:
+            st.error("Erreur : aucun livrable sélectionné")
+            if st.button("Fermer"):
+                if 'generate_deliverable' in st.session_state:
+                    del st.session_state.generate_deliverable
+                st.rerun()
+            return
+        
+        # Charger les infos
+        deliverable = next((d for d in deliverables if d['template_id'] == template_id), None)
+        if not deliverable:
+            st.error("Livrable introuvable")
+            if 'generate_deliverable' in st.session_state:
+                del st.session_state.generate_deliverable
+            st.rerun()
+            return
+        
+        st.markdown(f"### {deliverable['template_name']} v{deliverable['template_version']}")
+        
+        # Vérifier la complétude
+        if not deliverable.get('is_functional'):
+            st.error("⚠️ Ce livrable n'est pas prêt à être généré")
+            st.markdown("**Problèmes détectés :**")
+            
+            status = None
+            with DatabaseService.get_session() as db_check:
+                ps_check = ProjectService(db_check)
+                status = ps_check.compute_deliverable_status(project_id, template_id)
+            
+            if status and status.get('missing_gabarits'):
+                st.markdown("**Gabarits manquants :**")
+                for g in status['missing_gabarits']:
+                    st.markdown(f"- {g}")
+            
+            st.divider()
+            
+            col_data, col_cancel = st.columns(2)
+            
+            with col_data:
+                if st.button("💾 Configurer les données", use_container_width=True, type="primary"):
+                    if 'generate_deliverable' in st.session_state:
+                        del st.session_state.generate_deliverable
+                    st.switch_page("pages/_1b_💾_Data_Projet.py")
+            
+            with col_cancel:
+                if st.button("❌ Annuler", use_container_width=True):
+                    if 'generate_deliverable' in st.session_state:
+                        del st.session_state.generate_deliverable
+                    st.rerun()
+            
+            return
+        
+        # Charger les paramètres du template
+        with DatabaseService.get_session() as db_params:
+            ts_params = TemplateService(db_params)
+            tpl_config = ts_params.load_template_config(template_id)
+        
+        params = tpl_config.parameters if tpl_config else []
+        custom_params = deliverable.get('custom_parameters', {})
+        
+        st.markdown("---")
+        st.markdown("### 🎛️ Paramètres de génération")
+        
+        if not params:
+            st.info("Ce template n'a pas de paramètres configurés")
+        
+        # Stocker les valeurs sélectionnées
+        if 'generation_params' not in st.session_state:
+            st.session_state.generation_params = {}
+        
+        for param in params:
+            param_name = param.name
+            
+            with st.container(border=True):
+                st.markdown(f"**{param_name}**")
+                if param.description:
+                    st.caption(param.description)
+                
+                # Récupérer la valeur par défaut (custom > template)
+                default_value = custom_params.get(param_name, {}).get('default')
+                if default_value is None:
+                    from backend.services.parameter_service import ParameterService
+                    default_value = ParameterService.get_default_value(param)
+                
+                # Widget selon le type
+                if param.type in ("string", "liste", "select"):
+                    # Récupérer les options
+                    options = []
+                    
+                    if param.options_mode == "manual" and param.options_manual:
+                        options = list(param.options_manual)
+                    
+                    elif param.options_mode == "from_column" and param.options_source:
+                        # Résoudre depuis les données du projet
+                        try:
+                            col_name = param.options_source.get("column")
+                            gab_name = param.options_source.get("gabarit")
+                            gab_ver = param.options_source.get("version", "v1")
+                            
+                            with DatabaseService.get_session() as db_opts:
+                                ps_opts = ProjectService(db_opts)
+                                data_source = ps_opts.get_data_source(project_id, gab_name, gab_ver)
+                            
+                            if data_source:
+                                from backend.services.dataset_service import _load_dataframe_from_source
+                                
+                                df = _load_dataframe_from_source(data_source.get("source_config"))
+                                
+                                if df is not None and col_name in df.columns:
+                                    options = sorted(list(df[col_name].dropna().astype(str).unique()))[:500]
+                        
+                        except Exception as e:
+                            logger.warning(f"Impossible de charger les options : {e}")
+                    
+                    # Cache si disponible
+                    if not options and hasattr(param, 'options_cache') and param.options_cache:
+                        cache_values = param.options_cache.get('values', [])
+                        if cache_values:
+                            options = list(cache_values)
+                    
+                    # Widget
+                    if options:
+                        try:
+                            default_idx = options.index(str(default_value)) if str(default_value) in options else 0
+                        except (ValueError, TypeError):
+                            default_idx = 0
+                        
+                        value = st.selectbox(
+                            "Valeur",
+                            options=options,
+                            index=default_idx,
+                            key=f"gen_param_{param_name}",
+                            label_visibility="collapsed"
+                        )
+                    else:
+                        value = st.text_input(
+                            "Valeur",
+                            value=str(default_value) if default_value else "",
+                            key=f"gen_param_{param_name}",
+                            label_visibility="collapsed"
+                        )
+                
+                elif param.type == "integer":
+                    value = st.number_input(
+                        "Valeur",
+                        value=int(default_value) if default_value is not None else 0,
+                        key=f"gen_param_{param_name}",
+                        label_visibility="collapsed"
+                    )
+                
+                elif param.type == "date":
+                    from datetime import datetime, date
+                    
+                    if isinstance(default_value, str):
+                        try:
+                            default_value = datetime.fromisoformat(default_value).date()
+                        except:
+                            default_value = date.today()
+                    elif not isinstance(default_value, date):
+                        default_value = date.today()
+                    
+                    value = st.date_input(
+                        "Valeur",
+                        value=default_value,
+                        key=f"gen_param_{param_name}",
+                        label_visibility="collapsed"
+                    ).isoformat()
+                
+                else:
+                    value = st.text_input(
+                        "Valeur",
+                        value=str(default_value) if default_value else "",
+                        key=f"gen_param_{param_name}",
+                        label_visibility="collapsed"
+                    )
+                
+                # Stocker la valeur
+                st.session_state.generation_params[param_name] = value
+        
+        st.markdown("---")
+        
+        # Options de génération
+        col_opt1, col_opt2 = st.columns(2)
+        
+        with col_opt1:
+            generate_excel = st.checkbox("📊 Générer Excel", value=True)
+        
+        with col_opt2:
+            generate_ppt = st.checkbox("📄 Générer PowerPoint", value=True)
+        
+        if not generate_excel and not generate_ppt:
+            st.warning("⚠️ Sélectionnez au moins un format de sortie")
+        
+        st.divider()
+        
+        # Actions
+        col_gen, col_cancel = st.columns(2)
+        
+        with col_cancel:
+            if st.button("❌ Annuler", use_container_width=True):
+                if 'generation_params' in st.session_state:
+                    del st.session_state.generation_params
+                if 'generate_deliverable' in st.session_state:
+                    del st.session_state.generate_deliverable
+                st.rerun()
+        
+        with col_gen:
+            if st.button("▶️ Lancer la génération", 
+                        type="primary", 
+                        use_container_width=True,
+                        disabled=not (generate_excel or generate_ppt)):
+                try:
+                    # Préparer les paramètres
+                    generation_params = st.session_state.generation_params
+                    
+                    # Lancer la génération
+                    with st.spinner("🔄 Génération en cours..."):
+                        from backend.services.generation_service import GenerationService
+                        
+                        with DatabaseService.get_session() as db_gen:
+                            gen_service = GenerationService(db_gen)
+                            
+                            result = gen_service.generate_deliverable(
+                                project_id=project_id,
+                                template_id=template_id,
+                                parameters=generation_params,
+                                generate_excel=generate_excel,
+                                generate_ppt=generate_ppt
+                            )
+                    
+                    # Succès
+                    st.success("✅ Génération terminée avec succès !")
+                    
+                    # Afficher les chemins
+                    if result.get('excel_path'):
+                        st.markdown(f"📊 **Excel** : `{result['excel_path']}`")
+                    
+                    if result.get('ppt_path'):
+                        st.markdown(f"📄 **PowerPoint** : `{result['ppt_path']}`")
+                    
+                    # Boutons d'ouverture
+                    st.markdown("---")
+                    
+                    col_open1, col_open2, col_close = st.columns(3)
+                    
+                    def open_file(filepath: str):
+                        try:
+                            abspath = str(Path(filepath).resolve())
+                            if platform.system() == "Windows":
+                                subprocess.run(["cmd", "/c", "start", "", abspath], check=True)
+                            elif platform.system() == "Darwin":
+                                subprocess.run(["open", abspath], check=True)
+                            else:
+                                subprocess.run(["xdg-open", abspath], check=True)
+                        except Exception as e:
+                            st.error(f"Erreur : {e}")
+                    
+                    with col_open1:
+                        if st.button("📂 Ouvrir Excel", use_container_width=True,
+                                    disabled=not bool(result.get('excel_path'))):
+                            open_file(result['excel_path'])
+
+                    with col_open2:
+                        if st.button("📂 Ouvrir PPT", use_container_width=True,
+                                    disabled=not bool(result.get('ppt_path'))):
+                            open_file(result['ppt_path'])
+
+
+                    
+                    with col_close:
+                        if st.button("✓ Fermer", use_container_width=True):
+                            if 'generation_params' in st.session_state:
+                                del st.session_state.generation_params
+                            if 'generate_deliverable' in st.session_state:
+                                del st.session_state.generate_deliverable
+                            st.rerun()
+                
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la génération : {e}")
+                    
+                    import traceback
+                    with st.expander("🔍 Détails de l'erreur"):
+                        st.code(traceback.format_exc())
+                    
+                    st.divider()
+                    
+                    if st.button("← Retour", use_container_width=True):
+                        if 'generation_params' in st.session_state:
+                            del st.session_state.generation_params
+                        if 'generate_deliverable' in st.session_state:
+                            del st.session_state.generate_deliverable
+                        st.rerun()
+    
+    generate_modal()
+    
 # ===== ACTION SUPPRESSION LIVRABLE =====
 if 'remove_deliverable_id' in st.session_state:
     tid = st.session_state.remove_deliverable_id
@@ -426,8 +734,3 @@ if 'remove_deliverable_id' in st.session_state:
     except Exception as e:
         st.error(f"Erreur : {e}")
         del st.session_state.remove_deliverable_id
-
-# ===== ACTION GÉNÉRATION =====
-if 'generate_deliverable' in st.session_state:
-    st.info("🚧 Génération en cours d'implémentation (Phase 6)")
-    del st.session_state.generate_deliverable

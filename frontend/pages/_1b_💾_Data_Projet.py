@@ -504,3 +504,37 @@ with col_refresh:
         
         except Exception as e:
             st.error(f"❌ Erreur : {e}")
+
+
+# ==================== TEST build_dataframe ====================
+st.markdown("---")
+with st.expander("🔬 Test build_dataframe (mode PROJET)"):
+    db = DatabaseService()
+    ps = ProjectService(db)
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        test_project_id = st.text_input("project_id", st.session_state.get("selected_project_id", "l-oréal-promo-2022"))
+    with col2:
+        test_gabarit_name = st.text_input("gabarit_name", "Compte de résultat des entreprises")
+    with col3:
+        test_gabarit_version = st.text_input("gabarit_version", "v1")
+
+    limit = st.number_input("limit (preview)", min_value=0, value=20, step=10)
+
+    if st.button("▶️ Charger DF (build_dataframe)", use_container_width=True):
+        try:
+            df = ps.build_dataframe(
+                project_id=test_project_id,
+                gabarit_name=test_gabarit_name,
+                gabarit_version=test_gabarit_version,
+                expected_columns=None,
+                usage=None,
+                limit=limit
+            )
+            source_type = getattr(df, "attrs", {}).get("kaivaa_meta", {}).get("source_type", "n/a")
+            st.success(f"OK — rows={len(df)}, cols={len(df.columns)}, source_type={source_type}")
+            st.dataframe(df.head(limit))
+            st.caption(f"Colonnes : {list(df.columns)}")
+        except Exception as e:
+            st.error(f"Erreur build_dataframe: {e}")

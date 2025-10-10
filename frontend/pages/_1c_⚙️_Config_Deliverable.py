@@ -177,22 +177,87 @@ with tab_masters:
     with col_ppt3:
         if ppt_path:
             if st.button("🔄 Réinitialiser", key="reset_ppt", use_container_width=True):
-                try:
-                    new_path = ps.reset_master(project_id, template_id, "ppt")
-                    
-                    # Mettre à jour le livrable
-                    for d in proj["deliverables"]:
-                        if d["template_id"] == template_id:
-                            d["custom_masters"]["ppt_path"] = new_path
-                            break
-                    
-                    ps.save_project(proj)
-                    
-                    st.success("✅ Master PPT réinitialisé depuis le template")
+                st.session_state.confirm_reset_ppt = True
+                st.rerun()
+    
+    # ✅ MODALE CONFIRMATION PPT
+    if st.session_state.get('confirm_reset_ppt'):
+        @st.dialog("⚠️ Confirmer la réinitialisation PPT", width="large")
+        def confirm_reset_ppt_modal():
+            st.warning("""
+            ⚠️ **Attention : Action irréversible**
+            
+            Vous êtes sur le point de réinitialiser le master PowerPoint depuis le template original.
+            
+            **Conséquences** :
+            - ✅ Le fichier PPT du projet sera remplacé par celui du template
+            - ❌ Toutes vos modifications personnalisées seront perdues
+            - 🔒 Cette action ne peut pas être annulée
+            """)
+            
+            st.markdown("---")
+            st.markdown(f"**Projet** : `{proj.get('name')}`")
+            st.markdown(f"**Template** : `{tpl['name']} v{tpl['version']}`")
+            
+            st.markdown("---")
+            st.markdown("### ✍️ Confirmation")
+            st.caption("Pour confirmer, tapez exactement le nom du projet ci-dessous :")
+            
+            confirm_text = st.text_input(
+                "Nom du projet",
+                key="confirm_reset_ppt_input",
+                placeholder=proj.get('name'),
+                label_visibility="collapsed"
+            )
+            
+            st.divider()
+            
+            col_cancel, col_confirm = st.columns(2)
+            
+            with col_cancel:
+                if st.button("❌ Annuler", use_container_width=True):
+                    del st.session_state.confirm_reset_ppt
                     st.rerun()
+            
+            with col_confirm:
+                can_confirm = confirm_text.strip() == proj.get('name', '').strip()
                 
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
+                if st.button("🔄 Confirmer la réinitialisation", 
+                           type="primary" if can_confirm else "secondary",
+                           use_container_width=True,
+                           disabled=not can_confirm):
+                    try:
+                        with DatabaseService.get_session() as db_reset:
+                            ps_reset = ProjectService(db_reset)
+                            new_path = ps_reset.reset_master(project_id, template_id, "ppt")
+                        
+                        # Recharger le projet
+                        with DatabaseService.get_session() as db_reload:
+                            ps_reload = ProjectService(db_reload)
+                            proj_updated = ps_reload.load_project(project_id)
+                        
+                        # Mettre à jour localement
+                        for d in proj_updated["deliverables"]:
+                            if d["template_id"] == template_id:
+                                d["custom_masters"]["ppt_path"] = new_path
+                                break
+                        
+                        ps_reload.save_project(proj_updated)
+                        
+                        st.success("✅ Master PPT réinitialisé depuis le template")
+                        del st.session_state.confirm_reset_ppt
+                        
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    
+                    except Exception as e:
+                        st.error(f"❌ Erreur : {e}")
+                        import traceback
+                        with st.expander("🔍 Détails"):
+                            st.code(traceback.format_exc())
+        
+        confirm_reset_ppt_modal()
     
     st.markdown("---")
     
@@ -220,22 +285,88 @@ with tab_masters:
     with col_xls3:
         if excel_path:
             if st.button("🔄 Réinitialiser", key="reset_excel", use_container_width=True):
-                try:
-                    new_path = ps.reset_master(project_id, template_id, "excel")
-                    
-                    # Mettre à jour le livrable
-                    for d in proj["deliverables"]:
-                        if d["template_id"] == template_id:
-                            d["custom_masters"]["excel_path"] = new_path
-                            break
-                    
-                    ps.save_project(proj)
-                    
-                    st.success("✅ Master Excel réinitialisé depuis le template")
+                st.session_state.confirm_reset_excel = True
+                st.rerun()
+    
+    # ✅ MODALE CONFIRMATION EXCEL
+    if st.session_state.get('confirm_reset_excel'):
+        @st.dialog("⚠️ Confirmer la réinitialisation Excel", width="large")
+        def confirm_reset_excel_modal():
+            st.warning("""
+            ⚠️ **Attention : Action irréversible**
+            
+            Vous êtes sur le point de réinitialiser le master Excel depuis le template original.
+            
+            **Conséquences** :
+            - ✅ Le fichier Excel du projet sera remplacé par celui du template
+            - ❌ Toutes vos modifications personnalisées seront perdues
+            - ❌ Les données client injectées seront effacées
+            - 🔒 Cette action ne peut pas être annulée
+            """)
+            
+            st.markdown("---")
+            st.markdown(f"**Projet** : `{proj.get('name')}`")
+            st.markdown(f"**Template** : `{tpl['name']} v{tpl['version']}`")
+            
+            st.markdown("---")
+            st.markdown("### ✍️ Confirmation")
+            st.caption("Pour confirmer, tapez exactement le nom du projet ci-dessous :")
+            
+            confirm_text = st.text_input(
+                "Nom du projet",
+                key="confirm_reset_excel_input",
+                placeholder=proj.get('name'),
+                label_visibility="collapsed"
+            )
+            
+            st.divider()
+            
+            col_cancel, col_confirm = st.columns(2)
+            
+            with col_cancel:
+                if st.button("❌ Annuler", use_container_width=True):
+                    del st.session_state.confirm_reset_excel
                     st.rerun()
+            
+            with col_confirm:
+                can_confirm = confirm_text.strip() == proj.get('name', '').strip()
                 
-                except Exception as e:
-                    st.error(f"❌ Erreur : {e}")
+                if st.button("🔄 Confirmer la réinitialisation", 
+                           type="primary" if can_confirm else "secondary",
+                           use_container_width=True,
+                           disabled=not can_confirm):
+                    try:
+                        with DatabaseService.get_session() as db_reset:
+                            ps_reset = ProjectService(db_reset)
+                            new_path = ps_reset.reset_master(project_id, template_id, "excel")
+                        
+                        # Recharger le projet
+                        with DatabaseService.get_session() as db_reload:
+                            ps_reload = ProjectService(db_reload)
+                            proj_updated = ps_reload.load_project(project_id)
+                        
+                        # Mettre à jour localement
+                        for d in proj_updated["deliverables"]:
+                            if d["template_id"] == template_id:
+                                d["custom_masters"]["excel_path"] = new_path
+                                break
+                        
+                        ps_reload.save_project(proj_updated)
+                        
+                        st.success("✅ Master Excel réinitialisé depuis le template")
+                        del st.session_state.confirm_reset_excel
+                        
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    
+                    except Exception as e:
+                        st.error(f"❌ Erreur : {e}")
+                        import traceback
+                        with st.expander("🔍 Détails"):
+                            st.code(traceback.format_exc())
+        
+        confirm_reset_excel_modal()
     
     st.markdown("---")
     
@@ -534,4 +665,8 @@ with col_gen:
                 type="primary", 
                 use_container_width=True,
                 disabled=not deliverable.get("is_functional")):
-        st.info("🚧 Génération en cours d'implémentation (Phase 6)")
+        # ✅ CORRECTION : Déclencher la génération
+        st.session_state.generate_deliverable = template_id
+        if 'selected_deliverable_id' in st.session_state:
+            del st.session_state.selected_deliverable_id
+        st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
