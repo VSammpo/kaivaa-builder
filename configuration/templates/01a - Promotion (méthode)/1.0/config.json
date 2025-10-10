@@ -1,0 +1,57 @@
+{
+  "gabarit_usages": [
+    {
+      "gabarit_name": "SELL_OUT",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "SELL_OUT",
+        "table": "SELL_OUT"
+      },
+      "columns_enabled": [
+        "Date_début",
+        "Date_fin",
+        "Periode_ID",
+        "Distributeur",
+        "Enseigne",
+        "Canal",
+        "Marché",
+        "Région",
+        "Devise",
+        "Ventes_volume_eq",
+        "Ventes_unites",
+        "ID_produit",
+        "Nom_produit"
+      ],
+      "methods": [],
+      "enrichments": [
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL_OUT",
+              "ID_produit",
+              "DIM_PRODUITS",
+              "id_produit_sell_out"
+            ]
+          ],
+          "columns": [
+            "groupe",
+            "fabricant",
+            "marque",
+            "sous_marque",
+            "axe",
+            "categorie",
+            "segment",
+            "sous_segment",
+            "type_produit",
+            "unite_format",
+            "format_pack"
+          ]
+        }
+      ]
+    }
+  ],
+  "name": "01a - Promotion (méthode)",
+  "version": "1.0",
+  "parameters": []
+}

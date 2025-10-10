@@ -25,6 +25,11 @@ from backend.models.template_config import (
 )
 
 st.set_page_config(page_title="Paramètres généraux", page_icon="⚙️", layout="wide")
+# --- Flash success (à mettre juste sous st.set_page_config) ---
+if msg := st.session_state.pop("_flash_success", None):
+    st.success(msg)
+    st.toast(msg)
+
 
 # --- Helpers de chemin/version ---
 from pathlib import Path
@@ -805,8 +810,11 @@ if st.button(button_label, type="primary", use_container_width=True):
                             original_filename=card_image.name
                         )
                 
-                st.success(f"✅ Template '{name}' mis à jour!")
-                st.info("💡 Fichiers masters inchangés. Pour modifier PPT/Excel, créez une nouvelle version.")
+                st.session_state["_flash_success"] = f"✅ Template '{name}' mis à jour !"
+                st.session_state.selected_template_detail = template_id_to_edit
+                st.switch_page("pages/2_📚_Bibliotheque.py")
+                st.stop()
+
                 
                 if '_template_loaded' in st.session_state:
                     del st.session_state._template_loaded
@@ -888,6 +896,12 @@ if st.button(button_label, type="primary", use_container_width=True):
                 st.session_state.loops = []
                 st.session_state.images = {}
                 st.session_state.mappings = []
+
+                st.session_state["_flash_success"] = f"✅ Template '{name}' créé ! (ID: {template_id})"
+                st.session_state.selected_template_detail = template_id
+                st.switch_page("pages/2_📚_Bibliotheque.py")
+                st.stop()
+
         
         except Exception as e:
             st.error(f"Erreur : {e}")

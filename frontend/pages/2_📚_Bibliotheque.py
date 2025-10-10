@@ -24,6 +24,9 @@ import base64
 st.set_page_config(page_title="Bibliothèque", page_icon="📚", layout="wide")
 
 st.title("📚 Bibliothèque de Templates")
+if msg := st.session_state.pop("_flash_success", None):
+    st.success(msg)
+    st.toast(msg)
 
 # Filtres
 col1, col2 = st.columns([3, 1])
@@ -35,6 +38,12 @@ with col2:
     show_inactive = st.checkbox("Afficher inactifs", value=False)
 
 st.divider()
+
+colr1, colr2, colr3 = st.columns([1,1,6])
+with colr1:
+    if st.button("🔄 Rafraîchir"):
+        st.rerun()
+
 
 # Charger les templates
 with DatabaseService.get_session() as db:

@@ -125,13 +125,24 @@ class TemplateService:
             import shutil
             target_dir = PathConfig.TEMPLATES / config.name
             target_dir.parent.mkdir(parents=True, exist_ok=True)
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            shutil.move(str(legacy_dir_plural), str(target_dir))
+
+            # ✅ Skip si src == dst
             try:
-                legacy_dir_plural.parent.rmdir()  # Supprime templates/ si vide
+                if legacy_dir_plural.resolve() != target_dir.resolve():
+                    if target_dir.exists():
+                        shutil.rmtree(target_dir)
+                    shutil.move(str(legacy_dir_plural), str(target_dir))
+            except FileNotFoundError:
+                # Tolérant : si déjà déplacé par ailleurs
+                pass
+
+            # Tentative de nettoyage du dossier 'templates' s'il est vide
+            try:
+                if not any((project_root / "templates").iterdir()):
+                    (project_root / "templates").rmdir()
             except Exception:
                 pass
+
 
         # ✅ 2. Déplacer depuis template/ (singulier)
         legacy_dir_singular = project_root / "template" / config.name
@@ -139,16 +150,23 @@ class TemplateService:
             import shutil
             target_dir = PathConfig.TEMPLATES / config.name
             target_dir.parent.mkdir(parents=True, exist_ok=True)
-            # Fusionner avec l'existant si nécessaire
-            if target_dir.exists():
-                for item in legacy_dir_singular.iterdir():
-                    shutil.move(str(item), str(target_dir / item.name))
-            else:
-                shutil.move(str(legacy_dir_singular), str(target_dir))
+
             try:
-                legacy_dir_singular.rmdir()  # Supprime template/ si vide
+                if legacy_dir_singular.resolve() != target_dir.resolve():
+                    if target_dir.exists():
+                        for item in legacy_dir_singular.iterdir():
+                            shutil.move(str(item), str(target_dir / item.name))
+                    else:
+                        shutil.move(str(legacy_dir_singular), str(target_dir))
+            except FileNotFoundError:
+                pass
+
+            try:
+                if legacy_dir_singular.exists() and not any(legacy_dir_singular.iterdir()):
+                    legacy_dir_singular.rmdir()
             except Exception:
                 pass
+
 
         # ✅ 3. Supprimer les dossiers racine s'ils sont vides
         for legacy_root in [project_root / "templates", project_root / "template"]:

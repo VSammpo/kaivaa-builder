@@ -15,7 +15,7 @@ load_dotenv()
 PROJECT_ROOT = Path(__file__).parent.parent
 BACKEND_DIR = PROJECT_ROOT / "backend"
 FRONTEND_DIR = PROJECT_ROOT / "frontend"
-TEMPLATES_DIR = PROJECT_ROOT / "templates"
+TEMPLATES_DIR = PROJECT_ROOT / "configuration" / "templates"
 OUTPUT_DIR = PROJECT_ROOT / "output"
 LOGS_DIR = PROJECT_ROOT / "logs"
 

@@ -1,15 +1,18 @@
-# Fiche d'identité des entreprises
+# 01a - Promotion (méthode)
 
 **Version:** 1.0
-**Créé le:** 2025-10-09
+**Créé le:** 2025-10-10
 
 ## Description
 
-Analyse du compte de résultat par entreprise.
+Première étape PROMO : 
+* Calcul de la baseline et de l'uplift promotionnel.
+* Présentation de la méthode et définition des paramètres.
+* Premières analyses.
 
 ## Paramètres
 
-- **segment** (string): Activité code nace 4 - Obligatoire
+
 
 ## Tables demandées
 
@@ -19,7 +22,7 @@ Analyse du compte de résultat par entreprise.
 ## Structure des fichiers
 
 ```
-Fiche d'identité des entreprises/
+01a - Promotion (méthode)/
 ├── config.yaml           # Configuration du template livrable (tables demandées)
 ├── master.pptx          # Master PPT (facultatif)
 ├── master.xlsx          # Master Excel (obligatoire)
@@ -38,9 +41,9 @@ from backend.services.report_service import ReportService
 
 service = ReportService()
 result = service.generate_report(
-    template_name="Fiche d'identité des entreprises",
+    template_name="01a - Promotion (méthode)",
     parameters={
-        "segment": "valeur",
+
     }
 )
 ```
