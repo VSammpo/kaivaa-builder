@@ -1,0 +1,30 @@
+{
+  "project_id": "test",
+  "name": "Test_Supr_n0001",
+  "client_name": "Test",
+  "description": "Test",
+  "status": "archived",
+  "deliverables": [
+    {
+      "template_id": 36,
+      "template_name": "Analyse du marché FMCG",
+      "template_version": "1.0",
+      "custom_masters": {
+        "ppt_path": "configuration\\projets\\test\\masters\\36\\presentation.pptx",
+        "excel_path": "configuration\\projets\\test\\masters\\36\\donnees.xlsx"
+      },
+      "custom_parameters": {},
+      "is_functional": true,
+      "completion_rate": 100.0,
+      "data_sources_status": {
+        "client": 0,
+        "default": 1
+      },
+      "last_generated_at": "2025-10-14T11:10:17.141167+02:00"
+    }
+  ],
+  "data_sources": [],
+  "created_at": "2025-10-14T11:09:37+02:00",
+  "updated_at": "2025-10-14T11:10:34+02:00",
+  "archived_at": "2025-10-14T11:10:34+02:00"
+}

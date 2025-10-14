@@ -766,7 +766,7 @@ class TemplateService:
     ) -> dict:
         """
         Upsert d'un 'usage' (gabarit + feuille + table) dans le JSON de config du template.
-        On préserve les champs existants non fournis (ex: overlay_python).
+        ✅ CORRECTION : On préserve TOUS les champs existants non fournis (notamment overlay_python).
         """
         config = self.get_config(template_id) or {}
         allu = list(config.get("gabarit_usages") or [])
@@ -778,7 +778,7 @@ class TemplateService:
             excel_table.strip(),
         )
 
-        # construire la charge utile (normalisée)
+        # Construire la charge utile de base
         payload = {
             "gabarit_name": gabarit_name,
             "gabarit_version": (gabarit_version or "v1"),
@@ -787,12 +787,14 @@ class TemplateService:
             "methods": list(methods or []),
             "enrichments": list(enrichments or []),
         }
+        
+        # Ajouter les champs optionnels s'ils sont fournis
         if final_order is not None:
             payload["final_order"] = list(final_order)
         if final_excludes is not None:
             payload["final_excludes"] = list(final_excludes)
 
-        # rechercher si un usage existe déjà pour cette clé
+        # Rechercher si un usage existe déjà pour cette clé
         idx = None
         for i, u in enumerate(allu):
             tgt = (u.get("excel_target") or {})
@@ -807,16 +809,31 @@ class TemplateService:
                 break
 
         if idx is None:
-            # création
+            # Création : ajouter avec valeurs par défaut pour les champs manquants
+            payload.setdefault("overlay_python", "")
+            payload.setdefault("final_renames", {})
+            payload.setdefault("final_sort", [])
             allu.append(payload)
+            logger.info(f"[template_service] ✅ Création usage : {gabarit_name} → {excel_sheet}/{excel_table}")
         else:
-            # mise à jour en préservant les champs non gérés ici (ex: overlay_python)
+            # Mise à jour : PRÉSERVER les champs critiques non fournis
             current = dict(allu[idx])
+            
+            # ✅ CRITIQUE : Préserver overlay_python, final_renames, final_sort s'ils ne sont pas dans payload
+            critical_fields = ["overlay_python", "final_renames", "final_sort"]
+            for field in critical_fields:
+                if field in current and field not in payload:
+                    payload[field] = current[field]
+            
+            # ✅ Fusionner en préservant l'existant
             current.update(payload)
             allu[idx] = current
+            logger.info(f"[template_service] ✅ Mise à jour usage : {gabarit_name} → {excel_sheet}/{excel_table}")
+            logger.debug(f"[template_service]   Champs préservés : {[f for f in critical_fields if f in current]}")
 
         config["gabarit_usages"] = allu
         self.update_config(template_id, config)
+        
         return payload
 
 
@@ -829,6 +846,10 @@ class TemplateService:
         final_excludes: list[str] | None = None,
         final_renames: dict[str, str] | None = None,
     ) -> None:
+        """
+        Met à jour UNIQUEMENT les champs d'ajustement final (ordre, exclusions, renommages).
+        ✅ AMÉLIORATION : Trace les changements pour faciliter le debug.
+        """
         cfg = self.get_config(template_id)
         usages = cfg.get("gabarit_usages", [])
         if not isinstance(usages, list):
@@ -842,6 +863,13 @@ class TemplateService:
         for u in usages:
             if u.get("gabarit_name") == gname and (u.get("gabarit_version") or "v1") == gver:
                 u = dict(u)
+                
+                # ✅ TRACE : Log avant modification
+                old_order = u.get("final_order", [])
+                old_excl = u.get("final_excludes", [])
+                old_ren = u.get("final_renames", {})
+                
+                # Appliquer les modifications
                 if final_order is not None:
                     u["final_order"] = list(final_order or [])
                 if final_excludes is not None:
@@ -849,13 +877,29 @@ class TemplateService:
                 if final_renames is not None:
                     clean = {str(k): str(v) for k, v in (final_renames or {}).items() if str(k).strip() and str(v).strip()}
                     u["final_renames"] = clean
+                
+                # ✅ TRACE : Log après modification
+                if final_order is not None and len(old_order) != len(final_order):
+                    logger.info(f"[template_service] final_order : {len(old_order)} → {len(final_order)} colonnes")
+                if final_excludes is not None and set(old_excl) != set(final_excludes):
+                    added_excl = set(final_excludes) - set(old_excl)
+                    removed_excl = set(old_excl) - set(final_excludes)
+                    if added_excl:
+                        logger.info(f"[template_service] Exclusions ajoutées : {added_excl}")
+                    if removed_excl:
+                        logger.info(f"[template_service] Exclusions retirées : {removed_excl}")
+                if final_renames is not None and old_ren != final_renames:
+                    logger.info(f"[template_service] final_renames : {len(old_ren)} → {len(final_renames)} renommages")
+                
                 updated = True
             new_usages.append(u)
 
         if updated:
             cfg["gabarit_usages"] = new_usages
             self.update_config(template_id, cfg)
-
+            logger.success(f"[template_service] ✅ Ajustements persistés pour {gname}:{gver}")
+        else:
+            logger.warning(f"[template_service] ⚠️ Aucun usage trouvé pour {gname}:{gver}")
 
 
     def delete_gabarit_usage(self, template_id: int, gabarit_name: str, gabarit_version: str) -> bool:
@@ -1221,29 +1265,78 @@ class TemplateService:
                 return u
         return None
     
+    
+
     def resolve_usage_expected_columns(self, template_id: int, gabarit_name: str, gabarit_version: str) -> list[str]:
         """
-        Retourne la liste finale des colonnes attendues pour un usage,
-        en tenant compte de l'ordre final, des exclusions et des renommages.
+        Retourne la liste finale des colonnes attendues pour un usage.
+        
+        ✅ VERSION ROBUSTE : Construit le DataFrame réel pour extraire les colonnes effectives.
+        Cette méthode garantit la cohérence totale avec le pipeline de génération.
         """
+        from backend.services.table_builder_service import build_table_from_usage
+        from backend.services.parameter_service import ParameterService
+        
         usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version)
         if not usage:
+            logger.warning(f"[resolve_usage_expected_columns] Usage introuvable pour {gabarit_name}:{gabarit_version}")
             return []
         
-        from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
+        # ✅ 1. PRIORITÉ ABSOLUE : Construire le DataFrame réel
+        try:
+            # Charger les paramètres avec valeurs par défaut
+            template_config = self.load_template_config(template_id)
+            params_dict = {p.name: ParameterService.get_default_value(p) for p in template_config.parameters}
+            
+            # ✅ Essayer PREVIEW d'abord (rapide, mais peut échouer sur gros datasets)
+            df, error = build_table_from_usage(
+                usage,
+                full=False,
+                log_kpis=False,
+                params=params_dict
+            )
+            
+            # ✅ Si échec PREVIEW, essayer FULL
+            if df is None or df.empty:
+                logger.debug(f"[resolve_usage_expected_columns] Preview échoué, tentative FULL...")
+                df, error = build_table_from_usage(
+                    usage,
+                    full=True,
+                    log_kpis=False,
+                    params=params_dict
+                )
+            
+            # ✅ Si succès, retourner TOUTES les colonnes du DataFrame
+            if df is not None and not df.empty:
+                cols = list(df.columns)
+                logger.info(f"[resolve_usage_expected_columns] ✅ DataFrame construit : {len(cols)} colonnes")
+                return cols
+            
+            # Échec : logger l'erreur
+            if error:
+                logger.error(f"[resolve_usage_expected_columns] ❌ Erreur construction : {error}")
         
-        # Ordre final (ou colonnes par défaut)
-        final_order = usage.get("final_order") or []
-        if not final_order:
+        except Exception as e:
+            logger.error(f"[resolve_usage_expected_columns] ❌ Exception : {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+        
+        # ✅ 2. FALLBACK 1 : Reconstruction intelligente (sans exécuter le script)
+        try:
+            from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
+            
             g = get_gabarit(gabarit_name, gabarit_version)
+            if not g:
+                return []
+            
             base_cols = [c.name for c in (g.columns or [])]
-            final_order = usage.get("columns_enabled") or base_cols[:]
+            columns = list(usage.get("columns_enabled") or base_cols[:])
             
             # Ajouter colonnes enrichies
             for e in (usage.get("enrichments") or []):
                 for c in (e.get("columns") or []):
-                    if c not in final_order:
-                        final_order.append(c)
+                    if c and c not in columns:
+                        columns.append(c)
             
             # Ajouter sorties de méthodes
             methods_selected = set(usage.get("methods") or [])
@@ -1253,26 +1346,45 @@ class TemplateService:
                 for m in it:
                     if isinstance(m, dict) and m.get("name") in methods_selected:
                         out_col = (m.get("output_column") or "").strip()
-                        if out_col and out_col not in final_order:
-                            final_order.append(out_col)
+                        if out_col and out_col not in columns:
+                            columns.append(out_col)
+            
+            # ⚠️ LIMITATION : On ne peut pas deviner les colonnes produites par le script Python
+            # Donc si un script transforme radicalement la structure, on ne les aura pas ici
+            
+            # Appliquer exclusions
+            final_excludes = set(usage.get("final_excludes") or [])
+            columns = [c for c in columns if c not in final_excludes]
+            
+            # Appliquer renommages
+            final_renames = usage.get("final_renames") or {}
+            result = []
+            for col in columns:
+                new_name = final_renames.get(col, col)
+                if new_name and new_name not in result:
+                    result.append(new_name)
+            
+            if result:
+                logger.warning(f"[resolve_usage_expected_columns] ⚠️ Fallback reconstruction : {len(result)} colonnes (SANS script Python)")
+                return result
         
-        # Exclusions
-        final_excludes = set(usage.get("final_excludes") or [])
+        except Exception as e:
+            logger.error(f"[resolve_usage_expected_columns] Erreur fallback 1 : {e}")
         
-        # Renommages (appliquer les nouveaux noms)
-        final_renames = usage.get("final_renames") or {}
+        # ✅ 3. FALLBACK ULTIME : Colonnes de base du gabarit
+        try:
+            from backend.services.gabarit_registry import get_gabarit
+            g = get_gabarit(gabarit_name, gabarit_version)
+            if g:
+                base_cols = [c.name for c in (g.columns or [])]
+                logger.warning(f"[resolve_usage_expected_columns] ⚠️ Fallback ultime : {len(base_cols)} colonnes de base")
+                return base_cols
+        except Exception:
+            pass
         
-        result = []
-        for col in final_order:
-            if col in final_excludes:
-                continue
-            # Utiliser le nom renommé si présent
-            new_name = final_renames.get(col, col)
-            if new_name and new_name not in result:
-                result.append(new_name)
-        
-        return result
-    
+        logger.error(f"[resolve_usage_expected_columns] ❌ Aucune méthode n'a fonctionné")
+        return []
+
     def cache_parameter_options(self, template_id: int, param_name: str, values: list[str], source: dict) -> None:
         """
         Persiste dans configuration/templates/<Nom>/<Version>/config.json

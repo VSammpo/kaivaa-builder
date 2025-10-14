@@ -30,6 +30,27 @@ except Exception:
 
 st.set_page_config(page_title="Donnée par défaut", page_icon="📁", layout="wide")
 
+# À ajouter au début du fichier, après les imports
+def _make_json_safe(obj):
+    """Convertit récursivement les types pandas/numpy en types Python natifs"""
+    import numpy as np
+    import pandas as pd
+    
+    if isinstance(obj, dict):
+        return {k: _make_json_safe(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_make_json_safe(item) for item in obj]
+    elif isinstance(obj, (pd.Timestamp, pd.DatetimeTZDtype)):
+        return obj.isoformat() if pd.notna(obj) else None
+    elif isinstance(obj, (np.integer, np.floating)):
+        return obj.item()
+    elif pd.isna(obj):
+        return None
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
+
 # ========= Navbar homogène
 def render_gabarit_subnav(active: str):
     cols = st.columns([1, 1, 1, 1, 1])
@@ -133,33 +154,51 @@ if buffer_key not in st.session_state:
 use_default = st.checkbox("Activer une donnée par défaut", value=bool(current_default))
 
 if use_default:
-    col1, col2 = st.columns([1,3])
-    with col1:
-        fmt = st.selectbox("Format", ["csv","parquet"],
-                           index=(0 if current_default.get("type") == "csv" else (1 if current_default.get("type")=="parquet" else 0)))
-    with col2:
-        path = st.text_input(
-            "Chemin du fichier",
-            value=current_default.get("path", ""),
-            placeholder=r"Ex: C:\data\sources\fichier.csv",
-            help="Chemin accessible par le serveur"
-        )
+    # Choix du mode
+    mode = st.radio(
+        "Mode de création",
+        ["📁 Fichier source", "🐍 Script Python uniquement"],
+        index=0 if current_default.get("path") else 1,
+        horizontal=True
+    )
+    
+    use_file = (mode == "📁 Fichier source")
+    
+    if use_file:
+        col1, col2 = st.columns([1,3])
+        with col1:
+            fmt = st.selectbox("Format", ["csv","parquet"],
+                               index=(0 if current_default.get("type") == "csv" else (1 if current_default.get("type")=="parquet" else 0)))
+        with col2:
+            path = st.text_input(
+                "Chemin du fichier",
+                value=current_default.get("path", ""),
+                placeholder=r"Ex: C:\data\sources\fichier.csv",
+                help="Chemin accessible par le serveur"
+            )
 
-    if fmt == "csv":
-        csep, cenc = st.columns(2)
-        with csep:
-            sep = st.text_input("Séparateur", value=current_default.get("sep", ";"))
-        with cenc:
-            enc = st.text_input("Encodage", value=current_default.get("encoding", "utf-8-sig"))
+        if fmt == "csv":
+            csep, cenc = st.columns(2)
+            with csep:
+                sep = st.text_input("Séparateur", value=current_default.get("sep", ";"))
+            with cenc:
+                enc = st.text_input("Encodage", value=current_default.get("encoding", "utf-8-sig"))
+        else:
+            sep, enc = None, None
     else:
-        sep, enc = None, None
+        # Mode script pur
+        path, fmt, sep, enc = None, None, None, None
+        st.info("💡 Mode script Python : créez un DataFrame `df` directement dans le code")
 
     expanded = bool(st.session_state.get(buffer_key) or current_default.get("python"))
     with st.form(f"default_data_form_{gab_name}_{gab_version}", clear_on_submit=False, border=True):
 
-        with st.expander("Transformation Python (optionnel)", expanded=expanded):
-            st.caption("💡 Variables disponibles : `df` (DataFrame), `pd` (pandas)")
-            st.caption("⚠️ Vous devez réassigner `df` (ex. `df = df[['col1','col2']]` ou tout calcul renvoyant un DataFrame)")
+        with st.expander("Transformation Python" + (" (obligatoire)" if not use_file else " (optionnel)"), expanded=expanded):
+            st.caption("💡 Variables disponibles : `df` (DataFrame si fichier), `pd` (pandas)")
+            if not use_file:
+                st.caption("⚠️ Vous devez créer `df` (ex. `df = pd.DataFrame({...})` ou utiliser le calendrier ci-dessus)")
+            else:
+                st.caption("⚠️ Vous devez réassigner `df` (ex. `df = df[['col1','col2']]`)")
 
             custom_buttons = [{
                 "name": "Copier", "feather": "Copy", "hasText": True,
@@ -175,10 +214,9 @@ if use_default:
                     "enableLiveAutocompletion": True, "enableBasicAutocompletion": True,
                 },
                 key=f"python_code_editor_{gab_name}_{gab_version}",
-                response_mode=["submit", "blur"]  # <-- capture AVANT le rerun
+                response_mode=["submit", "blur"]
             )
 
-            # Extraction robuste du contenu vers le buffer
             if editor_result:
                 new_code = None
                 if isinstance(editor_result, dict):
@@ -191,42 +229,57 @@ if use_default:
                     st.session_state[buffer_key] = new_code
 
             current_code = st.session_state[buffer_key]
-            st.caption(f"🔍 Code capturé : {len(current_code)} caractères")
+            st.caption(f"📝 Code capturé : {len(current_code)} caractères")
 
         st.divider()
+        
+        # Validation des prérequis
+        can_preview = use_file and path or (not use_file and current_code.strip())
+        
         col_preview, col_validate, col_save = st.columns(3)
         with col_preview:
-            do_preview = st.form_submit_button("👁️ Aperçu", use_container_width=True, disabled=not path)
+            do_preview = st.form_submit_button("👁️ Aperçu", use_container_width=True, disabled=not can_preview)
         with col_validate:
-            do_validate = st.form_submit_button("✅ Valider", use_container_width=True, disabled=not path)
+            do_validate = st.form_submit_button("✅ Valider", use_container_width=True, disabled=not can_preview)
         with col_save:
-            do_save = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True, disabled=not path)
+            do_save = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True, disabled=not can_preview)
 
-            pass
-
-    # --- TRAITEMENT DES ACTIONS APRÈS LE FORM (la valeur de l'éditeur est déjà dans le buffer) ---
+    # --- TRAITEMENT DES ACTIONS APRÈS LE FORM ---
     if do_preview:
         with st.spinner("Chargement..."):
-            df, err = _try_load_source(fmt, path, sep, enc, head=20)
-            if err:
-                st.error(f"❌ {err}")
+            if use_file and path:
+                df, err = _try_load_source(fmt, path, sep, enc, head=20)
+                if err:
+                    st.error(f"❌ {err}")
+                    df = None
             else:
+                df = pd.DataFrame()  # DataFrame vide pour le mode script pur
+            
+            if df is not None:
                 current_code = st.session_state[buffer_key]
                 if current_code.strip():
-                    st.info(f"🔍 Application du script ({len(current_code)} caractères)")
-                df2, perr = _apply_python(df, current_code)
-                if perr:
-                    st.error(f"❌ {perr}")
-                else:
-                    st.success(f"✅ Aperçu chargé : {df2.shape[0]} lignes × {df2.shape[1]} colonnes")
-                    st.dataframe(df2, use_container_width=True, height=300)
+                    st.info(f"📝 Application du script ({len(current_code)} caractères)")
+                    df2, perr = _apply_python(df, current_code)
+                    if perr:
+                        st.error(f"❌ {perr}")
+                    else:
+                        st.success(f"✅ Aperçu chargé : {df2.shape[0]} lignes × {df2.shape[1]} colonnes")
+                        st.dataframe(df2, use_container_width=True, height=300)
+                elif use_file:
+                    st.success(f"✅ Aperçu chargé : {df.shape[0]} lignes × {df.shape[1]} colonnes")
+                    st.dataframe(df, use_container_width=True, height=300)
 
     if do_validate:
         with st.spinner("Validation..."):
-            df, err = _try_load_source(fmt, path, sep, enc, head=100)
-            if err:
-                st.error(f"❌ {err}")
+            if use_file and path:
+                df, err = _try_load_source(fmt, path, sep, enc, head=100)
+                if err:
+                    st.error(f"❌ {err}")
+                    df = None
             else:
+                df = pd.DataFrame()
+            
+            if df is not None:
                 current_code = st.session_state[buffer_key]
                 df2, perr = _apply_python(df, current_code)
                 if perr:
@@ -242,27 +295,40 @@ if use_default:
 
     if do_save:
         with st.spinner("Enregistrement..."):
-            df20, err = _try_load_source(fmt, path, sep, enc, head=20)
-            if err:
-                st.error(f"❌ {err}")
+            if use_file and path:
+                df20, err = _try_load_source(fmt, path, sep, enc, head=20)
+                if err:
+                    st.error(f"❌ {err}")
+                    df20 = None
             else:
+                df20 = pd.DataFrame()
+            
+            if df20 is not None:
                 current_code = st.session_state[buffer_key]
                 df20_transformed, perr = _apply_python(df20, current_code)
                 if perr:
                     st.error(f"❌ {perr}")
                 else:
-                    src = {"type": fmt, "path": str(Path(path).resolve())}
-                    if fmt == "csv":
-                        src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
+                    # Construction de la source
+                    if use_file and path:
+                        src = {"type": fmt, "path": str(Path(path).resolve())}
+                        if fmt == "csv":
+                            src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
+                    else:
+                        src = {"type": "python_only"}
+                    
                     if current_code and current_code.strip():
                         src["python"] = current_code
 
                     set_default_source(gabarit.name, gabarit.version, src)
 
+                    # Conversion JSON-safe pour la preview
                     sample = df20_transformed.head(20)
+                    safe_rows = _make_json_safe(sample.to_dict(orient="records"))
+                    
                     set_default_preview(
                         gabarit.name, gabarit.version,
-                        rows=sample.to_dict(orient="records"),
+                        rows=safe_rows,
                         columns=list(sample.columns)
                     )
                     st.success("✅ Donnée par défaut enregistrée avec aperçu")
@@ -276,7 +342,6 @@ if use_default:
                 del st.session_state[buffer_key]
             st.success("✅ Donnée par défaut retirée")
             st.rerun()
-
 
 else:
     if current_default:

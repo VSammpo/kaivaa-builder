@@ -1,18 +1,15 @@
-# 01a - Promotion (méthode)
+# Analyse du marché FMCG
 
 **Version:** 1.0
 **Créé le:** 2025-10-10
 
 ## Description
 
-Première étape PROMO : 
-* Calcul de la baseline et de l'uplift promotionnel.
-* Présentation de la méthode et définition des paramètres.
-* Premières analyses.
+Pas de description
 
 ## Paramètres
 
-
+- **marque** (string): Pas de description - Obligatoire
 
 ## Tables demandées
 
@@ -22,7 +19,7 @@ Première étape PROMO :
 ## Structure des fichiers
 
 ```
-01a - Promotion (méthode)/
+Analyse du marché FMCG/
 ├── config.yaml           # Configuration du template livrable (tables demandées)
 ├── master.pptx          # Master PPT (facultatif)
 ├── master.xlsx          # Master Excel (obligatoire)
@@ -41,9 +38,9 @@ from backend.services.report_service import ReportService
 
 service = ReportService()
 result = service.generate_report(
-    template_name="01a - Promotion (méthode)",
+    template_name="Analyse du marché FMCG",
     parameters={
-
+        "marque": "valeur",
     }
 )
 ```

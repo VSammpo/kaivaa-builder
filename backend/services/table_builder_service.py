@@ -193,10 +193,11 @@ def build_table_from_usage(
     *,
     full: bool = True,
     log_kpis: bool = False,
-    params: dict | None = None  # ✅ NOUVEAU PARAMÈTRE
+    params: dict | None = None
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
     Construit le DataFrame final à partir d'un usage de gabarit.
+    ORDRE STRICT : Base → Enrichissements → Méthodes → Script → Renommages → Tri → Ordre/Exclusions
     
     Args:
         usage: Configuration de l'usage
@@ -207,13 +208,20 @@ def build_table_from_usage(
     gabarit_name = usage.get("gabarit_name", "")
     gabarit_version = usage.get("gabarit_version", "v1")
     
-    # 1. Charger la base (ou utiliser celle fournie)
+    if log_kpis:
+        logger.info(f"[PIPELINE] 🚀 DÉBUT pour {gabarit_name} (v{gabarit_version})")
+        logger.info(f"[PIPELINE]   • Mode: {'FULL' if full else 'PREVIEW'}")
+        logger.info(f"[PIPELINE]   • Params: {list(params.keys()) if params else []}")
+    
+    # ============================================================================
+    # ÉTAPE 1 : CHARGEMENT BASE
+    # ============================================================================
     if "_source_df" in usage:
         df = usage["_source_df"].copy()
         is_preview = False
-        complete = True  # ✅ AJOUTER CETTE LIGNE
+        complete = True
         if log_kpis:
-            logger.info(f"📦 Base fournie : {len(df)} lignes, {len(df.columns)} colonnes")
+            logger.info(f"[PIPELINE] 📦 ÉTAPE 1 : Base fournie - {len(df)} lignes × {len(df.columns)} colonnes")
     else:
         df, is_preview = _load_df_for_gabarit(gabarit_name, gabarit_version, full=full)
         if df is None:
@@ -221,19 +229,31 @@ def build_table_from_usage(
                 return None, f"FULL demandé mais aucune source n'est définie pour {gabarit_name} (v{gabarit_version})."
             return None, f"Aucune donnée par défaut pour {gabarit_name} (v{gabarit_version})."
         
-        complete = (not is_preview) if full else True  # ✅ Déjà présent
+        complete = (not is_preview) if full else True
         
         if log_kpis:
-            logger.info(f"📦 Base : {gabarit_name} (v{gabarit_version}) - {len(df)} lignes, {len(df.columns)} colonnes - Mode: {'PREVIEW' if is_preview else 'FULL'}")
-        
+            logger.info(f"[PIPELINE] 📦 ÉTAPE 1 : Base chargée - {len(df)} lignes × {len(df.columns)} colonnes")
+            logger.info(f"[PIPELINE]   • Mode: {'PREVIEW' if is_preview else 'FULL'}")
+            logger.info(f"[PIPELINE]   • Colonnes: {list(df.columns)[:10]}{'...' if len(df.columns) > 10 else ''}")
+    
     # Mémoriser les colonnes ajoutées par enrichissements
+    cols_before_enrich = set(df.columns)
     added_enriched_cols: set[str] = set()
     
-    # 2. Enrichissements (jointures multi-sauts)
-    for idx_enrich, e in enumerate(usage.get("enrichments") or []):
+    # ============================================================================
+    # ÉTAPE 2 : ENRICHISSEMENTS
+    # ============================================================================
+    enrichments = usage.get("enrichments") or []
+    if enrichments and log_kpis:
+        logger.info(f"[PIPELINE] 🔗 ÉTAPE 2 : {len(enrichments)} enrichissement(s)")
+    
+    for idx_enrich, e in enumerate(enrichments):
         path = e.get("path") or []
         if not path:
             continue
+        
+        if log_kpis:
+            logger.info(f"[PIPELINE]   • Enrichissement #{idx_enrich+1} : {len(path)} saut(s)")
         
         for i, step in enumerate(path):
             frm, left_key, to, right_key = step
@@ -244,27 +264,19 @@ def build_table_from_usage(
                     return df, f"FULL demandé mais aucune source n'est définie pour {to} (v1)."
                 return df, f"Aucune donnée par défaut pour {to} (v1)."
             
-            if log_kpis:
-                logger.info(f"🔗 Enrichissement #{idx_enrich+1}.{i+1} → {to} - {len(df_to)} lignes - Mode: {'PREVIEW' if is_prev_to else 'FULL'}")
-            
             # Colonnes à rapatrier
             cols_to_fetch: set[str] = set()
             
             if i + 1 < len(path):
-                # Transporter la left_key du saut suivant
                 next_left_key = path[i + 1][1]
                 if next_left_key and next_left_key in df_to.columns:
                     cols_to_fetch.add(next_left_key)
             else:
-                # Dernier saut : colonnes sélectionnées
                 for c in (e.get("columns") or []):
                     if c and c in df_to.columns:
                         cols_to_fetch.add(c)
             
-            # Ne pas inclure la clé droite
             cols_to_fetch.discard(right_key)
-            
-            # Éviter les colonnes déjà présentes
             cols_to_add = [c for c in cols_to_fetch if c not in df.columns]
             
             # Vérifier les clés
@@ -275,14 +287,17 @@ def build_table_from_usage(
             df[left_key] = _normalize_key(df[left_key], left_key)
             df_to[right_key] = _normalize_key(df_to[right_key], right_key)
             
-            # Sous-ensemble de la droite
+            # Sous-ensemble
             right_cols = [right_key] + cols_to_add
             seen = set()
             right_cols = [c for c in right_cols if not (c in seen or seen.add(c))]
             right_subset = df_to[right_cols].drop_duplicates()
             
+            if log_kpis:
+                logger.info(f"[PIPELINE]     ↳ Saut {i+1}/{len(path)} : {frm}[{left_key}] → {to}[{right_key}]")
+                logger.info(f"[PIPELINE]       Colonnes ajoutées: {cols_to_add if cols_to_add else 'aucune'}")
+            
             # MERGE
-            # MERGE (avec debug)
             df = _debug_merge(
                 df,
                 right_subset,
@@ -291,12 +306,10 @@ def build_table_from_usage(
                 right_on=right_key,
                 tag=f"{frm}->{to}"
             )
-
-            # Supprimer la clé de droite
+            
             if right_key in df.columns:
                 df.drop(columns=[right_key], inplace=True)
             
-            # Mémoriser les colonnes ajoutées
             added_enriched_cols.update([c for c in cols_to_add if c in df.columns])
             
             if full and is_prev_to:
@@ -304,50 +317,93 @@ def build_table_from_usage(
     
     # Filtrage des colonnes enrichies non sélectionnées
     selected_enriched = set()
-    for e in (usage.get("enrichments") or []):
+    for e in enrichments:
         selected_enriched.update([c for c in (e.get("columns") or []) if c])
     
     to_drop = [c for c in added_enriched_cols if c not in selected_enriched and c in df.columns]
     if to_drop:
         df.drop(columns=to_drop, inplace=True, errors="ignore")
         if log_kpis:
-            logger.info(f"🧹 Nettoyage : suppression de {len(to_drop)} colonnes enrichies non sélectionnées")
+            logger.info(f"[PIPELINE] 🧹 Nettoyage : {len(to_drop)} colonne(s) enrichie(s) non sélectionnée(s) retirée(s)")
     
-    # 3. Méthodes (colonnes calculées)
+    if log_kpis and enrichments:
+        cols_after_enrich = set(df.columns)
+        new_from_enrich = cols_after_enrich - cols_before_enrich
+        if new_from_enrich:
+            logger.info(f"[PIPELINE] ✅ ÉTAPE 2 terminée : {len(new_from_enrich)} nouvelle(s) colonne(s) : {list(new_from_enrich)}")
+    
+    # ============================================================================
+    # ÉTAPE 3 : MÉTHODES
+    # ============================================================================
     only_selected = list(usage.get("methods") or [])
-    if only_selected:
-        df = _apply_methods(df, gabarit_name, gabarit_version, only=only_selected)
-        if log_kpis:
-            logger.info(f"⚙️ Méthodes appliquées : {', '.join(only_selected)}")
+    cols_before_methods = set(df.columns)
     
-    # 4. Script Python overlay
+    if only_selected:
+        if log_kpis:
+            logger.info(f"[PIPELINE] ⚙️ ÉTAPE 3 : Application de {len(only_selected)} méthode(s) : {only_selected}")
+        
+        df = _apply_methods(df, gabarit_name, gabarit_version, only=only_selected)
+        
+        if log_kpis:
+            cols_after_methods = set(df.columns)
+            new_from_methods = cols_after_methods - cols_before_methods
+            if new_from_methods:
+                logger.info(f"[PIPELINE] ✅ ÉTAPE 3 terminée : {len(new_from_methods)} nouvelle(s) colonne(s) : {list(new_from_methods)}")
+    
+    # ============================================================================
+    # ÉTAPE 4 : SCRIPT PYTHON
+    # ============================================================================
     code = (usage.get("overlay_python") or "").strip()
+    cols_before_script = set(df.columns)
+    
     if code:
+        if log_kpis:
+            logger.info(f"[PIPELINE] 🧪 ÉTAPE 4 : Script Python ({len(code)} caractères)")
+            logger.info(f"[PIPELINE]   • Colonnes avant script: {len(df.columns)}")
+            logger.info(f"[PIPELINE]   • Paramètres disponibles: {list(params.keys()) if params else []}")
+        
         df2, err2 = _apply_overlay(df, code, params=params)
         if err2 is None and isinstance(df2, pd.DataFrame):
             df = df2
             if log_kpis:
-                logger.info(f"🧪 Script Python appliqué (avec {len(params or {})} paramètre(s))")
+                cols_after_script = set(df.columns)
+                new_from_script = cols_after_script - cols_before_script
+                removed_by_script = cols_before_script - cols_after_script
+                logger.info(f"[PIPELINE] ✅ ÉTAPE 4 terminée : {len(df.columns)} colonnes")
+                if new_from_script:
+                    logger.info(f"[PIPELINE]   • Nouvelles: {list(new_from_script)}")
+                if removed_by_script:
+                    logger.info(f"[PIPELINE]   • Retirées: {list(removed_by_script)}")
         else:
+            if log_kpis:
+                logger.error(f"[PIPELINE] ❌ ERREUR ÉTAPE 4 : {err2}")
             return None, err2
-
-    # ✅ 4-bis. Sécuriser les noms de colonnes (AVANT renommages/tri)
+    
+    # ============================================================================
+    # ÉTAPE 4-bis : SÉCURISATION DOUBLONS
+    # ============================================================================
     if df.columns.duplicated().any():
         dup_names = list(df.columns[df.columns.duplicated(keep=False)])
         if log_kpis:
-            logger.warning(f"⚠️ Noms de colonnes dupliqués détectés : {', '.join(map(str, dup_names[:5]))}")
+            logger.warning(f"[PIPELINE] ⚠️ Doublons de colonnes détectés : {dup_names[:10]}")
         df = df.loc[:, ~df.columns.duplicated(keep="first")]
-
-    # 5. Renommages de colonnes
+    
+    # ============================================================================
+    # ÉTAPE 5 : RENOMMAGES
+    # ============================================================================
     ren: dict[str, str] = usage.get("final_renames") or {}
     if ren:
         safe_map = {k: v for k, v in ren.items() if k in df.columns and v and v != k}
         if safe_map:
-            df = df.rename(columns=safe_map)
             if log_kpis:
-                logger.info(f"📝 Renommages : {len(safe_map)} colonnes")
+                logger.info(f"[PIPELINE] 🏷️ ÉTAPE 5 : {len(safe_map)} renommage(s)")
+                for old, new in list(safe_map.items())[:5]:
+                    logger.info(f"[PIPELINE]   • {old} → {new}")
+            df = df.rename(columns=safe_map)
     
-    # 6. Tri des lignes
+    # ============================================================================
+    # ÉTAPE 6 : TRI
+    # ============================================================================
     sort_rules = usage.get("final_sort") or []
     if isinstance(sort_rules, list) and sort_rules:
         by: list[str] = []
@@ -362,14 +418,15 @@ def build_table_from_usage(
             if col_now in df.columns:
                 by.append(col_now)
                 ascending.append(bool(r.get("asc", True)))
+        
         if by:
-            df = df.sort_values(by=by, ascending=ascending, kind="mergesort", ignore_index=True)
             if log_kpis:
-                logger.info(f"📊 Tri appliqué sur {len(by)} colonne(s)")
+                logger.info(f"[PIPELINE] 📊 ÉTAPE 6 : Tri sur {len(by)} colonne(s)")
+            df = df.sort_values(by=by, ascending=ascending, kind="mergesort", ignore_index=True)
     
-
-    
-    # 7. Ordre final / exclusions
+    # ============================================================================
+    # ÉTAPE 7 : ORDRE / EXCLUSIONS
+    # ============================================================================
     src_order = usage.get("final_order") or df.columns.tolist()
     src_excl = set(usage.get("final_excludes") or [])
     
@@ -382,7 +439,7 @@ def build_table_from_usage(
             mapped_order.append(cc)
             seen.add(cc)
     
-    # Exclusions : anciens ET nouveaux noms
+    # Exclusions
     excl_names = set()
     for c in src_excl:
         excl_names.add(c)
@@ -394,6 +451,9 @@ def build_table_from_usage(
                  [c for c in df.columns if c not in mapped_order and c not in excl_names]
     
     if log_kpis:
-        logger.info(f"📦 Sortie finale : {len(df)} lignes, {len(final_cols)} colonnes - Complet: {complete}")
+        logger.info(f"[PIPELINE] 📦 ÉTAPE 7 : Ordre final")
+        logger.info(f"[PIPELINE]   • Exclusions: {len(excl_names)} colonne(s)")
+        logger.info(f"[PIPELINE]   • Colonnes finales: {len(final_cols)}")
+        logger.info(f"[PIPELINE] ✅ FIN : {len(df)} lignes × {len(final_cols)} colonnes")
     
     return df[final_cols], None

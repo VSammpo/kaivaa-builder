@@ -1122,18 +1122,17 @@ class ReportService:
 
         return summary
 
-    # Dans report_service.py, remplacer la méthode _inject_all_usages_from_defaults
 
     def _inject_all_usages_from_defaults(self) -> dict:
         """
-        Parcourt les usages du template et injecte les DataFrames dans l'Excel
-        en utilisant le nouveau service de construction de tables.
+        Parcourt les usages du template et injecte les DataFrames dans l'Excel.
+        ✅ CORRECTION : Ajoute un délai entre injections pour éviter corruption COM Excel.
         """
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
         from backend.services.table_builder_service import build_table_from_usage
         from backend.services.excel_injection_service import inject_dataframe
-        from backend.services.parameter_service import ParameterService
+        import time  # ✅ AJOUT
 
         DatabaseService.initialize()
         summary = {"ok": 0, "err": 0, "details": []}
@@ -1146,42 +1145,62 @@ class ReportService:
         if not excel_path:
             return {"skipped": True, "reason": "no_excel_path"}
 
-        # ✅ CHARGER LES PARAMÈTRES DU TEMPLATE
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
             template_config = ts.load_template_config(template_id)
 
-            # ✅ Utiliser exactement les paramètres normalisés construits en amont
             params_dict = getattr(self, "_effective_params", {}) or {}
-            logger.info(f"[inject/defaults] paramètres passés au pipeline : {params_dict}")
+            logger.info(f"[inject/defaults] 📋 Paramètres passés au pipeline : {params_dict}")
 
             usages = ts.list_gabarit_usages(template_id) or []
 
-
-
-            for u in usages:
+            for idx, u in enumerate(usages):  # ✅ Ajouter index
                 g_name = u.get("gabarit_name", "")
-                g_ver  = u.get("gabarit_version", "v1")
+                g_ver = u.get("gabarit_version", "v1")
                 target = (u.get("excel_target") or {})
-                sheet  = (target.get("sheet") or "").strip()
-                table  = (target.get("table") or "").strip()
+                sheet = (target.get("sheet") or "").strip()
+                table = (target.get("table") or "").strip()
 
                 if not sheet or not table:
+                    logger.error(f"[inject] ❌ {g_name} : cible Excel manquante (sheet/table)")
                     summary["details"].append({
-                        "usage": g_name, 
+                        "usage": g_name,
                         "error": "missing_target_sheet_or_table"
                     })
                     summary["err"] += 1
                     continue
 
                 try:
-                    # ✅ PASSER LES PARAMS
-                    df, error = build_table_from_usage(u, full=True, log_kpis=True, params=params_dict)
+                    logger.info(f"[inject] 🔄 Construction table {g_name} → {sheet}/{table}")
+                    
+                    fresh_usage = ts.get_gabarit_usage(template_id, g_name, g_ver) or u
+                    
+                    script = (fresh_usage.get("overlay_python") or "").strip()
+                    if script:
+                        logger.info(f"[inject]   • Script Python présent ({len(script)} caractères)")
+                    else:
+                        logger.info(f"[inject]   • Aucun script Python")
+                    
+                    df, error = build_table_from_usage(
+                        fresh_usage,
+                        full=True,
+                        log_kpis=True,
+                        params=params_dict
+                    )
                     
                     if error or df is None or (hasattr(df, "empty") and df.empty):
                         raise RuntimeError(error or "Aucune donnée disponible")
 
                     expected_cols = ts.resolve_usage_expected_columns(template_id, g_name, g_ver)
+                    
+                    logger.info(f"[inject]   • DataFrame construit : {len(df)} lignes × {len(df.columns)} colonnes")
+                    logger.info(f"[inject]   • Colonnes attendues : {len(expected_cols)}")
+                    logger.info(f"[inject]   • Colonnes présentes : {list(df.columns)[:10]}{'...' if len(df.columns) > 10 else ''}")
+
+                    # ✅ CORRECTION : Ajouter délai AVANT injection (sauf pour la première)
+                    if idx > 0:
+                        logger.debug(f"[inject]   • Pause 1s avant injection (évite corruption COM)...")
+                        time.sleep(1.0)
 
                     res = inject_dataframe(
                         excel_path,
@@ -1193,22 +1212,29 @@ class ReportService:
                     
                     summary["ok"] += 1
                     summary["details"].append({
-                        "usage": g_name, 
-                        "sheet": sheet, 
+                        "usage": g_name,
+                        "sheet": sheet,
                         "table": table,
-                        "rows": res.get("rows"), 
-                        "cols": res.get("cols"), 
-                        "warnings": res.get("warnings", {})
+                        "rows": res.get("rows"),
+                        "cols": res.get("cols"),
+                        "warnings": res.get("warnings", {}),
+                        "script_applied": bool(script),
+                        "methods_applied": len(fresh_usage.get("methods", []))
                     })
                     
+                    logger.success(f"[inject] ✅ Injection réussie : {g_name} → {sheet}/{table}")
+                    
                 except Exception as e:
-                    logger.error(f"Erreur injection {g_name} → {sheet}/{table}: {e}")
+                    logger.error(f"[inject] ❌ Erreur injection {g_name} → {sheet}/{table}: {e}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
                     summary["err"] += 1
                     summary["details"].append({
-                        "usage": g_name, 
+                        "usage": g_name,
                         "error": str(e)
                     })
 
+        logger.info(f"[inject] 📊 Résumé : {summary['ok']} OK, {summary['err']} erreurs")
         return summary
 
     def _inject_usage_dataframe(
