@@ -1060,65 +1060,113 @@ class ReportService:
 
     def _inject_all_usages_from_project(self, project_id: str) -> dict:
         """
-        Version projet : utilise ProjectService.build_dataframe puis le service centralisé.
+        Mode PROJET : réplique la logique "Détail livrable" (template) :
+        - résout l'usage exact par (sheet, table) si possible,
+        - construit en FULL via build_table_from_usage (sans imposer un df_base projet),
+        - injecte strictement selon df.columns (pas d'écart preview ↔ Excel),
+        - petite pause entre injections pour COM/xlwings.
         """
+        from time import sleep
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
-        from backend.services.project_service import ProjectService
         from backend.services.table_builder_service import build_table_from_usage
+        from backend.services.excel_injection_service import inject_dataframe
 
         DatabaseService.initialize()
-        summary: dict = {}
+        summary: dict = {"ok": 0, "err": 0, "details": []}
 
         template_id = self._resolve_template_id_by_name()
         if not template_id:
             return {"skipped": True, "reason": "template_id_not_found"}
 
+        excel_path = getattr(self, "current_excel_path", None)
+        if not excel_path:
+            return {"skipped": True, "reason": "no_excel_path"}
+
+        params_dict = getattr(self, "_effective_params", {}) or {}
+
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
-            ps = ProjectService(db)
-
             usages = ts.list_gabarit_usages(template_id) or []
             if not usages:
-                logger.info("Aucune table demandée sur ce template : rien à injecter (mode projet).")
                 return {"skipped": True, "reason": "no_usages"}
 
-            for u in usages:
+            for idx, u in enumerate(usages):
                 gname = (u.get("gabarit_name") or "").strip()
                 gver  = (u.get("gabarit_version") or "v1").strip()
-                if not gname:
+                tgt   = (u.get("excel_target") or {})
+                sheet = (tgt.get("sheet") or "").strip()
+                table = (tgt.get("table") or "").strip()
+                key   = f"{gname}:{gver}"
+
+                if not sheet or not table:
+                    summary["err"] += 1
+                    summary["details"].append({
+                        "usage": gname, "sheet": sheet, "table": table,
+                        "error": "missing_target_sheet_or_table"
+                    })
                     continue
-                key = f"{gname}:{gver}"
+
+                logger.info(f"[inject/project] 🔄 Construction table {key} → {sheet}/{table}")
 
                 try:
-                    # Charger le DataFrame du projet
-                    df_base = ps.build_dataframe(project_id, gname, gver)
-                    
-                    # ✅ Construire la table avec les enrichissements/méthodes/script
-                    # On crée un usage modifié qui utilise df_base au lieu de charger depuis le gabarit
-                    usage_modified = dict(u)
-                    usage_modified["_source_df"] = df_base  # DataFrame de base fourni
-                    
-                    df_final, error = build_table_from_usage(
-                        usage_modified,
-                        full=True,
+                    # 1) Résoudre l’usage exact par (sheet, table) pour coller à 2a
+                    try:
+                        fresh_usage = ts.get_usage_for_sheet_table(template_id, sheet, table)
+                    except Exception:
+                        fresh_usage = None
+                    if fresh_usage is None:
+                        fresh_usage = u  # fallback
+
+                    # 2) Construire en FULL comme en mode Template (pas de _source_df forcé)
+                    built = build_table_from_usage(
+                        fresh_usage,
+                        full=True,          # évite tout preview tronqué
                         log_kpis=True,
-                        params=getattr(self, "_effective_params", {}) or {}
+                        params=params_dict
+                    )
+                    if isinstance(built, tuple):
+                        df, error = (built + (None,))[:2]
+                    else:
+                        df, error = built, None
+
+                    if error:
+                        raise RuntimeError(error)
+                    if df is None or (hasattr(df, "empty") and df.empty):
+                        raise RuntimeError("Aucune donnée après construction (df vide)")
+
+                    expected_cols = list(df.columns)
+                    logger.info(f"[inject/project]   • DataFrame final : {len(df)} lignes × {len(expected_cols)} colonnes")
+
+                    if idx > 0:
+                        sleep(1.0)  # anti-corruption COM/xlwings
+
+                    # 3) Injection strictement selon df.columns (même logique qu’en 2a)
+                    res = inject_dataframe(
+                        excel_path,
+                        sheet,
+                        table,
+                        df,
+                        expected_columns=expected_cols
                     )
 
-                    
-                    if error or df_final is None:
-                        raise RuntimeError(error or "Construction de table échouée")
-                    
-                    res = self._inject_usage_dataframe(template_id, u, df_final)
-                    summary[key] = {
-                        "rows": int(res.get("rows", 0)),
+                    summary["ok"] += 1
+                    summary["details"].append({
+                        "usage": gname, "sheet": sheet, "table": table,
+                        "rows": res.get("rows", len(df)),
+                        "cols": len(expected_cols),
                         "warnings": res.get("warnings", {}),
-                        "mode": res.get("mode", "range"),
-                    }
+                        "script_applied": True,
+                        "methods_applied": res.get("methods_applied", 0)
+                    })
+                    logger.success(f"[inject/project] ✅ Injection réussie : {key} → {sheet}/{table}")
+
                 except Exception as e:
-                    logger.warning(f"Injection échouée pour {key}: {e}")
-                    summary[key] = {"error": str(e)}
+                    logger.warning(f"[inject/project] ❌ Échec {key}: {e}")
+                    summary["err"] += 1
+                    summary["details"].append({
+                        "usage": gname, "sheet": sheet, "table": table, "error": str(e)
+                    })
 
         return summary
 
