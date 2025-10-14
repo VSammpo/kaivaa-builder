@@ -1270,75 +1270,91 @@ class TemplateService:
     def resolve_usage_expected_columns(self, template_id: int, gabarit_name: str, gabarit_version: str) -> list[str]:
         """
         Retourne la liste finale des colonnes attendues pour un usage.
-        
-        ✅ VERSION ROBUSTE : Construit le DataFrame réel pour extraire les colonnes effectives.
-        Cette méthode garantit la cohérence totale avec le pipeline de génération.
+        Politique: 
+        - Tente PREVIEW.
+        - Si script lourd OU PREVIEW "suspect" (≈ colonnes de base), relance en FULL.
+        - Sinon retourne les colonnes effectivement construites.
         """
         from backend.services.table_builder_service import build_table_from_usage
         from backend.services.parameter_service import ParameterService
-        
+        from backend.services.gabarit_registry import get_gabarit
+
         usage = self.get_gabarit_usage(template_id, gabarit_name, gabarit_version)
         if not usage:
             logger.warning(f"[resolve_usage_expected_columns] Usage introuvable pour {gabarit_name}:{gabarit_version}")
             return []
-        
-        # ✅ 1. PRIORITÉ ABSOLUE : Construire le DataFrame réel
+
+        # 0) Contexte
+        template_config = self.load_template_config(template_id)
+        params_dict = {p.name: ParameterService.get_default_value(p) for p in template_config.parameters}
+
+        # Heuristiques de complexité du script
+        script = (usage.get("overlay_python") or "").strip()
+        has_complex_script = (
+            len(script) > 1000
+            or any(k in script for k in ("groupby(", ".agg(", ".pivot", "merge(", "rolling(", "crosstab("))
+        )
+        has_transformations = bool(script or usage.get("methods") or usage.get("enrichments"))
+
+        # 1) PREVIEW d'abord (rapide)
         try:
-            # Charger les paramètres avec valeurs par défaut
-            template_config = self.load_template_config(template_id)
-            params_dict = {p.name: ParameterService.get_default_value(p) for p in template_config.parameters}
-            
-            # ✅ Essayer PREVIEW d'abord (rapide, mais peut échouer sur gros datasets)
-            df, error = build_table_from_usage(
-                usage,
-                full=False,
-                log_kpis=False,
-                params=params_dict
-            )
-            
-            # ✅ Si échec PREVIEW, essayer FULL
-            if df is None or df.empty:
-                logger.debug(f"[resolve_usage_expected_columns] Preview échoué, tentative FULL...")
-                df, error = build_table_from_usage(
-                    usage,
-                    full=True,
-                    log_kpis=False,
-                    params=params_dict
-                )
-            
-            # ✅ Si succès, retourner TOUTES les colonnes du DataFrame
-            if df is not None and not df.empty:
-                cols = list(df.columns)
-                logger.info(f"[resolve_usage_expected_columns] ✅ DataFrame construit : {len(cols)} colonnes")
-                return cols
-            
-            # Échec : logger l'erreur
-            if error:
-                logger.error(f"[resolve_usage_expected_columns] ❌ Erreur construction : {error}")
-        
+            df_prev, err_prev = build_table_from_usage(usage, full=False, log_kpis=False, params=params_dict)
         except Exception as e:
-            logger.error(f"[resolve_usage_expected_columns] ❌ Exception : {e}")
-            import traceback
-            logger.debug(traceback.format_exc())
-        
-        # ✅ 2. FALLBACK 1 : Reconstruction intelligente (sans exécuter le script)
+            df_prev, err_prev = None, str(e)
+
+        # 2) Décision : forcer FULL si nécessaire
+        need_full = False
+        if has_complex_script:
+            need_full = True
+        else:
+            # Si on a des transformations mais que le PREVIEW "ressemble" aux colonnes de base ⇒ FULL
+            try:
+                g = get_gabarit(gabarit_name, gabarit_version)
+                base_cols = [c.name for c in (g.columns or [])]
+                if df_prev is not None and not getattr(df_prev, "empty", True):
+                    prev_cols = list(df_prev.columns)
+                    # Même taille que les colonnes de base (ou quasi) ET script présent ⇒ suspect
+                    if has_transformations and len(prev_cols) <= max(len(base_cols), 3) and set(prev_cols).issuperset(set(base_cols[:min(len(prev_cols), len(base_cols))])):
+                        need_full = True
+            except Exception:
+                # En cas de doute, on ne bloque pas la suite
+                pass
+
+        # 3) Exécuter FULL si requis, sinon garder PREVIEW
+        if need_full or df_prev is None or getattr(df_prev, "empty", True):
+            logger.debug("[resolve_usage_expected_columns] FULL requis (script complexe ou PREVIEW suspect)")
+            try:
+                df_full, err_full = build_table_from_usage(usage, full=True, log_kpis=False, params=params_dict)
+            except Exception as e:
+                df_full, err_full = None, str(e)
+
+            if df_full is not None and not getattr(df_full, "empty", True):
+                cols = list(df_full.columns)
+                logger.info(f"[resolve_usage_expected_columns] ✅ DataFrame construit (FULL) : {len(cols)} colonnes")
+                return cols
+
+            # FULL en échec → on retente de sauver ce qu'on peut depuis PREVIEW
+            if df_prev is not None and not getattr(df_prev, "empty", True):
+                cols = list(df_prev.columns)
+                logger.warning(f"[resolve_usage_expected_columns] ⚠️ FULL en échec, fallback PREVIEW : {len(cols)} colonnes")
+                return cols
+
+            logger.error(f"[resolve_usage_expected_columns] ❌ Erreur construction : {err_full or err_prev or 'inconnue'}")
+        else:
+            cols = list(df_prev.columns)
+            logger.info(f"[resolve_usage_expected_columns] ✅ DataFrame construit (PREVIEW) : {len(cols)} colonnes")
+            return cols
+
+        # 4) Derniers fallbacks (comme avant)
         try:
             from backend.services.gabarit_registry import get_gabarit, list_methods_for_gabarit
-            
             g = get_gabarit(gabarit_name, gabarit_version)
-            if not g:
-                return []
-            
             base_cols = [c.name for c in (g.columns or [])]
             columns = list(usage.get("columns_enabled") or base_cols[:])
-            
-            # Ajouter colonnes enrichies
             for e in (usage.get("enrichments") or []):
                 for c in (e.get("columns") or []):
                     if c and c not in columns:
                         columns.append(c)
-            
-            # Ajouter sorties de méthodes
             methods_selected = set(usage.get("methods") or [])
             if methods_selected:
                 all_methods = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
@@ -1348,30 +1364,20 @@ class TemplateService:
                         out_col = (m.get("output_column") or "").strip()
                         if out_col and out_col not in columns:
                             columns.append(out_col)
-            
-            # ⚠️ LIMITATION : On ne peut pas deviner les colonnes produites par le script Python
-            # Donc si un script transforme radicalement la structure, on ne les aura pas ici
-            
-            # Appliquer exclusions
             final_excludes = set(usage.get("final_excludes") or [])
             columns = [c for c in columns if c not in final_excludes]
-            
-            # Appliquer renommages
             final_renames = usage.get("final_renames") or {}
             result = []
             for col in columns:
                 new_name = final_renames.get(col, col)
                 if new_name and new_name not in result:
                     result.append(new_name)
-            
             if result:
                 logger.warning(f"[resolve_usage_expected_columns] ⚠️ Fallback reconstruction : {len(result)} colonnes (SANS script Python)")
                 return result
-        
         except Exception as e:
             logger.error(f"[resolve_usage_expected_columns] Erreur fallback 1 : {e}")
-        
-        # ✅ 3. FALLBACK ULTIME : Colonnes de base du gabarit
+
         try:
             from backend.services.gabarit_registry import get_gabarit
             g = get_gabarit(gabarit_name, gabarit_version)
@@ -1381,9 +1387,10 @@ class TemplateService:
                 return base_cols
         except Exception:
             pass
-        
-        logger.error(f"[resolve_usage_expected_columns] ❌ Aucune méthode n'a fonctionné")
+
+        logger.error("[resolve_usage_expected_columns] ❌ Aucune méthode n'a fonctionné")
         return []
+
 
     def cache_parameter_options(self, template_id: int, param_name: str, values: list[str], source: dict) -> None:
         """
@@ -1428,4 +1435,18 @@ class TemplateService:
 
         cfg["parameters"] = plist
         self.update_config(template_id, cfg)
+
+    def get_usage_for_sheet_table(self, template_id: int, sheet: str, table: str) -> dict | None:
+        """Retourne l’usage dont la cible Excel correspond exactement (sheet/table)."""
+        usages = self.list_gabarit_usages(template_id) or []
+        sheet_l = (sheet or "").strip().lower()
+        table_l = (table or "").strip().lower()
+        for u in usages:
+            tgt = (u.get("excel_target") or {})
+            s = (tgt.get("sheet") or "").strip().lower()
+            t = (tgt.get("table") or "").strip().lower()
+            if s == sheet_l and t == table_l:
+                return u
+        return None
+
 

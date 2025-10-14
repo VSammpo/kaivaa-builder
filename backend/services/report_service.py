@@ -1173,7 +1173,8 @@ class ReportService:
                 try:
                     logger.info(f"[inject] 🔄 Construction table {g_name} → {sheet}/{table}")
                     
-                    fresh_usage = ts.get_gabarit_usage(template_id, g_name, g_ver) or u
+                    fresh_usage = ts.get_usage_for_sheet_table(template_id, sheet, table) 
+
                     
                     script = (fresh_usage.get("overlay_python") or "").strip()
                     if script:
@@ -1191,7 +1192,8 @@ class ReportService:
                     if error or df is None or (hasattr(df, "empty") and df.empty):
                         raise RuntimeError(error or "Aucune donnée disponible")
 
-                    expected_cols = ts.resolve_usage_expected_columns(template_id, g_name, g_ver)
+                    expected_cols = list(df.columns)
+
                     
                     logger.info(f"[inject]   • DataFrame construit : {len(df)} lignes × {len(df.columns)} colonnes")
                     logger.info(f"[inject]   • Colonnes attendues : {len(expected_cols)}")
