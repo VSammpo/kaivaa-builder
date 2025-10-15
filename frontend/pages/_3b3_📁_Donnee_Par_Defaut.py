@@ -30,12 +30,10 @@ except Exception:
 
 st.set_page_config(page_title="Donnée par défaut", page_icon="📁", layout="wide")
 
-# À ajouter au début du fichier, après les imports
+# ---- Utils ----
 def _make_json_safe(obj):
-    """Convertit récursivement les types pandas/numpy en types Python natifs"""
     import numpy as np
     import pandas as pd
-    
     if isinstance(obj, dict):
         return {k: _make_json_safe(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -44,12 +42,19 @@ def _make_json_safe(obj):
         return obj.isoformat() if pd.notna(obj) else None
     elif isinstance(obj, (np.integer, np.floating)):
         return obj.item()
-    elif pd.isna(obj):
-        return None
     elif isinstance(obj, np.ndarray):
         return obj.tolist()
-    else:
-        return obj
+    try:
+        import pandas as pd  # noqa
+        if pd.isna(obj):
+            return None
+    except Exception:
+        pass
+    return obj
+
+def _ns(key: str, gab_name: str, gab_version: str) -> str:
+    """Namespacer pour les clés de session (évite les collisions inter-gabarits)."""
+    return f"{key}__{gab_name}__{gab_version}"
 
 # ========= Navbar homogène
 def render_gabarit_subnav(active: str):
@@ -98,6 +103,58 @@ if "selected_gabarit" not in st.session_state or not st.session_state.selected_g
 gab_name, gab_version = st.session_state.selected_gabarit
 gabarit = get_gabarit(gab_name, gab_version)
 
+# ==== Clés de session namespacées
+k_enabled = _ns("default_enabled", gab_name, gab_version)
+k_mode    = _ns("default_mode", gab_name, gab_version)              # "file" | "python_only"
+k_fmt     = _ns("default_fmt", gab_name, gab_version)               # "csv" | "parquet" | "python_only"
+k_path    = _ns("default_path", gab_name, gab_version)
+k_sep     = _ns("default_sep", gab_name, gab_version)
+k_enc     = _ns("default_enc", gab_name, gab_version)
+k_codebuf = _ns("python_code_buffer", gab_name, gab_version)
+k_hydrated= _ns("hydrated_once", gab_name, gab_version)
+k_post    = _ns("postsave_state", gab_name, gab_version)
+k_flash   = _ns("flash_msg", gab_name, gab_version)
+
+
+# ==== 1) APPLIQUER LES ÉTATS "PENDING" AVANT TOUT WIDGET
+# (on peut mettre à jour session_state ici sans erreur)
+if k_post in st.session_state:
+    pending = st.session_state[k_post]
+    for kk, vv in pending.items():
+        st.session_state[kk] = vv
+    del st.session_state[k_post]
+
+# ==== 1b) Afficher un flash éventuel (après application du postsave_state, avant widgets)
+if k_flash in st.session_state:
+    st.success(st.session_state[k_flash])
+    del st.session_state[k_flash]
+
+
+# ==== 2) Charger l'état depuis le JSON, puis hydrater au premier run
+current_default = get_default_source(gabarit.name, gabarit.version) or {}
+
+if k_hydrated not in st.session_state:
+    if current_default:
+        mode = "file" if current_default.get("path") else (
+            "python_only" if current_default.get("type") in {"python_only", "script"} else "file"
+        )
+        st.session_state.setdefault(k_enabled, True)
+        st.session_state.setdefault(k_mode,    mode)
+        st.session_state.setdefault(k_fmt,     current_default.get("type") if current_default.get("type") in {"csv","parquet"} else ("python_only" if mode=="python_only" else "csv"))
+        st.session_state.setdefault(k_path,    current_default.get("path", ""))
+        st.session_state.setdefault(k_sep,     current_default.get("sep", ";"))
+        st.session_state.setdefault(k_enc,     current_default.get("encoding", "utf-8-sig"))
+        st.session_state.setdefault(k_codebuf, current_default.get("python", ""))
+    else:
+        st.session_state.setdefault(k_enabled, False)
+        st.session_state.setdefault(k_mode,    "file")
+        st.session_state.setdefault(k_fmt,     "csv")
+        st.session_state.setdefault(k_path,    "")
+        st.session_state.setdefault(k_sep,     ";")
+        st.session_state.setdefault(k_enc,     "utf-8-sig")
+        st.session_state.setdefault(k_codebuf, "")
+    st.session_state[k_hydrated] = True
+
 render_gabarit_subnav("default")
 st.title(f"📁 Donnée par défaut : {gabarit.name} [{gabarit.version}]")
 st.divider()
@@ -119,84 +176,106 @@ def _try_load_source(fmt: str, path: str, sep: str | None, enc: str | None, head
         return None, str(e)
 
 def _apply_python(df: pd.DataFrame, code: str | None):
-    """
-    Applique un script Python sur un DataFrame.
-    Le script DOIT réassigner `df` pour que les modifications soient prises en compte.
-    """
     if not code or not isinstance(code, str) or not code.strip():
         return df, None
     try:
         loc = {"df": df.copy(), "pd": pd}
         exec(code, {}, loc)
         new_df = loc.get("df")
-        
         if not isinstance(new_df, pd.DataFrame):
             return None, (
                 f"Le script doit retourner un DataFrame (pas {type(new_df).__name__}). "
                 "Utilisez 'df = df[[...]]' (double crochets) pour garder un DataFrame"
             )
-        
         return new_df, None
-    
     except Exception as e:
         import traceback
         tb = traceback.format_exc()
         return None, f"Erreur script Python : {e}\n{tb}"
 
 expected_cols = [c.name for c in (gabarit.columns or [])]
-current_default = get_default_source(gabarit.name, gabarit.version) or {}
 
-# ✅ INITIALISER le code Python avec une clé unique par gabarit
-buffer_key = f"python_code_buffer_{gab_name}_{gab_version}"
-if buffer_key not in st.session_state:
-    st.session_state[buffer_key] = current_default.get("python", "")
+# ==== Bandeau résumé du default enregistré
+with st.expander("Résumé de la donnée par défaut enregistrée (lecture seule)", expanded=bool(current_default)):
+    if current_default:
+        colA, colB, colC, colD = st.columns([2,2,2,2])
+        with colA:
+            st.write("**Type** :", current_default.get("type", "—"))
+            st.write("**Séparateur** :", current_default.get("sep", "—"))
+        with colB:
+            st.write("**Encodage** :", current_default.get("encoding", "—"))
+            st.write("**Chemin** :", current_default.get("path", "—"))
+        with colC:
+            code_len = len(current_default.get("python", "") or "")
+            st.write("**Script Python** :", f"{code_len} caractères")
+        with colD:
+            if st.button("↩️ Charger dans le formulaire", use_container_width=True):
+                # On pousse dans la session PUIS rerun (widgets pas encore créés au prochain run)
+                st.session_state[_ns("postsave_state", gab_name, gab_version)] = {
+                    k_enabled: True,
+                    k_mode: "file" if current_default.get("path") else "python_only",
+                    k_fmt:  current_default.get("type") if current_default.get("type") in {"csv","parquet"} else ("python_only" if not current_default.get("path") else "csv"),
+                    k_path: current_default.get("path", ""),
+                    k_sep:  current_default.get("sep", ";"),
+                    k_enc:  current_default.get("encoding", "utf-8-sig"),
+                    k_codebuf: current_default.get("python", ""),
+                }
+                st.rerun()
+    else:
+        st.info("Aucune donnée par défaut enregistrée pour ce gabarit.")
 
-use_default = st.checkbox("Activer une donnée par défaut", value=bool(current_default))
+# ==== UI principale
+use_default = st.checkbox("Activer une donnée par défaut", key=k_enabled, value=st.session_state.get(k_enabled, False))
 
+# Choix du mode
 if use_default:
-    # Choix du mode
-    mode = st.radio(
+    radio_index = 0 if st.session_state.get(k_mode) == "file" else 1
+    mode_label = st.radio(
         "Mode de création",
         ["📁 Fichier source", "🐍 Script Python uniquement"],
-        index=0 if current_default.get("path") else 1,
-        horizontal=True
+        index=radio_index,
+        horizontal=True,
+        key=_ns("radio_mode", gab_name, gab_version)
     )
-    
-    use_file = (mode == "📁 Fichier source")
-    
+    st.session_state[k_mode] = "file" if mode_label == "📁 Fichier source" else "python_only"
+    use_file = (st.session_state[k_mode] == "file")
+
     if use_file:
         col1, col2 = st.columns([1,3])
         with col1:
-            fmt = st.selectbox("Format", ["csv","parquet"],
-                               index=(0 if current_default.get("type") == "csv" else (1 if current_default.get("type")=="parquet" else 0)))
+            fmt_index = 0 if st.session_state.get(k_fmt, "csv") == "csv" else 1
+            fmt_label = st.selectbox("Format", ["csv","parquet"], index=fmt_index, key=_ns("sel_fmt", gab_name, gab_version))
+            st.session_state[k_fmt] = fmt_label
+
         with col2:
-            path = st.text_input(
+            st.text_input(
                 "Chemin du fichier",
-                value=current_default.get("path", ""),
+                value=st.session_state.get(k_path, ""),
                 placeholder=r"Ex: C:\data\sources\fichier.csv",
-                help="Chemin accessible par le serveur"
+                help="Chemin accessible par le serveur",
+                key=k_path  # clé directe pour que la valeur se mette à jour
             )
 
-        if fmt == "csv":
+        if st.session_state[k_fmt] == "csv":
             csep, cenc = st.columns(2)
             with csep:
-                sep = st.text_input("Séparateur", value=current_default.get("sep", ";"))
+                st.text_input("Séparateur", value=st.session_state.get(k_sep, ";"), key=k_sep)
             with cenc:
-                enc = st.text_input("Encodage", value=current_default.get("encoding", "utf-8-sig"))
+                st.text_input("Encodage", value=st.session_state.get(k_enc, "utf-8-sig"), key=k_enc)
         else:
-            sep, enc = None, None
+            # on laisse les anciennes valeurs, elles ne seront pas utilisées
+            pass
     else:
-        # Mode script pur
-        path, fmt, sep, enc = None, None, None, None
         st.info("💡 Mode script Python : créez un DataFrame `df` directement dans le code")
+        # on ne vide pas ici pour éviter un set après widget — la sauvegarde s'occupera de tout
 
-    expanded = bool(st.session_state.get(buffer_key) or current_default.get("python"))
+    expanded = bool(st.session_state.get(k_codebuf))
     with st.form(f"default_data_form_{gab_name}_{gab_version}", clear_on_submit=False, border=True):
 
         with st.expander("Transformation Python" + (" (obligatoire)" if not use_file else " (optionnel)"), expanded=expanded):
             st.caption("💡 Variables disponibles : `df` (DataFrame si fichier), `pd` (pandas)")
             if not use_file:
-                st.caption("⚠️ Vous devez créer `df` (ex. `df = pd.DataFrame({...})` ou utiliser le calendrier ci-dessus)")
+                st.caption("⚠️ Vous devez créer `df` (ex. `df = pd.DataFrame({...})`)")
             else:
                 st.caption("⚠️ Vous devez réassigner `df` (ex. `df = df[['col1','col2']]`)")
 
@@ -206,14 +285,14 @@ if use_default:
             }]
 
             editor_result = code_editor(
-                st.session_state[buffer_key],
+                st.session_state.get(k_codebuf, ""),
                 lang="python", height=300, theme="contrast", shortcuts="vscode",
                 focus=False, buttons=custom_buttons, allow_reset=True,
                 options={
                     "wrap": True, "showLineNumbers": True, "highlightActiveLine": True,
                     "enableLiveAutocompletion": True, "enableBasicAutocompletion": True,
                 },
-                key=f"python_code_editor_{gab_name}_{gab_version}",
+                key=_ns("python_code_editor", gab_name, gab_version),
                 response_mode=["submit", "blur"]
             )
 
@@ -226,16 +305,14 @@ if use_default:
                 elif isinstance(editor_result, str):
                     new_code = editor_result
                 if isinstance(new_code, str):
-                    st.session_state[buffer_key] = new_code
+                    st.session_state[k_codebuf] = new_code
 
-            current_code = st.session_state[buffer_key]
+            current_code = st.session_state.get(k_codebuf, "")
             st.caption(f"📝 Code capturé : {len(current_code)} caractères")
 
         st.divider()
-        
-        # Validation des prérequis
-        can_preview = use_file and path or (not use_file and current_code.strip())
-        
+
+        can_preview = (use_file and bool(st.session_state.get(k_path))) or (not use_file and bool(st.session_state.get(k_codebuf, "").strip()))
         col_preview, col_validate, col_save = st.columns(3)
         with col_preview:
             do_preview = st.form_submit_button("👁️ Aperçu", use_container_width=True, disabled=not can_preview)
@@ -244,7 +321,15 @@ if use_default:
         with col_save:
             do_save = st.form_submit_button("💾 Enregistrer", type="primary", use_container_width=True, disabled=not can_preview)
 
-    # --- TRAITEMENT DES ACTIONS APRÈS LE FORM ---
+    # --- TRAITEMENT APRÈS FORM ---
+    if use_file:
+        fmt = st.session_state.get(k_fmt, "csv")
+        path = st.session_state.get(k_path, "")
+        sep  = st.session_state.get(k_sep, ";") if fmt == "csv" else None
+        enc  = st.session_state.get(k_enc, "utf-8-sig") if fmt == "csv" else None
+    else:
+        fmt, path, sep, enc = "python_only", "", None, None
+
     if do_preview:
         with st.spinner("Chargement..."):
             if use_file and path:
@@ -253,10 +338,10 @@ if use_default:
                     st.error(f"❌ {err}")
                     df = None
             else:
-                df = pd.DataFrame()  # DataFrame vide pour le mode script pur
-            
+                df = pd.DataFrame()
+
             if df is not None:
-                current_code = st.session_state[buffer_key]
+                current_code = st.session_state.get(k_codebuf, "")
                 if current_code.strip():
                     st.info(f"📝 Application du script ({len(current_code)} caractères)")
                     df2, perr = _apply_python(df, current_code)
@@ -278,9 +363,9 @@ if use_default:
                     df = None
             else:
                 df = pd.DataFrame()
-            
+
             if df is not None:
-                current_code = st.session_state[buffer_key]
+                current_code = st.session_state.get(k_codebuf, "")
                 df2, perr = _apply_python(df, current_code)
                 if perr:
                     st.error(f"❌ {perr}")
@@ -302,47 +387,65 @@ if use_default:
                     df20 = None
             else:
                 df20 = pd.DataFrame()
-            
+
             if df20 is not None:
-                current_code = st.session_state[buffer_key]
+                current_code = st.session_state.get(k_codebuf, "")
                 df20_transformed, perr = _apply_python(df20, current_code)
                 if perr:
                     st.error(f"❌ {perr}")
                 else:
-                    # Construction de la source
+                    # Construire la source (ce qui sera persisté EN DISQUE)
                     if use_file and path:
-                        src = {"type": fmt, "path": str(Path(path).resolve())}
-                        if fmt == "csv":
-                            src.update({"sep": sep or ";", "encoding": enc or "utf-8-sig"})
+                        src = {"type": st.session_state.get(k_fmt, "csv"), "path": str(Path(path).resolve())}
+                        if st.session_state.get(k_fmt, "csv") == "csv":
+                            src.update({"sep": st.session_state.get(k_sep, ";"), "encoding": st.session_state.get(k_enc, "utf-8-sig")})
                     else:
                         src = {"type": "python_only"}
-                    
+
                     if current_code and current_code.strip():
                         src["python"] = current_code
 
+                    # 1) Persistance JSON
                     set_default_source(gabarit.name, gabarit.version, src)
 
-                    # Conversion JSON-safe pour la preview
+                    # 2) Sauvegarde du preview (20 lignes)
                     sample = df20_transformed.head(20)
                     safe_rows = _make_json_safe(sample.to_dict(orient="records"))
-                    
                     set_default_preview(
                         gabarit.name, gabarit.version,
                         rows=safe_rows,
                         columns=list(sample.columns)
                     )
-                    st.success("✅ Donnée par défaut enregistrée avec aperçu")
+
+                    # 3) Préparer l'état post-save puis rerun (APPLIQUÉ AVANT WIDGETS AU PROCHAIN RUN)
+                    pending_state = {
+                        k_enabled: True,
+                        k_mode: "file" if use_file else "python_only",
+                        k_fmt:  src.get("type", "csv"),
+                        k_path: src.get("path", ""),
+                        k_sep:  src.get("sep", ";") if src.get("type") == "csv" else st.session_state.get(k_sep, ";"),
+                        k_enc:  src.get("encoding", "utf-8-sig") if src.get("type") == "csv" else st.session_state.get(k_enc, "utf-8-sig"),
+                        k_codebuf: src.get("python", ""),
+                    }
+                    st.session_state[k_post] = pending_state
+                    st.session_state[k_flash] = "✅ Donnée par défaut enregistrée avec aperçu"
                     st.rerun()
 
-    # --- Bouton Retirer (hors formulaire) ---
-    with st.container():
-        if st.button("🗑️ Retirer", use_container_width=True, disabled=not current_default):
-            clear_default_source(gabarit.name, gabarit.version)
-            if buffer_key in st.session_state:
-                del st.session_state[buffer_key]
-            st.success("✅ Donnée par défaut retirée")
-            st.rerun()
 
-else:
-    if current_default:
-        st.info("La donnée par défaut est désactivée. Cochez la case ci-dessus pour la reconfigurer.")
+# --- Bouton Retirer (hors formulaire) ---
+if use_default:
+    with st.container():
+        if st.button("🗑️ Retirer", use_container_width=True, disabled=not (current_default or st.session_state.get(k_enabled))):
+            clear_default_source(gabarit.name, gabarit.version)
+            # On nettoie via un état post-save vide pour éviter le set après widget
+            st.session_state[k_post] = {
+                k_enabled: False,
+                k_mode: "file",
+                k_fmt: "csv",
+                k_path: "",
+                k_sep: ";",
+                k_enc: "utf-8-sig",
+                k_codebuf: "",
+            }
+            st.session_state[k_flash] = "✅ Donnée par défaut retirée"
+            st.rerun()

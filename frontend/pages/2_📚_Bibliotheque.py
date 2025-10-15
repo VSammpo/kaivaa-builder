@@ -1,225 +1,249 @@
 # frontend/pages/2_📚_Bibliotheque.py
-# (Ancien: 1_📚_Bibliotheque.py)
-# CHANGEMENTS: 
-# - Numérotation 2 au lieu de 1
-# - Navigation mise à jour vers nouvelles pages
-
-"""
-Page de la bibliothèque de templates
-"""
-from PIL import Image, ImageOps
+# Bibliothèque de templates — cartes sans image + actions intégrées (dans la carte)
 
 import streamlit as st
 from pathlib import Path
 import sys
+import hashlib
+import re
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from backend.services.database_service import DatabaseService
 from backend.services.template_service import TemplateService
-import base64
-
 
 st.set_page_config(page_title="Bibliothèque", page_icon="📚", layout="wide")
 
-st.title("📚 Bibliothèque de Templates")
+# =============== CSS (léger) ===============
+st.markdown("""
+<style>
+:root {
+  --card-radius: 14px;
+  --card-shadow: 0 6px 24px rgba(0,0,0,.06), 0 1px 3px rgba(0,0,0,.05);
+  --card-shadow-hover: 0 10px 30px rgba(0,0,0,.10), 0 2px 6px rgba(0,0,0,.06);
+  --border: 1px solid rgba(0,0,0,.08);
+}
+
+/* On stylise le CONTENEUR du formulaire comme une carte */
+div[data-testid="stForm"] {
+  border: var(--border);
+  border-radius: var(--card-radius);
+  background: #fff;
+  overflow: hidden;
+  box-shadow: var(--card-shadow);
+  transition: transform .12s ease-out, box-shadow .12s ease-out;
+  padding: 0;                 /* on gère nos sections */
+  margin-bottom: 16px;
+}
+div[data-testid="stForm"]:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--card-shadow-hover);
+}
+
+/* Sections internes */
+.ka-card__header {
+  padding: 14px 16px;
+  color: #fff;
+  display: flex; align-items: center; gap: 12px;
+}
+.ka-avatar {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.22);
+  backdrop-filter: saturate(120%) blur(1px);
+  display: flex; align-items: center; justify-content: center;
+  font-weight: 800; letter-spacing: .5px;
+}
+.ka-meta { line-height: 1.2; }
+.ka-title { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: .2px; }
+.ka-sub { opacity: .9; font-size: .85rem; }
+
+.ka-pill {
+  margin-left: auto; padding: 4px 10px; border-radius: 999px;
+  background: rgba(255,255,255,.2); color: #fff; font-weight: 600; font-size: .8rem;
+  border: 1px solid rgba(255,255,255,.22);
+}
+
+.ka-card__body { padding: 12px 16px 8px; color: #111827; }
+.ka-desc { margin: 0; opacity: .82; font-size: .92rem; }
+
+.ka-card__actions {
+  padding: 12px 0 16px 0;  /* Espace en haut et en bas, MAIS PAS sur les côtés */
+  border-top: 1px solid rgba(0,0,0,.06);
+}
+
+.ka-card__actions .stButton>button {
+  width: 100%;
+  margin: 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# =============== Helpers ===============
+def _initials(name: str) -> str:
+    if not name:
+        return "T"
+    parts = [p for p in re.split(r"\s+", name.strip()) if p]
+    if len(parts) >= 2:
+        return (parts[0][0] + parts[1][0]).upper()
+    return name[:2].upper()
+
+def _gradient_from_text(text: str) -> tuple[str, str]:
+    base = int(hashlib.sha1((text or "kaivaa").encode("utf-8")).hexdigest(), 16)
+    hue = base % 360
+    c1 = f"hsl({hue}, 72%, 44%)"
+    c2 = f"hsl({(hue + 18) % 360}, 78%, 36%)"
+    return c1, c2
+
+def _compact_desc(text: str, max_len: int = 140) -> str:
+    if not text:
+        return "Aucune description."
+    t = text.strip()
+    return (t[: max_len - 1] + "…") if len(t) > max_len else t
+
+# =============== Flash éventuel ===============
 if msg := st.session_state.pop("_flash_success", None):
-    st.success(msg)
-    st.toast(msg)
+    st.success(msg); st.toast(msg)
 
-# Filtres
+# =============== En-tête & filtres ===============
+st.title("📚 Bibliothèque de Templates")
 col1, col2 = st.columns([3, 1])
-
 with col1:
-    search = st.text_input("🔍 Rechercher", placeholder="Nom du template...")
-
+    search = st.text_input("🔍 Rechercher", placeholder="Nom du template…")
 with col2:
     show_inactive = st.checkbox("Afficher inactifs", value=False)
-
 st.divider()
 
-colr1, colr2, colr3 = st.columns([1,1,6])
+colr1, _, _ = st.columns([1,1,6])
 with colr1:
     if st.button("🔄 Rafraîchir"):
         st.rerun()
 
-
-# Charger les templates
+# =============== Données ===============
 with DatabaseService.get_session() as db:
     service = TemplateService(db)
     templates = service.list_templates(active_only=not show_inactive)
-    
-    # Extraire toutes les infos dans la session
-    templates_data = []
-    for t in templates:
-        templates_data.append({
-            'id': t.id,
-            'name': t.name,
-            'version': t.version,
-            'description': t.description,
-            'ppt_path': t.ppt_template_path,
-            'card_image_path': t.card_image_path,
-            'is_active': t.is_active
-        })
+    templates_data = [{
+        "id": t.id,
+        "name": t.name,
+        "version": t.version,
+        "description": t.description,
+        "ppt_path": t.ppt_template_path,
+        "is_active": t.is_active,
+    } for t in templates]
 
-# Filtrer par recherche
 if search:
-    templates_data = [t for t in templates_data if search.lower() in t['name'].lower()]
+    templates_data = [t for t in templates_data if search.lower() in (t["name"] or "").lower()]
 
-# Affichage
+# =============== Affichage ===============
 if not templates_data:
     st.info("Aucun template trouvé. Créez-en un pour démarrer.")
     if st.button("➕ Nouveau template", type="primary", use_container_width=True):
         st.session_state.selected_template = None
         st.switch_page("pages/_2b_➕_Form_Template.py")
 else:
-    # Action en haut
-    col1, col2 = st.columns([3, 1])
-    with col1:
+    top1, top2 = st.columns([3, 1])
+    with top1:
         st.markdown(f"**{len(templates_data)} template(s) trouvé(s)**")
-    with col2:
+    with top2:
         if st.button("➕ Nouveau template", type="primary", use_container_width=True):
             st.session_state.selected_template = None
             st.switch_page("pages/_2b_➕_Form_Template.py")
-    
+
     st.markdown("")
-    
-    # Grille de cartes (3 par ligne)
-    cols_per_row = 3
-    
+
+    cols_per_row = 2 if len(templates_data) <= 2 else 3
     for i in range(0, len(templates_data), cols_per_row):
         cols = st.columns(cols_per_row)
-        
         for j, col in enumerate(cols):
             idx = i + j
-            if idx < len(templates_data):
-                template = templates_data[idx]
-                
-                with col:
-                    # Container pour la carte
-                    with st.container(border=True):
-                        # En-tête : nom + version
-                        st.markdown(f"### {template['name']}")
-                        st.caption(f"Version {template['version']}")
-                        
-                        # Image de carte
-                        default_image = project_root / "assets" / "background" / "card" / "default.png"
+            if idx >= len(templates_data):
+                continue
+            t = templates_data[idx]
 
-                        image_to_show = None
-                        if template['card_image_path'] and Path(template['card_image_path']).exists():
-                            image_to_show = template['card_image_path']
-                        elif default_image.exists():
-                            image_to_show = str(default_image)
+            c1, c2 = _gradient_from_text(f"{t['name']}-{t['version']}")
+            init = _initials(t["name"])
+            status = "Actif" if t["is_active"] else "Inactif"
 
-                        def afficher_image_carte(path: str, ratio: float = 16/9, radius_px: int = 8):
-                            try:
-                                p = Path(path)
-                                if not p.exists():
-                                    p = default_image
-                                b64 = base64.b64encode(p.read_bytes()).decode("ascii")
-                                padding_pct = 100 / ratio
-                                st.markdown(f"""
-                                <div style="position:relative;width:100%;padding-top:{padding_pct}%;
-                                            overflow:hidden;border-radius:{radius_px}px;background:#10182014;">
-                                <img src="data:image/png;base64,{b64}"
-                                    style="position:absolute;inset:0;width:100%;height:100%;
-                                            object-fit:cover;display:block;border-radius:{radius_px}px;">
-                                </div>
-                                """, unsafe_allow_html=True)
-                            except Exception as e:
-                                try:
-                                    b64 = base64.b64encode(Path(default_image).read_bytes()).decode("ascii")
-                                    st.markdown(f"""
-                                    <div style="position:relative;width:100%;padding-top:{100/(16/9)}%;
-                                                overflow:hidden;border-radius:8px;background:#10182014;">
-                                    <img src="data:image/png;base64,{b64}"
-                                        style="position:absolute;inset:0;width:100%;height:100%;
-                                                object-fit:cover;display:block;border-radius:8px;">
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                except:
-                                    st.markdown("🖼️ *Aucune image*")
+            with col:
+                # ✅ La carte est le formulaire lui-même : boutons "dans" la carte
+                with st.form(f"card_{t['id']}", clear_on_submit=False):
+                    st.markdown(
+                        f"""
+                        <div class="ka-card__header" style="background: linear-gradient(135deg, {c1}, {c2});">
+                          <div class="ka-avatar">{init}</div>
+                          <div class="ka-meta">
+                            <h3 class="ka-title">{t['name']}</h3>
+                            <div class="ka-sub">Version {t['version']}</div>
+                          </div>
+                          <div class="ka-pill">{status}</div>
+                        </div>
+                        <div class="ka-card__body">
+                          <p class="ka-desc">{_compact_desc(t['description'])}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
 
-                        if image_to_show:
-                            afficher_image_carte(image_to_show, ratio=16/9)
-                        else:
-                            st.markdown("🖼️ *Aucune image*")
+                    st.markdown('<div class="ka-card__actions">', unsafe_allow_html=True)
+                    spacer1, a1, a2, spacer2 = st.columns([0.5, 5, 5, 0.5])
+                    open_clicked   = a1.form_submit_button("📊 Ouvrir", use_container_width=True)
+                    delete_clicked = a2.form_submit_button("🗑️ Supprimer", use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-                        
-                        # Description (limitée à 100 caractères)
-                        desc = template['description'] or "Aucune description"
-                        if len(desc) > 100:
-                            desc = desc[:97] + "..."
-                        st.markdown(desc)
-                        
-                        st.markdown("")
-                        
-                        # Boutons
-                        col_btn1, col_btn2 = st.columns(2)
-                        
-                        with col_btn1:
-                            if st.button("📊 Ouvrir", key=f"open_{template['id']}", use_container_width=True):
-                                st.session_state.selected_template_detail = template['id']
-                                st.switch_page("pages/_2a_📊_Detail_Livrable.py")
-                        
-                        with col_btn2:
-                            if st.button("🗑️ Supprimer", key=f"del_{template['id']}", 
-                                       use_container_width=True, type="secondary"):
-                                st.session_state.delete_template_id = template['id']
-                                st.session_state.show_delete_modal = True
-                                st.rerun()
+                    if open_clicked:
+                        st.session_state.selected_template_detail = t["id"]
+                        st.switch_page("pages/_2a_📊_Detail_Livrable.py")
+
+                    if delete_clicked:
+                        st.session_state.delete_template_id = t["id"]
+                        st.session_state.show_delete_modal = True
+                        st.rerun()
 
 st.divider()
 
-# ===== MODAL DE CONFIRMATION SUPPRESSION =====
-if st.session_state.get('show_delete_modal'):
+# =============== Modal suppression ===============
+if st.session_state.get("show_delete_modal"):
     @st.dialog("⚠️ Confirmer la suppression")
     def confirm_delete():
-        template_id = st.session_state.get('delete_template_id')
-        
-        # Récupérer le nom du template
-        template_to_delete = next((t for t in templates_data if t['id'] == template_id), None)
-        
+        template_id = st.session_state.get("delete_template_id")
+        template_to_delete = None
+        try:
+            local_list = templates_data
+        except NameError:
+            local_list = []
+        for _t in local_list:
+            if _t["id"] == template_id:
+                template_to_delete = _t
+                break
+
         if template_to_delete:
-            st.warning(f"**Vous êtes sur le point de supprimer le template :**")
+            st.warning("**Vous êtes sur le point de supprimer le template :**")
             st.markdown(f"### {template_to_delete['name']} (v{template_to_delete['version']})")
-            
             st.divider()
-            st.markdown("**Cette action est irréversible.** Tapez le nom exact du template pour confirmer :")
-            
-            confirmation = st.text_input(
-                "Nom du template",
-                key="delete_confirm_input",
-                placeholder=template_to_delete['name']
-            )
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
+            st.markdown("**Action irréversible.** Tapez le nom exact du template pour confirmer :")
+
+            confirmation = st.text_input("Nom du template", key="delete_confirm_input",
+                                         placeholder=template_to_delete["name"])
+            c1, c2 = st.columns(2)
+            with c1:
                 if st.button("Annuler", use_container_width=True):
                     st.session_state.show_delete_modal = False
-                    if 'delete_template_id' in st.session_state:
-                        del st.session_state.delete_template_id
+                    st.session_state.pop("delete_template_id", None)
                     st.rerun()
-            
-            with col2:
+            with c2:
                 if st.button("Supprimer définitivement", type="primary", use_container_width=True):
-                    if confirmation != template_to_delete['name']:
-                        st.error("❌ Le nom ne correspond pas")
-                    else:
-                        try:
+                    try:
+                        if confirmation != template_to_delete["name"]:
+                            st.error("❌ Le nom ne correspond pas")
+                        else:
                             with DatabaseService.get_session() as db:
-                                service = TemplateService(db)
-                                service.delete_template(template_id)
-                            
+                                TemplateService(db).delete_template(template_id)
                             st.success(f"✅ Template '{template_to_delete['name']}' supprimé")
                             st.session_state.show_delete_modal = False
-                            if 'delete_template_id' in st.session_state:
-                                del st.session_state.delete_template_id
+                            st.session_state.pop("delete_template_id", None)
                             st.rerun()
-                        
-                        except Exception as e:
-                            st.error(f"❌ Erreur lors de la suppression : {e}")
-    
+                    except Exception as e:
+                        st.error(f"❌ Erreur lors de la suppression : {e}")
     confirm_delete()
