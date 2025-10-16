@@ -1,0 +1,23 @@
+{
+  "name": "test_synthese_Supr_n0001",
+  "version": "v1",
+  "description": "Test transformation",
+  "gabarit_base": {
+    "name": "SELL_OUT",
+    "version": "v1"
+  },
+  "columns_enabled": [
+    "Date",
+    "Produit",
+    "CA"
+  ],
+  "enrichments": [],
+  "methods": [],
+  "overlay_python": "df['Mois'] = pd.to_datetime(df['Date']).dt.to_period('M')",
+  "final_order": [],
+  "final_excludes": [],
+  "final_renames": {},
+  "final_sort": [],
+  "created_at": "2025-10-15T20:08:19+02:00",
+  "updated_at": "2025-10-16T09:54:22+02:00"
+}

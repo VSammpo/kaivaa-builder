@@ -1,0 +1,19 @@
+{
+  "name": "Effets_Croissance_Marque_Supr_n0001",
+  "version": "v1",
+  "description": "Décompose la croissance d'une marque sur le sell out.",
+  "gabarit_base": {
+    "name": "Sell Out",
+    "version": "vv1"
+  },
+  "columns_enabled": [],
+  "enrichments": [],
+  "methods": [],
+  "overlay_python": "",
+  "final_order": [],
+  "final_excludes": [],
+  "final_renames": {},
+  "final_sort": [],
+  "created_at": "2025-10-15T20:29:46+02:00",
+  "updated_at": "2025-10-15T20:31:34+02:00"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "tEST_Supr_n0001",
+  "version": "v1",
+  "description": "",
+  "gabarit_base": {
+    "name": "Sell Out",
+    "version": "v1"
+  },
+  "columns_enabled": [],
+  "enrichments": [],
+  "methods": [],
+  "overlay_python": "",
+  "final_order": [],
+  "final_excludes": [],
+  "final_renames": {},
+  "final_sort": [],
+  "created_at": "2025-10-16T09:59:25+02:00",
+  "updated_at": "2025-10-16T10:04:27+02:00"
+}

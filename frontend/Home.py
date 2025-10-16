@@ -7,10 +7,11 @@ st.set_page_config(page_title="KAIVAA", page_icon="🧩", layout="wide")
 nav = st.navigation(
     {
         "Main": [
-            st.Page("pages/1_📁_Projets.py",       title="Projets",      icon="📁", default=True),
-            st.Page("pages/2_📚_Bibliotheque.py",  title="Templates", icon="📚"),
-            st.Page("pages/3_🧱_Gabarits.py",      title="Gabarits",     icon="🧱"),
-            st.Page("pages/4_🕘_Historique.py",    title="Historique",   icon="🕘"),
+            st.Page("pages/1_📁_Projets.py",               title="Projets",      icon="📁", default=True),
+            st.Page("pages/2_📚_Bibliotheque.py",          title="Templates", icon="📚"),
+            st.Page("pages/3d_🔀_Transformations.py",      title="Transformation",     icon="🔀"),
+            st.Page("pages/3_🧱_Gabarits.py",              title="Gabarits",     icon="🧱"),
+            st.Page("pages/4_🕘_Historique.py",            title="Historique",   icon="🕘"),
         ],
         # Pages secondaires “cachées” (ne s’affichent pas dans la nav)
         "Hidden": [
@@ -26,6 +27,8 @@ nav = st.navigation(
             st.Page("pages//_3b1_🧱_Structure_Gabarit.py", title=None),
             st.Page("pages//_3b2_🔗_Enrichissements_Gabarit.py", title=None),
             st.Page("pages//_3b3_📁_Donnee_Par_Defaut.py", title=None),
+            st.Page("pages//_3d1_🔀_Detail_Transformation.py", title=None),
+            st.Page("pages//_3d2_🔀_Builder_Transformation.py", title=None),
         ],
     },
     position="hidden",  # masque la nav Streamlit par défaut
@@ -33,10 +36,11 @@ nav = st.navigation(
 
 # Ta sidebar “maison” : n’affiche que les pages principales
 with st.sidebar:
-    st.page_link("pages/1_📁_Projets.py",       label="Projets",      icon="📁")
-    st.page_link("pages/2_📚_Bibliotheque.py",  label="Templates", icon="📚")
-    st.page_link("pages/3_🧱_Gabarits.py",      label="Gabarits",     icon="🧱")
-    st.page_link("pages/4_🕘_Historique.py",    label="Historique",   icon="🕘")
+    st.page_link("pages/1_📁_Projets.py",               label="Projets",        icon="📁")
+    st.page_link("pages/2_📚_Bibliotheque.py",          label="Templates",      icon="📚")
+    st.page_link("pages/3d_🔀_Transformations.py",      label="Transformation", icon="🔀")
+    st.page_link("pages/3_🧱_Gabarits.py",              label="Gabarits",       icon="🧱")
+    st.page_link("pages/4_🕘_Historique.py",            label="Historique",     icon="🕘")
 
 nav.run()
 

@@ -25,6 +25,82 @@ from backend.services.dataset_service import get_default_dataframe_for_gabarit
 # === DEBUG ENRICHISSEMENTS ===
 DEBUG_ENRICH = True
 
+def _normalize_to_usage(transfo_or_usage: dict) -> dict:
+    """
+    Convertit une transformation OU un usage en format usage unifié.
+    Permet la rétrocompatibilité totale avec les templates existants.
+    """
+    if not transfo_or_usage or not isinstance(transfo_or_usage, dict):
+        return {}
+    
+    # Cas 1 : C'est déjà un usage (clé 'gabarit_name')
+    if "gabarit_name" in transfo_or_usage:
+        return transfo_or_usage
+    
+    # Cas 2 : C'est une transformation (clé 'gabarit_base')
+    if "gabarit_base" in transfo_or_usage:
+        gabarit_base = transfo_or_usage.get("gabarit_base", {})
+        return {
+            "gabarit_name": gabarit_base.get("name", ""),
+            "gabarit_version": gabarit_base.get("version", "v1"),
+            "columns_enabled": transfo_or_usage.get("columns_enabled", []),
+            "enrichments": transfo_or_usage.get("enrichments", []),
+            "methods": transfo_or_usage.get("methods", []),
+            "overlay_python": transfo_or_usage.get("overlay_python", ""),
+            "final_order": transfo_or_usage.get("final_order", []),
+            "final_excludes": transfo_or_usage.get("final_excludes", []),
+            "final_renames": transfo_or_usage.get("final_renames", {}),
+            "final_sort": transfo_or_usage.get("final_sort", [])
+        }
+    
+    # Cas 3 : C'est une référence à une transformation
+    if "transformation_name" in transfo_or_usage:
+        from backend.services.transformation_service import get_transformation
+        
+        trans_name = transfo_or_usage.get("transformation_name", "")
+        trans_version = transfo_or_usage.get("transformation_version", "v1")
+        
+        transformation = get_transformation(trans_name, trans_version)
+        if not transformation:
+            logger.error(f"Transformation '{trans_name}' v{trans_version} introuvable")
+            return {}
+        
+        # Récursion pour normaliser la transformation chargée
+        return _normalize_to_usage(transformation)
+    
+    # Cas par défaut : retourner tel quel
+    return transfo_or_usage
+
+
+def build_table_from_transformation(
+    transformation_name: str,
+    transformation_version: str = "v1",
+    *,
+    full: bool = True,
+    log_kpis: bool = False,
+    params: dict | None = None
+) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
+    """
+    Construit une table à partir d'une transformation nommée.
+    Wrapper convenience autour de build_table_from_usage.
+    """
+    from backend.services.transformation_service import get_transformation
+    
+    logger.info(f"Construction depuis transformation : {transformation_name} v{transformation_version}")
+    
+    # Charger la transformation
+    transformation = get_transformation(transformation_name, transformation_version)
+    if not transformation:
+        return None, f"Transformation '{transformation_name}' v{transformation_version} introuvable"
+    
+    # Utiliser build_table_from_usage qui va normaliser
+    return build_table_from_usage(
+        transformation,
+        full=full,
+        log_kpis=log_kpis,
+        params=params
+    )
+
 def _debug_merge(left_df, right_df, *, how: str, left_on: str, right_on: str, tag: str = ""):
     """Remplace un pd.merge pour tracer ce qui se passe lors des enrichissements."""
     import logging
@@ -205,6 +281,12 @@ def build_table_from_usage(
         log_kpis: Afficher les KPIs de construction
         params: Paramètres du template pour injection dans le script
     """
+    
+    # ✅ NOUVEAU : Normaliser transformation → usage
+    usage = _normalize_to_usage(usage)
+    if not usage:
+        return None, "Usage vide ou invalide après normalisation"
+    
     gabarit_name = usage.get("gabarit_name", "")
     gabarit_version = usage.get("gabarit_version", "v1")
     
