@@ -224,126 +224,126 @@ with tab_config:
 # ==================== TAB PREVIEW ====================
 with tab_preview:
     st.markdown("### Prévisualisation des données transformées")
-    
+
     col1, col2, col3 = st.columns([1, 1, 3])
-    
+
     with col1:
-        mode = st.radio("Mode", ["Preview", "Complet"], index=0)
-        full = (mode == "Complet")
-    
+        mode = st.radio(
+            "Mode",
+            ["Preview", "Complet"],
+            index=0,
+            key=f"preview_mode_radio_{name}_{version}"
+        )
+        preview_mode = (mode == "Preview")
+
     with col2:
-        if st.button("🔄 Générer", type="primary", use_container_width=True):
+        if st.button("🔄 Générer", type="primary", use_container_width=True, key=f"gen_preview_btn_{name}_{version}"):
             with st.spinner("Construction en cours..."):
-                df, error = build_table_from_transformation(
+                # Toujours construire la table complète, puis tronquer l'affichage si Preview
+                df_full, error = build_table_from_transformation(
                     name,
                     version,
-                    full=full,
+                    full=True,
                     log_kpis=True
                 )
-                
+
                 if error:
                     st.error(f"Erreur : {error}")
-                    st.session_state.preview_result = None
+                    st.session_state[f"preview_result_{name}_{version}"] = None
                 else:
-                    st.session_state.preview_result = df
-                    st.success(f"✅ Généré : {len(df)} lignes × {len(df.columns)} colonnes")
-    
-    # Afficher le résultat
-    if "preview_result" in st.session_state and st.session_state.preview_result is not None:
-        df = st.session_state.preview_result
-        
-        # Statistiques
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("Lignes", f"{len(df):,}")
-        with col2:
-            st.metric("Colonnes", len(df.columns))
-        with col3:
-            st.metric("Cellules", f"{len(df) * len(df.columns):,}")
-        with col4:
-            # Taille mémoire approximative
-            memory_mb = df.memory_usage(deep=True).sum() / 1024 / 1024
+                    st.session_state[f"preview_result_{name}_{version}"] = {
+                        "df_full": df_full
+                    }
+                    n_display = min(20, len(df_full)) if preview_mode else len(df_full)
+                    st.success(f"✅ Généré : {n_display} lignes × {len(df_full.columns)} colonnes")
+
+    # Afficher le résultat (si généré)
+    result_key = f"preview_result_{name}_{version}"
+    if st.session_state.get(result_key):
+        df_full = st.session_state[result_key]["df_full"]
+        df_display = df_full.head(20) if preview_mode else df_full
+
+        # KPIs d'affichage
+        k1, k2, k3, k4 = st.columns(4)
+        with k1:
+            st.metric("Lignes", f"{len(df_display):,}")
+        with k2:
+            st.metric("Colonnes", len(df_display.columns))
+        with k3:
+            st.metric("Cellules", f"{len(df_display) * len(df_display.columns):,}")
+        with k4:
+            memory_mb = df_display.memory_usage(deep=True).sum() / 1024 / 1024
             st.metric("Mémoire", f"{memory_mb:.2f} MB")
-        
-        # Tabs pour différentes vues
+
+        # Sous-onglets d'affichage
         subtab1, subtab2, subtab3, subtab4 = st.tabs([
             "📊 Données",
             "📈 Statistiques",
             "🏷️ Types",
             "💾 Export"
         ])
-        
+
         with subtab1:
-            # Limiter l'affichage pour les grosses tables
             display_limit = 1000
-            if len(df) > display_limit:
+            if len(df_display) > display_limit:
                 st.warning(f"Affichage limité aux {display_limit} premières lignes")
-                display_df = df.head(display_limit)
+                st.dataframe(df_display.head(display_limit), use_container_width=True, hide_index=True)
             else:
-                display_df = df
-            
-            st.dataframe(display_df, use_container_width=True)
-        
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
+
         with subtab2:
             st.markdown("### Statistiques descriptives")
-            
-            # Sélectionner uniquement les colonnes numériques
-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+            numeric_cols = df_display.select_dtypes(include=['number']).columns.tolist()
             if numeric_cols:
-                stats_df = df[numeric_cols].describe().T
-                stats_df['missing'] = df[numeric_cols].isnull().sum()
-                stats_df['missing_pct'] = (stats_df['missing'] / len(df) * 100).round(2)
-                
+                stats_df = df_display[numeric_cols].describe().T
+                stats_df['missing'] = df_display[numeric_cols].isnull().sum()
+                stats_df['missing_pct'] = (stats_df['missing'] / len(df_display) * 100).round(2)
                 st.dataframe(stats_df, use_container_width=True)
             else:
                 st.info("Aucune colonne numérique")
-        
+
         with subtab3:
             st.markdown("### Types de données")
-            
             types_df = pd.DataFrame({
-                'Colonne': df.columns,
-                'Type': [str(df[col].dtype) for col in df.columns],
-                'Non-nulls': [df[col].count() for col in df.columns],
-                'Nulls': [df[col].isnull().sum() for col in df.columns],
-                'Unique': [df[col].nunique() for col in df.columns],
-                'Premier exemple': [df[col].dropna().iloc[0] if not df[col].dropna().empty else None 
-                                   for col in df.columns]
+                'Colonne': df_display.columns,
+                'Type': [str(df_display[col].dtype) for col in df_display.columns],
+                'Non-nulls': [df_display[col].count() for col in df_display.columns],
+                'Nulls': [df_display[col].isnull().sum() for col in df_display.columns],
+                'Unique': [df_display[col].nunique() for col in df_display.columns],
+                'Premier exemple': [
+                    df_display[col].dropna().iloc[0] if not df_display[col].dropna().empty else None
+                    for col in df_display.columns
+                ]
             })
-            
             st.dataframe(types_df, use_container_width=True)
-        
+
         with subtab4:
             st.markdown("### Export des données")
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Export CSV
-                csv = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 Télécharger CSV",
-                    data=csv,
-                    file_name=f"{name}_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                    use_container_width=True
-                )
-            
-            with col2:
-                # Export Excel
-                from io import BytesIO
-                buffer = BytesIO()
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    df.to_excel(writer, sheet_name='Data', index=False)
-                
-                st.download_button(
-                    label="📥 Télécharger Excel",
-                    data=buffer.getvalue(),
-                    file_name=f"{name}_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True
-                )
+            from io import BytesIO
 
+            # CSV
+            csv = df_full.to_csv(index=False).encode('utf-8-sig')
+            st.download_button(
+                label="📥 Télécharger CSV (table complète)",
+                data=csv,
+                file_name=f"{name}_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                use_container_width=True,
+                key=f"dl_csv_{name}_{version}"
+            )
+
+            # Excel
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                df_full.to_excel(writer, sheet_name='Data', index=False)
+            st.download_button(
+                label="📥 Télécharger Excel (table complète)",
+                data=buffer.getvalue(),
+                file_name=f"{name}_{version}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                key=f"dl_xlsx_{name}_{version}"
+            )
 # ==================== TAB USAGE ====================
 with tab_usage:
     st.markdown("### 📊 Analyse d'utilisation")

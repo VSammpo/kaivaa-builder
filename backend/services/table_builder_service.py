@@ -28,48 +28,99 @@ DEBUG_ENRICH = True
 def _normalize_to_usage(transfo_or_usage: dict) -> dict:
     """
     Convertit une transformation OU un usage en format usage unifié.
-    Permet la rétrocompatibilité totale avec les templates existants.
+    Politique de MERGE quand une transformation est référencée dans l'usage :
+      - On charge la transformation (gabarit_base, columns_enabled, enrichments, methods, overlay, final_*).
+      - On applique une surcouche éventuelle de l'usage :
+          overlay_python = transfo.overlay + "\n\n" + usage.overlay (si usage.overlay non vide)
+          final_order    = si usage.final_order est fourni → sous-ensemble/ordre de la transfo
+          final_excludes = union (transfo ∪ usage)
+          final_renames  = transfo puis update avec usage
+          final_sort     = usage.final_sort si fourni, sinon transfo.final_sort
+      - columns_enabled / methods / enrichments : on garde ceux de la transformation (on ignore ceux fournis côté usage).
     """
+    from backend.services.transformation_service import get_transformation
+
     if not transfo_or_usage or not isinstance(transfo_or_usage, dict):
         return {}
-    
-    # Cas 1 : C'est déjà un usage (clé 'gabarit_name')
-    if "gabarit_name" in transfo_or_usage:
-        return transfo_or_usage
-    
-    # Cas 2 : C'est une transformation (clé 'gabarit_base')
-    if "gabarit_base" in transfo_or_usage:
-        gabarit_base = transfo_or_usage.get("gabarit_base", {})
-        return {
-            "gabarit_name": gabarit_base.get("name", ""),
-            "gabarit_version": gabarit_base.get("version", "v1"),
-            "columns_enabled": transfo_or_usage.get("columns_enabled", []),
-            "enrichments": transfo_or_usage.get("enrichments", []),
-            "methods": transfo_or_usage.get("methods", []),
-            "overlay_python": transfo_or_usage.get("overlay_python", ""),
-            "final_order": transfo_or_usage.get("final_order", []),
-            "final_excludes": transfo_or_usage.get("final_excludes", []),
-            "final_renames": transfo_or_usage.get("final_renames", {}),
-            "final_sort": transfo_or_usage.get("final_sort", [])
-        }
-    
-    # Cas 3 : C'est une référence à une transformation
-    if "transformation_name" in transfo_or_usage:
-        from backend.services.transformation_service import get_transformation
-        
-        trans_name = transfo_or_usage.get("transformation_name", "")
-        trans_version = transfo_or_usage.get("transformation_version", "v1")
-        
-        transformation = get_transformation(trans_name, trans_version)
-        if not transformation:
-            logger.error(f"Transformation '{trans_name}' v{trans_version} introuvable")
-            return {}
-        
-        # Récursion pour normaliser la transformation chargée
-        return _normalize_to_usage(transformation)
-    
-    # Cas par défaut : retourner tel quel
-    return transfo_or_usage
+
+    u = dict(transfo_or_usage)
+
+    # Cas A — Usage SANS transformation : retourner tel quel
+    transfo_name = (u.get("transformation_name") or "").strip()
+    if not transfo_name:
+        # Si c'est une transformation "pleine" (clé 'gabarit_base'), normaliser en usage
+        if "gabarit_base" in u and "gabarit_name" not in u:
+            gabarit_base = u.get("gabarit_base", {})
+            return {
+                "gabarit_name": gabarit_base.get("name", ""),
+                "gabarit_version": gabarit_base.get("version", "v1"),
+                "columns_enabled": list(u.get("columns_enabled") or []),
+                "enrichments": list(u.get("enrichments") or []),
+                "methods": list(u.get("methods") or []),
+                "overlay_python": (u.get("overlay_python") or "").strip(),
+                "final_order": list(u.get("final_order") or []),
+                "final_excludes": list(u.get("final_excludes") or []),
+                "final_renames": dict(u.get("final_renames") or {}),
+                "final_sort": list(u.get("final_sort") or []),
+                "excel_target": dict(u.get("excel_target") or {}),
+            }
+        # Sinon, usage "brut"
+        return u
+
+    # Cas B — Usage AVEC transformation : fusionner la transformation + surcouche usage
+    tver = (u.get("transformation_version") or "v1").strip()
+    T = get_transformation(transfo_name, tver) or {}
+    # Base depuis la transformation
+    base = {
+        "gabarit_name": (T.get("gabarit_base") or {}).get("name", ""),
+        "gabarit_version": (T.get("gabarit_base") or {}).get("version", "v1"),
+        "columns_enabled": list(T.get("columns_enabled") or []),
+        "enrichments": list(T.get("enrichments") or []),
+        "methods": list(T.get("methods") or []),
+        "overlay_python": (T.get("overlay_python") or "").strip(),
+        "final_order": list(T.get("final_order") or []),
+        "final_excludes": list(T.get("final_excludes") or []),
+        "final_renames": dict(T.get("final_renames") or {}),
+        "final_sort": list(T.get("final_sort") or []),
+        "excel_target": dict(u.get("excel_target") or {}),
+    }
+
+    # Surcouche usage : overlay
+    u_overlay = (u.get("overlay_python") or "").strip()
+    if u_overlay:
+        base["overlay_python"] = (base["overlay_python"] + "\n\n" + u_overlay) if base["overlay_python"] else u_overlay
+
+    # Surcouche usage : final_excludes (union)
+    u_excl = [str(c).strip() for c in (u.get("final_excludes") or []) if str(c).strip()]
+    if u_excl:
+        base["final_excludes"] = list(dict.fromkeys(list(base.get("final_excludes") or []) + u_excl))
+
+    # Surcouche usage : final_renames (update)
+    u_ren = dict(u.get("final_renames") or {})
+    if u_ren:
+        ren = dict(base.get("final_renames") or {})
+        for k, v in u_ren.items():
+            ks = str(k).strip()
+            vs = str(v).strip()
+            if ks and vs:
+                ren[ks] = vs
+        base["final_renames"] = ren
+
+    # Surcouche usage : final_sort (priorité usage si fourni)
+    if u.get("final_sort") is not None:
+        base["final_sort"] = list(u.get("final_sort") or [])
+
+    # Surcouche usage : final_order (sous-ensemble/ordre)
+    u_order = list(u.get("final_order") or [])
+    if u_order:
+        t_order = list(base.get("final_order") or [])
+        if t_order:
+            t_set = set(t_order)
+            base["final_order"] = [c for c in u_order if c in t_set]
+        else:
+            base["final_order"] = [c for c in u_order if c]
+
+    return base
 
 
 def build_table_from_transformation(
@@ -309,7 +360,8 @@ def build_table_from_usage(
         if df is None:
             if full:
                 return None, f"FULL demandé mais aucune source n'est définie pour {gabarit_name} (v{gabarit_version})."
-            return None, f"Aucune donnée par défaut pour {gabarit_name} (v{gabarit_version})."
+            return None, f"Aucune donnée par défaut pour {gabarit_name} ({gabarit_version})."
+
         
         complete = (not is_preview) if full else True
         

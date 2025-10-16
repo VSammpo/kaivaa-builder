@@ -159,12 +159,13 @@ def render_template_subnav(active: str, template_id: int | None):
                 st.session_state.selected_template = template_id
             st.switch_page("pages/_2b_➕_Form_Template.py")
     with cols[3]:
-        if st.button("🔐 Injection des données",
-                     type=("primary" if active == "inject" else "secondary"),
-                     use_container_width=True, key=f"nav_inject_{active}"):
+        if st.button("📑 Injection des données",
+                    type=("primary" if active == "inject" else "secondary"),
+                    use_container_width=True, key=f"nav_inject_{active}"):
             if template_id:
                 st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b3_🔐_Tables_Template.py")
+            st.switch_page("pages/_2b3_📑_Tables_Template.py")
+
     with cols[4]:
         st.button("🧾 Ajustement de la table",
                   type="primary" if active == "adjust" else "secondary",

@@ -1,0 +1,62 @@
+{
+  "project_id": "l-oréal",
+  "name": "L'Oréal",
+  "client_name": "L'Oréal",
+  "description": "Test",
+  "status": "active",
+  "deliverables": [
+    {
+      "template_id": 36,
+      "template_name": "Analyse du marché FMCG",
+      "template_version": "1.0",
+      "custom_masters": {
+        "ppt_path": "configuration\\projets\\l-oréal\\masters\\36\\presentation.pptx",
+        "excel_path": "configuration\\projets\\l-oréal\\masters\\36\\donnees.xlsx"
+      },
+      "custom_parameters": {},
+      "is_functional": true,
+      "completion_rate": 100.0,
+      "data_sources_status": {
+        "client": 1,
+        "default": 0
+      },
+      "last_generated_at": null
+    }
+  ],
+  "data_sources": [
+    {
+      "gabarit_name": "Sell Out",
+      "gabarit_version": "v1",
+      "source_type": "client",
+      "source_config": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\001 - Sell Out\\Sell_Out_L_Oreal_Fake.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig"
+      },
+      "row_count": 1000,
+      "columns_filled": {
+        "Distributeur": 100.0,
+        "Canal": 100.0,
+        "Finance code": 100.0,
+        "Axe": 100.0,
+        "Metier": 100.0,
+        "SubMetier": 100.0,
+        "Product name": 100.0,
+        "Brand": 100.0,
+        "SubBrand": 100.0,
+        "Start week week": 100.0,
+        "End week": 100.0,
+        "Units": 100.0,
+        "Volume sold": 100.0,
+        "Liters sold": 100.0,
+        "DN": 100.0,
+        "Prix moyen": 100.0,
+        "CA": 100.0
+      },
+      "last_validated_at": "2025-10-16T19:00:12+02:00"
+    }
+  ],
+  "created_at": "2025-10-16T16:01:22+02:00",
+  "updated_at": "2025-10-16T19:00:12+02:00"
+}

@@ -60,6 +60,12 @@ def compute_reachable_targets(start_name: str, start_version: str, max_depth: in
     reached.pop((start_name, start_version), None)
     return reached
 
+def _fmt_version_label(ver: str) -> str:
+    """Retourne 'v1' si on reçoit '1', et laisse tel quel si on reçoit déjà 'v1'."""
+    v = str(ver or "").strip()
+    return v if v.lower().startswith("v") else f"v{v}"
+
+
 def _build_enrichments_payload(start_name, start_version, rows: list[dict]) -> list[dict]:
     """Construit le payload des enrichissements."""
     payload = []
@@ -197,8 +203,9 @@ with tab_enrich:
     
     # Calcul des cibles atteignables
     reachable = compute_reachable_targets(gab_name, gab_version, max_depth=4)
-    target_labels = sorted([f"{nm} (v{ver})" for (nm,ver) in reachable.keys()])
-    label_to_tuple = { f"{nm} (v{ver})": (nm,ver) for (nm,ver) in reachable.keys() }
+    target_labels = sorted([f"{nm} ({_fmt_version_label(ver)})" for (nm,ver) in reachable.keys()])
+    label_to_tuple = { f"{nm} ({_fmt_version_label(ver)})": (nm,ver) for (nm,ver) in reachable.keys() }
+
     
     # Bouton ajouter
     if st.button("➕ Ajouter un enrichissement", use_container_width=True, type="primary"):
@@ -230,7 +237,7 @@ with tab_enrich:
                 cur_label = None
                 if row.get("target"):
                     nm, ver = row["target"]
-                    cur_label = f"{nm} (v{ver})" if (nm,ver) in reachable else None
+                    cur_label = f"{nm} ({_fmt_version_label(ver)})" if (nm,ver) in reachable else None
                 
                 sel = st.selectbox(
                     "Table à enrichir",
@@ -364,7 +371,8 @@ with tab_script:
         }
         
         with st.spinner("Exécution..."):
-            df, error = build_table_from_usage(temp_config, full=False, log_kpis=True)
+            df, error = build_table_from_usage(temp_config, full=True, log_kpis=True)
+
         
         if error:
             st.error(f"❌ Erreur :\n```\n{error}\n```")
@@ -520,9 +528,9 @@ with tab_preview:
     col1, col2 = st.columns([1, 3])
     with col1:
         mode = st.radio("Mode", ["Preview (20 lignes)", "Complet"], index=0)
+        preview_mode = (mode == "Preview (20 lignes)")
     with col2:
         if st.button("🔄 Générer la preview", type="primary", use_container_width=True):
-            # Construire la config complète
             state = st.session_state.transfo_adjust_state
             
             full_config = {
@@ -537,30 +545,44 @@ with tab_preview:
             }
             
             with st.spinner("Génération en cours..."):
-                df_final, error = build_table_from_usage(
+                # 👉 Toujours construire la table complète, puis tronquer l'affichage si Preview
+                df_full, error = build_table_from_usage(
                     full_config,
-                    full=(mode == "Complet"),
+                    full=True,      # <— toujours full
                     log_kpis=True
                 )
             
             if error:
                 st.error(f"❌ Erreur : {error}")
-            elif df_final is None or df_final.empty:
+                st.session_state["_builder_preview"] = None
+            elif df_full is None or df_full.empty:
                 st.warning("Aucun résultat")
+                st.session_state["_builder_preview"] = None
             else:
-                st.success(f"✅ {len(df_final)} lignes × {len(df_final.columns)} colonnes")
-                st.dataframe(df_final, use_container_width=True, hide_index=True)
-                
-                # Statistiques
-                with st.expander("📊 Statistiques"):
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Lignes", f"{len(df_final):,}")
-                    with col2:
-                        st.metric("Colonnes", len(df_final.columns))
-                    with col3:
-                        memory_mb = df_final.memory_usage(deep=True).sum() / 1024 / 1024
-                        st.metric("Mémoire", f"{memory_mb:.2f} MB")
+                st.session_state["_builder_preview"] = {
+                    "df_full": df_full,
+                    "preview_mode": preview_mode
+                }
+                n_display = min(20, len(df_full)) if preview_mode else len(df_full)
+                st.success(f"✅ {n_display} lignes × {len(df_full.columns)} colonnes")
+    
+    # Affichage / Stats
+    if st.session_state.get("_builder_preview"):
+        df_full = st.session_state["_builder_preview"]["df_full"]
+        preview_mode = st.session_state["_builder_preview"]["preview_mode"]
+        df_display = df_full.head(20) if preview_mode else df_full
+        
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        with st.expander("📊 Statistiques"):
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Lignes", f"{len(df_display):,}")
+            with col2:
+                st.metric("Colonnes", len(df_display.columns))
+            with col3:
+                memory_mb = df_display.memory_usage(deep=True).sum() / 1024 / 1024
+                st.metric("Mémoire", f"{memory_mb:.2f} MB")
 
 # ==================== BARRE D'ACTIONS ====================
 st.markdown("---")

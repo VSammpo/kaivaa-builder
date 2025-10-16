@@ -736,6 +736,14 @@ class TemplateService:
             norm.append({
                 "gabarit_name": (u.get("gabarit_name") or "").strip(),
                 "gabarit_version": (u.get("gabarit_version") or "v1").strip(),
+
+                # 🔁 NOUVEAU : nature de la source (par défaut gabarit brut)
+                "source_kind": (u.get("source_kind") or "gabarit").strip(),
+
+                # 🔁 NOUVEAU : référence transformation si sélectionnée
+                "transformation_name": (u.get("transformation_name") or "").strip(),
+                "transformation_version": (u.get("transformation_version") or "v1").strip(),
+
                 "columns_enabled": [str(c).strip() for c in (u.get("columns_enabled") or []) if str(c).strip()],
                 "excel_target": {
                     "sheet": (excel.get("sheet") or "").strip(),
@@ -746,6 +754,8 @@ class TemplateService:
                 "overlay_python": (u.get("overlay_python") or "").strip(),
                 "final_order": list(u.get("final_order") or []),     # ← garder ordre final
                 "final_excludes": [str(c).strip() for c in (u.get("final_excludes") or []) if str(c).strip()],
+                "final_renames": dict(u.get("final_renames") or {}),
+                "final_sort": list(u.get("final_sort") or []),
             })
         return norm
 
@@ -763,44 +773,56 @@ class TemplateService:
         enrichments: list[dict] | None = None,
         final_order: list[str] | None = None,
         final_excludes: list[str] | None = None,
+
+        # 🔁 NOUVEAU
+        source_kind: str | None = None,                   # "gabarit" | "transformation"
+        transformation_name: str | None = None,
+        transformation_version: str | None = None,
     ) -> dict:
         """
         Upsert d'un 'usage' (gabarit + feuille + table) dans le JSON de config du template.
-        ✅ CORRECTION : On préserve TOUS les champs existants non fournis (notamment overlay_python).
+        Préserve TOUS les champs existants non fournis (overlay_python, final_renames, final_sort, etc.).
         """
         config = self.get_config(template_id) or {}
         allu = list(config.get("gabarit_usages") or [])
 
         key = (
-            gabarit_name,
-            (gabarit_version or "v1"),
-            excel_sheet.strip(),
-            excel_table.strip(),
+            (gabarit_name or "").strip(),
+            (gabarit_version or "v1").strip(),
+            (excel_sheet or "").strip(),
+            (excel_table or "").strip(),
         )
 
-        # Construire la charge utile de base
         payload = {
-            "gabarit_name": gabarit_name,
-            "gabarit_version": (gabarit_version or "v1"),
+            "gabarit_name": key[0],
+            "gabarit_version": key[1],
             "excel_target": {"sheet": key[2], "table": key[3]},
             "columns_enabled": list(columns_enabled or []),
             "methods": list(methods or []),
             "enrichments": list(enrichments or []),
         }
-        
-        # Ajouter les champs optionnels s'ils sont fournis
+
+        # Champs optionnels si fournis
         if final_order is not None:
             payload["final_order"] = list(final_order)
         if final_excludes is not None:
-            payload["final_excludes"] = list(final_excludes)
+            payload["final_excludes"] = [str(c).strip() for c in (final_excludes or [])]
 
-        # Rechercher si un usage existe déjà pour cette clé
+        # 🔁 NOUVEAU : source / transformation
+        if source_kind:
+            payload["source_kind"] = (source_kind or "gabarit").strip()
+        if transformation_name is not None:
+            payload["transformation_name"] = (transformation_name or "").strip()
+        if transformation_version is not None:
+            payload["transformation_version"] = (transformation_version or "v1").strip()
+
+        # Rechercher si usage existant pour cette clé (gabarit+sheet+table)
         idx = None
         for i, u in enumerate(allu):
             tgt = (u.get("excel_target") or {})
             k = (
-                u.get("gabarit_name"),
-                (u.get("gabarit_version") or "v1"),
+                (u.get("gabarit_name") or "").strip(),
+                (u.get("gabarit_version") or "v1").strip(),
                 (tgt.get("sheet") or "").strip(),
                 (tgt.get("table") or "").strip(),
             )
@@ -808,32 +830,37 @@ class TemplateService:
                 idx = i
                 break
 
+        critical_defaults = {
+            "overlay_python": "",
+            "final_renames": {},
+            "final_sort": [],
+            # NOUVEAU : par sécurité, on garde les 3 clefs de transformation si existantes
+            "source_kind": "gabarit",
+            "transformation_name": "",
+            "transformation_version": "v1",
+        }
+
         if idx is None:
-            # Création : ajouter avec valeurs par défaut pour les champs manquants
-            payload.setdefault("overlay_python", "")
-            payload.setdefault("final_renames", {})
-            payload.setdefault("final_sort", [])
+            # Création : injecter défauts critiques si absents
+            for kdef, vdef in critical_defaults.items():
+                payload.setdefault(kdef, vdef)
             allu.append(payload)
-            logger.info(f"[template_service] ✅ Création usage : {gabarit_name} → {excel_sheet}/{excel_table}")
+            logger.info(f"[template_service] ✅ Création usage : {key[0]} → {key[2]}/{key[3]}")
         else:
-            # Mise à jour : PRÉSERVER les champs critiques non fournis
             current = dict(allu[idx])
-            
-            # ✅ CRITIQUE : Préserver overlay_python, final_renames, final_sort s'ils ne sont pas dans payload
-            critical_fields = ["overlay_python", "final_renames", "final_sort"]
-            for field in critical_fields:
-                if field in current and field not in payload:
-                    payload[field] = current[field]
-            
-            # ✅ Fusionner en préservant l'existant
+
+            # Préserver champs critiques non fournis explicitement
+            for kdef, vdef in critical_defaults.items():
+                if kdef in current and kdef not in payload:
+                    payload[kdef] = current[kdef]
+
+            # Fusionner
             current.update(payload)
             allu[idx] = current
-            logger.info(f"[template_service] ✅ Mise à jour usage : {gabarit_name} → {excel_sheet}/{excel_table}")
-            logger.debug(f"[template_service]   Champs préservés : {[f for f in critical_fields if f in current]}")
+            logger.info(f"[template_service] ✅ Mise à jour usage : {key[0]} → {key[2]}/{key[3]}")
 
         config["gabarit_usages"] = allu
         self.update_config(template_id, config)
-        
         return payload
 
 

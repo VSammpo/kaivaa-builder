@@ -17,6 +17,13 @@ from backend.services.gabarit_registry import (
 # --- Helpers de reconciliation pour multiselects (colonnes / méthodes) ---
 import difflib
 
+from backend.services.transformation_service import (
+    list_transformations,
+    get_transformation,
+    get_transformation_output_columns,
+)
+
+
 def _safe_reconcile_defaults(defaults: list[str] | None, options: list[str]) -> tuple[list[str], dict[str, str], list[str]]:
     """
     Retourne:
@@ -330,6 +337,54 @@ with DatabaseService.get_session() as db:
     ts = TemplateService(db)
     existing = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, default_sheet, default_table) or {}
 
+# --- Source = Gabarit brut vs Transformation réutilisable (pré-sélectionnée depuis le JSON) ---
+_existing_source_kind = (existing.get("source_kind") or "gabarit").strip()
+_existing_tname = (existing.get("transformation_name") or "").strip()
+_existing_tver  = (existing.get("transformation_version") or "v1").strip()
+
+st.markdown("### 🧩 Source de la table")
+_source_options = ["Gabarit brut", "Transformation réutilisable"]
+_source_index = 1 if (_existing_source_kind == "transformation" or bool(_existing_tname)) else 0
+source_mode = st.radio(
+    "Type de source",
+    options=_source_options,
+    index=_source_index,
+    horizontal=True,
+    key=f"src_mode_{template_id}_{g.name}_{g.version}_{default_sheet}_{default_table}",
+)
+
+selected_transfo = None
+if source_mode == "Transformation réutilisable":
+    all_tf = list_transformations() or []
+    preferred = [t for t in all_tf if (t.get("gabarit_base") or {}).get("name") == g.name]
+    others = [t for t in all_tf if t not in preferred]
+    tf_options = preferred + others
+
+    def _tf_label(t):
+        gb = (t.get("gabarit_base") or {})
+        return f"{t.get('name')} (v{t.get('version','v1')}) – base: {gb.get('name','?')}"
+
+    tf_labels = [_tf_label(t) for t in tf_options]
+
+    default_t_idx = 0
+    if _existing_tname:
+        for i, t in enumerate(tf_options):
+            if (t.get("name") == _existing_tname) and (t.get("version","v1") == _existing_tver):
+                default_t_idx = i
+                break
+
+    if not tf_options:
+        st.warning("Aucune transformation disponible.")
+    else:
+        sel = st.selectbox(
+            "Transformation",
+            tf_labels,
+            index=default_t_idx,
+            key=f"transfo_sel_{template_id}_{g.name}_{g.version}_{default_sheet}_{default_table}"
+        )
+        selected_transfo = tf_options[tf_labels.index(sel)]
+
+
 base_cols = [c.name for c in g.columns]
 # Reconcilier colonnes renommées/supprimées
 existing_cols = existing.get("columns_enabled", []) if existing else base_cols[:]
@@ -340,135 +395,167 @@ if _renamed_cols:
 if _removed_cols:
     st.caption("⚠️ Colonnes introuvables (retirées) : " + ", ".join(_removed_cols))
 
-enabled = st.multiselect(
-    "Colonnes à conserver (si vide → toutes les colonnes du gabarit)",
-    options=base_cols,
-    default=_clean_cols,
-    key=f"ms_cols_{g.name}_{g.version}",
-)
+# === Détection du mode (gabarit brut vs transformation) — VERSION NETTOYÉE ===
+_is_transfo_mode = (source_mode == "Transformation réutilisable")
+
+# === UI Colonnes (un seul chemin, sans doublon) ===
+if _is_transfo_mode and selected_transfo:
+    out_cols = get_transformation_output_columns(
+        selected_transfo.get("name",""),
+        selected_transfo.get("version","v1")
+    ) or []
+
+    default_cols = (existing.get("final_order") or []) if existing else out_cols[:]
+    default_cols, ren_map, removed = _safe_reconcile_defaults(default_cols, out_cols)
+
+    if ren_map:
+        st.caption("🪄 Renommages (transformation) : " + ", ".join([f"{k} → {v}" for k, v in ren_map.items()]))
+    if removed:
+        st.caption("⚠️ Colonnes introuvables (retirées) : " + ", ".join(removed))
+
+    enabled = st.multiselect(
+        "Colonnes de sortie (transformation) à conserver (l'ordre de sélection sera repris)",
+        options=out_cols,
+        default=default_cols,
+        key=f"ms_cols_transfo_{template_id}_{g.name}_{g.version}_{default_sheet}_{default_table}",
+    )
+else:
+    enabled = st.multiselect(
+        "Colonnes à conserver (si vide → toutes les colonnes du gabarit)",
+        options=base_cols,
+        default=_clean_cols,
+        key=f"ms_cols_{g.name}_{g.version}",
+    )
 
 
-# Enrichissements simplifiés
-st.markdown("### 🔗 Enrichissements")
-reachable = compute_reachable_targets(g.name, g.version, max_depth=4)
-target_labels = sorted([f"{nm} (v{ver})" for (nm,ver) in reachable.keys()])
-label_to_tuple = { f"{nm} (v{ver})": (nm,ver) for (nm,ver) in reachable.keys() }
+# Enrichissements (masqués entièrement si transformation)
+if _is_transfo_mode:
+    st.markdown("### 🔗 Enrichissements")
+    st.caption("Pilotés par la transformation sélectionnée — non éditables ici.")
+else:
+    st.markdown("### 🔗 Enrichissements")
 
-# Clé d'initialisation **unique par usage** (évite d'écraser/perdre les enrichissements
-# quand on navigue vers un autre template/sheet/table puis on revient)
-_loaded_key = (template_id, g.name, g.version, (default_sheet or "").strip(), (default_table or "").strip())
+    reachable = compute_reachable_targets(g.name, g.version, max_depth=4)
+    target_labels = sorted([f"{nm} (v{ver})" for (nm,ver) in reachable.keys()])
+    label_to_tuple = { f"{nm} (v{ver})": (nm,ver) for (nm,ver) in reachable.keys() }
 
+    _loaded_key = (template_id, g.name, g.version, (default_sheet or "").strip(), (default_table or "").strip())
 
-if ("tpl_enrich_rows" not in st.session_state) or (st.session_state.get("_inject_loaded_for") != _loaded_key):
-    rows = []
-    if existing and existing.get("enrichments"):
-        for e in existing["enrichments"]:
-            path = e.get("path") or []
-            if path:
-                last = path[-1]                 # [from, left_key, to, right_key]
-                rows.append({
-                    "join": e.get("join", "left"),
-                    "target": (last[2], "v1"),   # table cible + version
-                    "columns": e.get("columns", [])
-                })
-            else:
-                rows.append({
-                    "join": e.get("join", "left"),
-                    "target": None,
-                    "columns": e.get("columns", [])
-                })
-    st.session_state.tpl_enrich_rows = rows
-    st.session_state._inject_loaded_for = _loaded_key
+    if ("tpl_enrich_rows" not in st.session_state) or (st.session_state.get("_inject_loaded_for") != _loaded_key):
+        rows = []
+        if existing and existing.get("enrichments"):
+            for e in existing["enrichments"]:
+                path = e.get("path") or []
+                if path:
+                    last = path[-1]  # [from, left_key, to, right_key]
+                    rows.append({
+                        "join": e.get("join", "left"),
+                        "target": (last[2], "v1"),
+                        "columns": e.get("columns", [])
+                    })
+                else:
+                    rows.append({
+                        "join": e.get("join", "left"),
+                        "target": None,
+                        "columns": e.get("columns", [])
+                    })
+        st.session_state.tpl_enrich_rows = rows
+        st.session_state._inject_loaded_for = _loaded_key
 
+    if st.button("➕ Ajouter un enrichissement", use_container_width=True):
+        st.session_state.tpl_enrich_rows.append({"join":"left", "target": None, "columns": []})
+        st.rerun()
 
-if st.button("➕ Ajouter un enrichissement", use_container_width=True):
-    st.session_state.tpl_enrich_rows.append({"join":"left", "target": None, "columns": []})
-    st.rerun()
-
-to_delete = []
-for i, row in enumerate(st.session_state.tpl_enrich_rows):
-    with st.expander(f"Enrichissement #{i+1}", expanded=True):
-        c0, c1 = st.columns([1,3])
-        with c0:
-            row["join"] = st.selectbox("Type de jointure", ["left","inner"],
-                                       index=(0 if row.get("join","left")=="left" else 1),
-                                       key=f"join_{i}")
-        with c1:
-            st.caption("Table cible (atteignable via les relations définies dans le gabarit)")
-            cur_label = None
-            if row.get("target"):
-                nm, ver = row["target"]
-                cur_label = f"{nm} (v{ver})" if (nm,ver) in reachable else None
-            sel = st.selectbox("Table à enrichir",
-                               options=["(choisir)"] + target_labels,
-                               index=(target_labels.index(cur_label)+1 if cur_label in target_labels else 0),
-                               key=f"target_{i}")
-            if sel != "(choisir)":
-                row["target"] = label_to_tuple[sel]
-                tgt_g = get_gabarit(*row["target"])
-                tgt_cols = [c.name for c in (tgt_g.columns or [])]
-
-                # Reconcilier la sélection existante de l’enrichissement
-                existing_e = row.get("columns", []) or []
-                _clean_e, _renamed_e, _removed_e = _safe_reconcile_defaults(existing_e, tgt_cols)
-
-                if _renamed_e:
-                    st.caption("🪄 Renommages (enrichissement) : " + ", ".join([f"{k} → {v}" for k, v in _renamed_e.items()]))
-                if _removed_e:
-                    st.caption("⚠️ Colonnes introuvables (enrichissement) : " + ", ".join(_removed_e))
-
-                row["columns"] = st.multiselect(
-                    "Colonnes à rapatrier",
-                    options=tgt_cols,
-                    default=_clean_e,
-                    key=f"cols_{i}"
+    to_delete = []
+    for i, row in enumerate(st.session_state.tpl_enrich_rows):
+        with st.expander(f"Enrichissement #{i+1}", expanded=True):
+            c0, c1 = st.columns([1,3])
+            with c0:
+                row["join"] = st.selectbox(
+                    "Type de jointure", ["left","inner"],
+                    index=(0 if row.get("join","left")=="left" else 1),
+                    key=f"join_{i}"
                 )
+            with c1:
+                st.caption("Table cible (atteignable via les relations définies dans le gabarit)")
+                cur_label = None
+                if row.get("target"):
+                    nm, ver = row["target"]
+                    cur_label = f"{nm} (v{ver})" if (nm,ver) in reachable else None
+                sel = st.selectbox(
+                    "Table à enrichir",
+                    options=["(choisir)"] + target_labels,
+                    index=(target_labels.index(cur_label)+1 if cur_label in target_labels else 0),
+                    key=f"target_{i}"
+                )
+                if sel != "(choisir)":
+                    row["target"] = label_to_tuple[sel]
+                    tgt_g = get_gabarit(*row["target"])
+                    tgt_cols = [c.name for c in (tgt_g.columns or [])]
 
-            else:
-                row["target"] = None
-                row["columns"] = []
+                    existing_e = row.get("columns", []) or []
+                    _clean_e, _renamed_e, _removed_e = _safe_reconcile_defaults(existing_e, tgt_cols)
 
-        if st.button("🗑️ Supprimer", key=f"del_enrich_{i}"):
-            to_delete.append(i)
+                    if _renamed_e:
+                        st.caption("🪄 Renommages (enrichissement) : " + ", ".join([f"{k} → {v}" for k, v in _renamed_e.items()]))
+                    if _removed_e:
+                        st.caption("⚠️ Colonnes introuvables (enrichissement) : " + ", ".join(_removed_e))
 
-if to_delete:
-    for i in sorted(to_delete, reverse=True):
-        del st.session_state.tpl_enrich_rows[i]
-    st.rerun()
+                    row["columns"] = st.multiselect(
+                        "Colonnes à rapatrier",
+                        options=tgt_cols,
+                        default=_clean_e,
+                        key=f"cols_{i}"
+                    )
+                else:
+                    row["target"] = None
+                    row["columns"] = []
+
+            if st.button("🗑️ Supprimer", key=f"del_enrich_{i}"):
+                to_delete.append(i)
+
+    if to_delete:
+        for i in sorted(to_delete, reverse=True):
+            del st.session_state.tpl_enrich_rows[i]
+        st.rerun()
 
 # -----------------------------------------------------------------------------------
 # Étape 3 : ⚙️ Méthodes (colonnes calculées) à inclure
 # -----------------------------------------------------------------------------------
-st.markdown("### ⚙️ Méthodes à inclure")
+if _is_transfo_mode:
+    st.markdown("### ⚙️ Méthodes à inclure")
+    st.caption("Pilotées par la transformation sélectionnée — non éditables ici.")
+    methods_selected = []
+else:
+    st.markdown("### ⚙️ Méthodes à inclure")
 
-def _method_names(gname: str, gver: str) -> list[str]:
-    allm = list_methods_for_gabarit(gname, gver) or []
-    if isinstance(allm, dict):
-        return sorted(list(allm.keys()))
-    # list[dict] fallback
-    names = []
-    for m in allm:
-        if isinstance(m, dict) and m.get("name"):
-            names.append(m["name"])
-    return sorted(names)
+    def _method_names(gname: str, gver: str) -> list[str]:
+        allm = list_methods_for_gabarit(gname, gver) or []
+        if isinstance(allm, dict):
+            return sorted(list(allm.keys()))
+        names = []
+        for m in allm:
+            if isinstance(m, dict) and m.get("name"):
+                names.append(m["name"])
+        return sorted(names)
 
-all_methods = _method_names(g.name, g.version)
+    all_methods = _method_names(g.name, g.version)
 
-existing_methods = existing.get("methods", []) if existing else []
-_clean_m, _renamed_m, _removed_m = _safe_reconcile_defaults(existing_methods, all_methods)
+    existing_methods = existing.get("methods", []) if existing else []
+    _clean_m, _renamed_m, _removed_m = _safe_reconcile_defaults(existing_methods, all_methods)
 
-if _renamed_m:
-    st.caption("🪄 Renommages de méthodes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_m.items()]))
-if _removed_m:
-    st.caption("⚠️ Méthodes introuvables (retirées) : " + ", ".join(_removed_m))
+    if _renamed_m:
+        st.caption("🪄 Renommages de méthodes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_m.items()]))
+    if _removed_m:
+        st.caption("⚠️ Méthodes introuvables (retirées) : " + ", ".join(_removed_m))
 
-methods_selected = st.multiselect(
-    "Méthodes autorisées par le gabarit",
-    options=all_methods,
-    default=_clean_m,
-    key=f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}",
-    help="Ces colonnes calculées seront disponibles et leurs colonnes d'entrée seront demandées dans la table d'entrée du projet."
-)
+    methods_selected = st.multiselect(
+        "Méthodes autorisées par le gabarit",
+        options=all_methods,
+        default=_clean_m,
+        key=f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}",
+        help="Ces colonnes calculées seront disponibles et leurs colonnes d'entrée seront demandées dans la table d'entrée du projet."
+    )
 
 
 
@@ -486,30 +573,82 @@ st.markdown("---")
 # ENREGISTRER (en préservant l'ajustement final existant)
 if st.button("💾 Enregistrer l’usage", type="primary", use_container_width=True):
     try:
-        enrich_payload = _build_enrichments_payload(g, st.session_state.get("tpl_enrich_rows", []))
-
-        # Relire l'ajustement pour CETTE clé (gabarit+sheet+table)
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
-            old_for_key = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, sheet.strip(), table.strip()) or {}
+            old_for_key = ts.get_gabarit_usage_by_target(
+                template_id, g.name, g.version, sheet.strip(), table.strip()
+            ) or {}
 
         keep_final_order = old_for_key.get("final_order")
         keep_final_excl  = old_for_key.get("final_excludes")
+        keep_final_ren   = old_for_key.get("final_renames")
+        keep_final_sort  = old_for_key.get("final_sort")
 
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
-            ts.upsert_gabarit_usage(
-                template_id=template_id,
-                gabarit_name=g.name,
-                gabarit_version=g.version,
-                excel_sheet=sheet.strip(),
-                excel_table=table.strip(),
-                columns_enabled=enabled,
-                methods=methods_selected,           # ✅ on enregistre bien les méthodes
-                enrichments=enrich_payload,
-                final_order=keep_final_order,       # ❄️ on préserve l'ajustement existant pour cette clé
-                final_excludes=keep_final_excl,
-            )
+
+            if source_mode == "Transformation réutilisable" and selected_transfo:
+                ts.upsert_gabarit_usage(
+                    template_id=template_id,
+                    gabarit_name=g.name,
+                    gabarit_version=g.version,
+                    excel_sheet=sheet.strip(),
+                    excel_table=table.strip(),
+
+                    # côté template on neutralise ces champs (la transfo porte le pipeline)
+                    columns_enabled=[],
+                    methods=[],
+                    enrichments=[],
+
+                    # la sélection 'enabled' pilote le sous-ensemble/ordre final
+                    final_order=list(enabled or []),
+                    final_excludes=list(keep_final_excl or []),
+
+                    # source + référence transformation
+                    source_kind="transformation",
+                    transformation_name=selected_transfo.get("name",""),
+                    transformation_version=selected_transfo.get("version","v1"),
+                )
+
+                # préserver final_renames / final_sort si absents après upsert
+                cfg2 = ts.get_config(template_id) or {}
+                usages2 = list(cfg2.get("gabarit_usages") or [])
+                for uu in usages2:
+                    tgt2 = uu.get("excel_target") or {}
+                    if (
+                        uu.get("gabarit_name") == g.name
+                        and (uu.get("gabarit_version") or "v1") == g.version
+                        and (tgt2.get("sheet") or "") == sheet.strip()
+                        and (tgt2.get("table") or "") == table.strip()
+                    ):
+                        if keep_final_ren is not None and "final_renames" not in uu:
+                            uu["final_renames"] = keep_final_ren
+                        if keep_final_sort is not None and "final_sort" not in uu:
+                            uu["final_sort"] = keep_final_sort
+                        break
+                cfg2["gabarit_usages"] = usages2
+                ts.update_config(template_id, cfg2)
+
+            else:
+                # Mode gabarit brut (comportement actuel)
+                enrich_payload = _build_enrichments_payload(g, st.session_state.get("tpl_enrich_rows", []))
+                methods_selected = st.session_state.get(
+                    f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}", []
+                )
+                ts.upsert_gabarit_usage(
+                    template_id=template_id,
+                    gabarit_name=g.name,
+                    gabarit_version=g.version,
+                    excel_sheet=sheet.strip(),
+                    excel_table=table.strip(),
+                    columns_enabled=enabled,
+                    methods=methods_selected,
+                    enrichments=enrich_payload,
+                    final_order=keep_final_order,
+                    final_excludes=keep_final_excl,
+                    # source_kind par défaut = "gabarit" (côté service)
+                )
+
         st.session_state["_inject_saved"] = True
         st.rerun()
     except Exception as e:
