@@ -74,7 +74,9 @@ def apply_method(df: pd.DataFrame, method: dict, params: dict[str, Any]) -> pd.D
 
     if compiled is not None:
         try:
-            result = eval(compiled, {}, {"df": df2, "pd": pd, "params": norm_params})
+            env = {"df": df2, "pd": pd, "params": norm_params, "__builtins__": __builtins__}
+            result = eval(compiled, env, env)
+
             df2[out_col] = result
             return df2
         except Exception:
@@ -82,11 +84,10 @@ def apply_method(df: pd.DataFrame, method: dict, params: dict[str, Any]) -> pd.D
             pass
 
     # --- 2) Exécuter comme script (modes A et B)
-    loc = {"df": df2, "pd": pd, "params": norm_params, "value": None}
-    try:
-        exec(code, {}, loc)
-    except Exception as e:
-        raise MethodExecutionError(f"Erreur exécution méthode: {e}")
+    env = {"df": df2, "pd": pd, "params": norm_params, "value": None, "__builtins__": __builtins__}
+    exec(code, env, env)
+    loc = env
+
 
     # 2a) Style B : 'value' fourni → on affecte df[out_col] = value
     value = loc.get("value", None)

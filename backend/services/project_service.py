@@ -574,11 +574,12 @@ class ProjectService:
                 f"Échec de chargement de la source pour {gabarit_name}:{gabarit_version}."
             )
 
-        # 4) Appliquer le code Python éventuel défini sur la source
-        try:
-            df = _apply_source_python(df, source_cfg)
-        except Exception as e:
-            logger.warning(f"[ProjectService] _apply_source_python a échoué: {e}")
+        # 4) (désactivé) : le code Python de source est déjà appliqué au chargement
+        # try:
+        #     df = _apply_source_python(df, source_cfg)
+        # except Exception as e:
+        #     logger.warning(f"[ProjectService] _apply_source_python a échoué: {e}")
+
 
         # 5) Optionnel: limiter (utile pour des previews/tests)
         if isinstance(limit, int) and limit > 0:

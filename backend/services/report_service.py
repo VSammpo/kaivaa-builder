@@ -1057,18 +1057,15 @@ class ReportService:
                 logger.info(f"{converted_count} slides statiques avec graphiques rafraîchis et convertis")
                 presentation.Save()
 
-
     def _inject_all_usages_from_project(self, project_id: str) -> dict:
         """
-        Mode PROJET : réplique la logique "Détail livrable" (template) :
-        - résout l'usage exact par (sheet, table) si possible,
-        - construit en FULL via build_table_from_usage (sans imposer un df_base projet),
-        - injecte strictement selon df.columns (pas d'écart preview ↔ Excel),
-        - petite pause entre injections pour COM/xlwings.
+        Mode PROJET : utilise les sources de données configurées dans le projet
+        au lieu des données par défaut des gabarits.
         """
         from time import sleep
         from backend.services.database_service import DatabaseService
         from backend.services.template_service import TemplateService
+        from backend.services.project_service import ProjectService
         from backend.services.table_builder_service import build_table_from_usage
         from backend.services.excel_injection_service import inject_dataframe
 
@@ -1087,6 +1084,8 @@ class ReportService:
 
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)
+            ps = ProjectService(db)  # ✅ AJOUT : ProjectService pour accéder aux données projet
+            
             usages = ts.list_gabarit_usages(template_id) or []
             if not usages:
                 return {"skipped": True, "reason": "no_usages"}
@@ -1107,10 +1106,10 @@ class ReportService:
                     })
                     continue
 
-                logger.info(f"[inject/project] 🔄 Construction table {key} → {sheet}/{table}")
+                logger.info(f"[inject/project] 📄 Construction table {key} → {sheet}/{table}")
 
                 try:
-                    # 1) Résoudre l’usage exact par (sheet, table) pour coller à 2a
+                    # 1) Résoudre l'usage exact par (sheet, table)
                     try:
                         fresh_usage = ts.get_usage_for_sheet_table(template_id, sheet, table)
                     except Exception:
@@ -1118,13 +1117,62 @@ class ReportService:
                     if fresh_usage is None:
                         fresh_usage = u  # fallback
 
-                    # 2) Construire en FULL comme en mode Template (pas de _source_df forcé)
-                    built = build_table_from_usage(
-                        fresh_usage,
-                        full=True,          # évite tout preview tronqué
-                        log_kpis=True,
-                        params=params_dict
-                    )
+                    # ✅ MODIFICATION : Gestion correcte du tuple retourné par build_dataframe
+                    source_type = "unknown"
+                    try:
+                        # build_dataframe retourne DÉJÀ un tuple (df, meta)
+                        result = ps.build_dataframe(
+                            project_id=project_id,
+                            gabarit_name=gname,
+                            gabarit_version=gver,
+                            expected_columns=fresh_usage.get("columns_enabled"),
+                            usage=fresh_usage,
+                            template_id=template_id
+                        )
+                        
+                        # ✅ Gérer le cas où result est un tuple
+                        if isinstance(result, tuple):
+                            df_from_project = result[0] if len(result) > 0 else None
+                            meta = result[1] if len(result) > 1 else {}
+                        else:
+                            df_from_project = result
+                            meta = {}
+                        
+                        if df_from_project is not None:
+                            source_type = meta.get('source_type', 'project')
+                            logger.info(f"[inject/project]   • DataFrame chargé depuis le projet : {len(df_from_project)} lignes × {len(df_from_project.columns)} colonnes")
+                            logger.info(f"[inject/project]   • Source utilisée : {source_type}")
+                            
+                            # Créer l'usage avec le DataFrame du projet comme source
+                            fresh_usage_with_source = dict(fresh_usage)
+                            fresh_usage_with_source.pop("source", None)
+                            fresh_usage_with_source.pop("data_source", None)
+                            fresh_usage_with_source["_source_df"] = df_from_project
+
+                            built = build_table_from_usage(
+                                fresh_usage_with_source,
+                                full=True,
+                                log_kpis=True,
+                                params=params_dict
+                            )
+
+                        else:
+                            raise RuntimeError("Impossible de charger les données depuis le projet")
+                        
+                    except Exception as e:
+                        logger.warning(f"[inject/project] Erreur chargement depuis projet : {e}")
+                        logger.info("[inject/project] Fallback sur les données par défaut")
+                        
+                        # Fallback : utiliser les données par défaut
+                        built = build_table_from_usage(
+                            fresh_usage,
+                            full=True,
+                            log_kpis=True,
+                            params=params_dict
+                        )
+                        source_type = "default"
+                    
+                    # Gestion du résultat de build_table_from_usage
                     if isinstance(built, tuple):
                         df, error = (built + (None,))[:2]
                     else:
@@ -1141,7 +1189,7 @@ class ReportService:
                     if idx > 0:
                         sleep(1.0)  # anti-corruption COM/xlwings
 
-                    # 3) Injection strictement selon df.columns (même logique qu’en 2a)
+                    # 3) Injection strictement selon df.columns
                     res = inject_dataframe(
                         excel_path,
                         sheet,
@@ -1152,24 +1200,29 @@ class ReportService:
 
                     summary["ok"] += 1
                     summary["details"].append({
-                        "usage": gname, "sheet": sheet, "table": table,
+                        "usage": gname, 
+                        "sheet": sheet, 
+                        "table": table,
                         "rows": res.get("rows", len(df)),
                         "cols": len(expected_cols),
                         "warnings": res.get("warnings", {}),
                         "script_applied": True,
-                        "methods_applied": res.get("methods_applied", 0)
+                        "methods_applied": res.get("methods_applied", 0),
+                        "source_type": source_type
                     })
-                    logger.success(f"[inject/project] ✅ Injection réussie : {key} → {sheet}/{table}")
+                    logger.success(f"[inject/project] ✅ Injection réussie : {key} → {sheet}/{table} (source: {source_type})")
 
                 except Exception as e:
-                    logger.warning(f"[inject/project] ❌ Échec {key}: {e}")
+                    logger.error(f"[inject/project] ❌ Échec {key}: {e}")
+                    import traceback
+                    logger.debug(traceback.format_exc())
                     summary["err"] += 1
                     summary["details"].append({
                         "usage": gname, "sheet": sheet, "table": table, "error": str(e)
                     })
 
+        logger.info(f"[inject/project] 📊 Résumé injection : {summary['ok']} OK, {summary['err']} erreurs")
         return summary
-
 
     def _inject_all_usages_from_defaults(self) -> dict:
         """

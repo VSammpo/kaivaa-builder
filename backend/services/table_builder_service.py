@@ -24,10 +24,10 @@ from backend.services.dataset_service import get_default_dataframe_for_gabarit
 
 # === DEBUG ENRICHISSEMENTS ===
 DEBUG_ENRICH = True
-
 def _normalize_to_usage(transfo_or_usage: dict) -> dict:
     """
     Convertit une transformation OU un usage en format usage unifié.
+    ⚠️ IMPORTANT : on conserve les clés techniques (ex: "_source_df") transmises par l'appelant.
     Politique de MERGE quand une transformation est référencée dans l'usage :
       - On charge la transformation (gabarit_base, columns_enabled, enrichments, methods, overlay, final_*).
       - On applique une surcouche éventuelle de l'usage :
@@ -45,13 +45,21 @@ def _normalize_to_usage(transfo_or_usage: dict) -> dict:
 
     u = dict(transfo_or_usage)
 
-    # Cas A — Usage SANS transformation : retourner tel quel
+    # --- Helper pour recopier les clés techniques (ex: "_source_df") ---
+    def _carry_tech_keys(src: dict, dst: dict):
+        for k, v in src.items():
+            # on recopie toutes les clés "techniques" (commençant par "_")
+            # et, plus largement, toute clé inconnue non couverte par le schéma standard
+            if k.startswith("_"):
+                dst[k] = v
+
+    # Cas A — Usage SANS transformation : le retourner tel quel (mais normalisé minimalement)
     transfo_name = (u.get("transformation_name") or "").strip()
     if not transfo_name:
         # Si c'est une transformation "pleine" (clé 'gabarit_base'), normaliser en usage
         if "gabarit_base" in u and "gabarit_name" not in u:
             gabarit_base = u.get("gabarit_base", {})
-            return {
+            base = {
                 "gabarit_name": gabarit_base.get("name", ""),
                 "gabarit_version": gabarit_base.get("version", "v1"),
                 "columns_enabled": list(u.get("columns_enabled") or []),
@@ -64,13 +72,18 @@ def _normalize_to_usage(transfo_or_usage: dict) -> dict:
                 "final_sort": list(u.get("final_sort") or []),
                 "excel_target": dict(u.get("excel_target") or {}),
             }
-        # Sinon, usage "brut"
-        return u
+            _carry_tech_keys(u, base)
+            return base
 
-    # Cas B — Usage AVEC transformation : fusionner la transformation + surcouche usage
+        # Sinon, usage "brut" : recopier les clés techniques et renvoyer
+        base = dict(u)
+        _carry_tech_keys(u, base)
+        return base
+
+    # Cas B — Usage AVEC transformation : fusionner transformation + surcouche usage
     tver = (u.get("transformation_version") or "v1").strip()
     T = get_transformation(transfo_name, tver) or {}
-    # Base depuis la transformation
+
     base = {
         "gabarit_name": (T.get("gabarit_base") or {}).get("name", ""),
         "gabarit_version": (T.get("gabarit_base") or {}).get("version", "v1"),
@@ -119,6 +132,9 @@ def _normalize_to_usage(transfo_or_usage: dict) -> dict:
             base["final_order"] = [c for c in u_order if c in t_set]
         else:
             base["final_order"] = [c for c in u_order if c]
+
+    # 🔴 CRITIQUE : conserver les clés techniques (dont "_source_df")
+    _carry_tech_keys(u, base)
 
     return base
 
@@ -279,34 +295,36 @@ def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str,
     return cur
 
 
+
 def _apply_overlay(df: pd.DataFrame, code: str, params: dict | None = None):
+    """
+    Exécute un script d'usage (overlay) sur un DataFrame.
+    - Injecte pd, df (copie), params dans un namespace unique (globals == locals)
+    - Expose chaque paramètre sous plusieurs alias (k, k.lower(), k.upper(), Capitalized)
+    - Le script doit laisser le résultat final dans 'df'
+    """
     if not code or not code.strip():
         return df, None
     try:
-        local_vars = {"pd": pd, "df": df.copy(), "params": params or {}}
+        env: dict = {
+            "pd": pd,
+            "df": df.copy(),
+            "params": params or {},
+            "__builtins__": __builtins__,
+        }
+        # Alias de paramètres utilisables dans le script
         for k, v in (params or {}).items():
             if not isinstance(k, str):
                 continue
             if k in {"pd", "df", "params"}:
                 continue
-            if k.isidentifier():
-                # nom tel que passé
-                local_vars.setdefault(k, v)
-                # alias usuels
-                kk = k.lower()
-                ku = k.upper()
-                kt = k[:1].upper() + k[1:]
-                for alias in {kk, ku, kt}:
-                    if alias.isidentifier() and alias not in local_vars:
-                        local_vars[alias] = v
+            aliases = {k, k.lower(), k.upper(), (k[:1].upper() + k[1:])}
+            for alias in aliases:
+                if isinstance(alias, str) and alias.isidentifier():
+                    env.setdefault(alias, v)
 
-        # ➕ rendre chaque paramètre accessible directement (ex: Secteur)
-        for k, v in (params or {}).items():
-            if isinstance(k, str) and k not in {"pd", "df", "params"} and k.isidentifier():
-                local_vars[k] = v
-
-        exec(code, {}, local_vars)
-        result = local_vars.get("df", None)
+        exec(code, env, env)  # 👈 un seul namespace
+        result = env.get("df", None)
         if isinstance(result, pd.DataFrame):
             return result, None
         return None, "Le script n'a pas produit de DataFrame 'df'."

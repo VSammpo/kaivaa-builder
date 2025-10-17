@@ -19,26 +19,31 @@ from loguru import logger
 def _apply_source_python(df: pd.DataFrame, source: dict) -> pd.DataFrame:
     """
     Si la source contient une clé 'python', on exécute le script dans un
-    namespace {'df': df, 'pd': pd}. Le script peut soit modifier df in-place,
-    soit retourner un nouveau DataFrame via 'df = ...'.
+    namespace unique (globals == locals) pour que les fonctions se voient entre elles.
+    Le script peut modifier df in-place, ou produire un nouveau df via "df = ...".
     """
     code = (source or {}).get("python")
     if not code or not isinstance(code, str) or not code.strip():
         return df
     try:
-        local_vars = {"df": df.copy(), "pd": pd}  # ✅ Copie explicite
-        exec(code, {}, local_vars)
-        new_df = local_vars.get("df")
-        
-        # ✅ CORRECTION : Vérifier le type
+        env = {
+            "df": df.copy(),
+            "pd": pd,
+            "__builtins__": __builtins__,
+        }
+        exec(code, env, env)  # 👈 un seul namespace
+        new_df = env.get("df")
+
         if not isinstance(new_df, pd.DataFrame):
-            logger.error(f"[dataset_service] Le script Python doit retourner un DataFrame (pas {type(new_df).__name__})")
-            return df  # Retourner l'original en cas d'erreur
-        
+            logger.error(
+                f"[dataset_service] Le script Python doit produire un DataFrame dans 'df' (pas {type(new_df).__name__})."
+            )
+            return df
         return new_df
     except Exception as e:
         logger.exception(f"[dataset_service] Erreur script 'python' dans source: {e}")
         return df
+
 
 
 def _load_dataframe_from_source(source: dict) -> Optional[pd.DataFrame]:

@@ -20,7 +20,7 @@
         "client": 1,
         "default": 0
       },
-      "last_generated_at": null
+      "last_generated_at": "2025-10-17T11:23:05.853883+02:00"
     }
   ],
   "data_sources": [
@@ -32,31 +32,35 @@
         "type": "csv",
         "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\001 - Sell Out\\Sell_Out_L_Oreal_Fake.csv",
         "sep": ",",
-        "encoding": "utf-8-sig"
+        "encoding": "utf-8-sig",
+        "python": "# ================= KAIVAA — Script autonome (sans import) =================\r\n# Objectif : produire df conforme au gabarit\r\n#  - Dates : datetime64[ns]\r\n#  - Texte : object\r\n#  - Numériques : float64 (ou int) reconnus comme \"number\" par la validation\r\n\r\n# ---------- Helpers ----------\r\ndef _norm_text(s):\r\n    if s is None:\r\n        return \"\"\r\n    s = str(s).strip().lower().replace(\"_\", \" \").replace(\"-\", \" \")\r\n    return \" \".join(s.split())\r\n\r\ndef _find_col(df_, aliases):\r\n    cols = list(df_.columns)\r\n    # exact\r\n    for a in aliases:\r\n        if a in cols:\r\n            return a\r\n    # insensitive\r\n    lower_map = {c.lower(): c for c in cols}\r\n    for a in aliases:\r\n        la = a.lower()\r\n        if la in lower_map:\r\n            return lower_map[la]\r\n    # normalized\r\n    norm_map = {_norm_text(c): c for c in cols}\r\n    for a in aliases:\r\n        na = _norm_text(a)\r\n        if na in norm_map:\r\n            return norm_map[na]\r\n    return None\r\n\r\ndef _to_datetime64(s):\r\n    \"\"\"\r\n    Convertit en datetime64[ns] (sans passer par des objets date).\r\n    1) tentative astype('datetime64[ns]')\r\n    2) sinon -> string, remplace '/', tronque à 10 chars -> astype\r\n    \"\"\"\r\n    try:\r\n        ser = s.astype(\"datetime64[ns]\")\r\n        if str(ser.dtype).lower().startswith(\"datetime64\"):\r\n            return ser\r\n    except Exception:\r\n        pass\r\n    try:\r\n        ser2 = s.astype(\"string\").str.replace(\"/\", \"-\", regex=False).str.slice(0, 10)\r\n        ser2 = ser2.astype(\"datetime64[ns]\")\r\n        return ser2\r\n    except Exception:\r\n        return s  # fallback (laissera la validation signaler)\r\n\r\ndef _to_float(s):\r\n    try:\r\n        return s.astype(\"float64\")\r\n    except Exception:\r\n        _nan = float(\"nan\")\r\n        def _try_float(x):\r\n            try:\r\n                return float(x)\r\n            except _:\r\n                return _nan\r\n        return s.map(lambda x: _nan if x is None or (isinstance(x, str) and not x.strip()) else _try_float(x)).astype(\"float64\")\r\n\r\ndef _to_text_object(s):\r\n    \"\"\"\r\n    Force un dtype 'object' avec des str Python (pas 'string' pandas).\r\n    \"\"\"\r\n    try:\r\n        return s.astype(\"object\").map(lambda x: \"\" if x is None else str(x))\r\n    except Exception:\r\n        return s.map(lambda x: \"\" if x is None else str(x)).astype(\"object\")\r\n\r\ndef _const_text_object(df_, value):\r\n    # Serie longueur n au dtype object\r\n    try:\r\n        return df_.index.to_series().map(lambda _: value).astype(\"object\")\r\n    except Exception:\r\n        return df_[:0].assign(_tmp=value).reindex(df_.index)[\"_tmp\"].astype(\"object\")\r\n\r\n# ---------- Schéma cible ----------\r\nTARGET_COLS = [\r\n    \"Date_début\",\"Date_fin\",\"Année_N\",\r\n    \"Enseigne\",\"Géographie\",\"Région\",\"Concurrence\",\r\n    \"Famille\",\"Segment\",\"Groupe\",\"Marque\",\r\n    \"Product\",\"Produit_détaillé\",\"Unité_volume\",\r\n    \"Chiffre_d_affaires\",\"Distribution_numérique\",\"Prix_moyen\",\"Volume\",\r\n    \"Distributeur\",\"Canal\"\r\n]\r\n\r\n# ---------- Détection colonnes d'entrée ----------\r\ncol_start   = _find_col(df, [\"Start week week\",\"Start week\",\"Date début\",\"Date_debut\",\"Date start\",\"start\"])\r\ncol_end     = _find_col(df, [\"End week\",\"Date fin\",\"Date_fin\",\"Date end\",\"end\"])\r\ncol_brand   = _find_col(df, [\"Brand\",\"Groupe\"])  # ✅ MODIFIÉ : Brand sera utilisé pour Marque\r\ncol_subbr   = _find_col(df, [\"SubBrand\",\"Marque\"])\r\ncol_metier  = _find_col(df, [\"Metier\",\"Métier\",\"Famille\"])\r\ncol_submet  = _find_col(df, [\"SubMetier\",\"SousMetier\",\"Segment\"])\r\ncol_pname   = _find_col(df, [\"Product name\",\"Produit\",\"Produit_détaillé\",\"Product\"])\r\ncol_units   = _find_col(df, [\"Units\",\"Unités\"])\r\ncol_volsold = _find_col(df, [\"Volume sold\",\"Volume\"])\r\ncol_liters  = _find_col(df, [\"Liters sold\",\"Litres\"])\r\ncol_dn      = _find_col(df, [\"DN\",\"Distribution numérique\",\"Distribution_numérique\"])\r\ncol_pu      = _find_col(df, [\"Prix moyen\",\"Prix_moyen\"])\r\ncol_ca      = _find_col(df, [\"CA\",\"Chiffre d'affaires\",\"Chiffre_d_affaires\"])\r\ncol_dist    = _find_col(df, [\"Distributeur\",\"Enseigne\"])\r\ncol_canal   = _find_col(df, [\"Canal\",\"Channel\"])\r\ncol_fin     = _find_col(df, [\"Finance code\",\"Code produit\",\"SKU\"])\r\ncol_axe     = _find_col(df, [\"Axe\"])\r\n\r\n# ---------- Copie de travail ----------\r\ndf = df.copy()\r\n\r\n# 1) Dates (début / fin) — en datetime64[ns]\r\nif col_start is None and col_end is None:\r\n    raise ValueError(\"Impossible de trouver des dates (début/fin). Vérifie 'Start week week' / 'End week'.\")\r\n\r\ndf[\"Date_début\"] = _to_datetime64(df[col_start]) if col_start else _to_datetime64(df[col_end])\r\ndf[\"Date_fin\"]   = _to_datetime64(df[col_end])   if col_end   else df[\"Date_début\"]\r\n\r\n# 2) Année_N (texte / object) basé sur Date_début (fenêtres ~12 mois)\r\nif str(df[\"Date_début\"].dtype).lower().startswith(\"datetime64\"):\r\n    max_start = df[\"Date_début\"].max()\r\n    diffs_days = (max_start - df[\"Date_début\"]).dt.days.astype(\"float64\")\r\n\r\n    def _label(v):\r\n        if v != v:  # NaN\r\n            return \"\"\r\n        k = int(max(0.0, v // 365.0))\r\n        return \"Ancien\" if k >= 5 else (\"N\" if k == 0 else f\"N-{k}\")\r\n\r\n    df[\"Année_N\"] = diffs_days.map(_label).astype(\"object\")\r\nelse:\r\n    df[\"Année_N\"] = _const_text_object(df, \"\")\r\n\r\n# 3) Dimensions (texte → dtype object)\r\ndf[\"Distributeur\"] = _to_text_object(df[col_dist]) if col_dist else _const_text_object(df, \"\")\r\ndf[\"Canal\"]        = _to_text_object(df[col_canal]) if col_canal else _const_text_object(df, \"\")\r\n\r\ndf[\"Enseigne\"]    = df[\"Distributeur\"]                     # même valeur\r\ndf[\"Géographie\"]  = _const_text_object(df, \"France\")\r\ndf[\"Région\"]      = _const_text_object(df, \"France\")\r\ndf[\"Concurrence\"] = _const_text_object(df, \"Entreprise\")\r\n\r\ndf[\"Famille\"] = _to_text_object(df[col_metier]) if col_metier else _const_text_object(df, \"\")\r\ndf[\"Segment\"] = _to_text_object(df[col_submet]) if col_submet else _const_text_object(df, \"\")\r\n\r\n# ✅ MODIFICATION : Groupe fixé à \"L'Oréal\", Marque provient de \"Brand\"\r\ndf[\"Groupe\"]  = _const_text_object(df, \"L'Oréal\")  # ✅ Toujours \"L'Oréal\"\r\ndf[\"Marque\"]  = _to_text_object(df[col_brand])  if col_brand  else _const_text_object(df, \"\")  # ✅ Utilise Brand\r\n\r\n# Produit / Produit_détaillé = Product name\r\nprod_series = _to_text_object(df[col_pname]) if col_pname else _const_text_object(df, \"\")\r\ndf[\"Product\"]          = prod_series\r\ndf[\"Produit_détaillé\"] = prod_series\r\n\r\n# 4) Volume + Unité_volume (numériques en float64)\r\nif col_liters and df[col_liters].notna().any():\r\n    df[\"Volume\"] = _to_float(df[col_liters])\r\n    df[\"Unité_volume\"] = _const_text_object(df, \"Litres\")\r\nelif col_volsold and df[col_volsold].notna().any():\r\n    df[\"Volume\"] = _to_float(df[col_volsold])\r\n    df[\"Unité_volume\"] = _const_text_object(df, \"Unités\")\r\nelif col_units:\r\n    df[\"Volume\"] = _to_float(df[col_units])\r\n    df[\"Unité_volume\"] = _const_text_object(df, \"Unités\")\r\nelse:\r\n    df[\"Volume\"] = _to_float(df.assign(_v=float(\"nan\"))[\"_v\"])\r\n    df[\"Unité_volume\"] = _const_text_object(df, \"Unités\")\r\n\r\n# 5) KPIs (numériques)\r\ndf[\"Distribution_numérique\"] = _to_float(df[col_dn]) if col_dn else _to_float(df.assign(_v=float(\"nan\"))[\"_v\"])\r\ndf[\"Prix_moyen\"]             = _to_float(df[col_pu]) if col_pu else _to_float(df.assign(_v=float(\"nan\"))[\"_v\"])\r\ndf[\"Chiffre_d_affaires\"]     = _to_float(df[col_ca]) if col_ca else _to_float(df.assign(_v=float(\"nan\"))[\"_v\"])\r\n\r\n# 6) Colonnes inutiles à retirer (si présentes)\r\nto_drop = []\r\nfor c in [col_fin, col_axe, \"Finance code\", \"Axe\"]:\r\n    if c and c in df.columns and c not in TARGET_COLS:\r\n        to_drop.append(c)\r\nif to_drop:\r\n    df = df.drop(columns=to_drop, errors=\"ignore\")\r\n\r\n# 7) Garantir toutes les colonnes cibles & réordonner (en gardant les bons dtypes)\r\nfor c in TARGET_COLS:\r\n    if c not in df.columns:\r\n        if c in (\"Date_début\", \"Date_fin\"):\r\n            df[c] = _to_datetime64(_const_text_object(df, \"\"))  # restera NaT en datetime64[ns]\r\n        elif c in (\"Chiffre_d_affaires\",\"Distribution_numérique\",\"Prix_moyen\",\"Volume\"):\r\n            df[c] = _to_float(df.assign(_v=float(\"nan\"))[\"_v\"])\r\n        else:\r\n            df[c] = _const_text_object(df, \"\")\r\ndf = df[TARGET_COLS]\r\n\r\n# 8) Tri optionnel (du plus récent au plus ancien si Date_fin en datetime64)\r\ntry:\r\n    if str(df[\"Date_fin\"].dtype).lower().startswith(\"datetime64\"):\r\n        df = df.sort_values(\r\n            [\"Date_fin\",\"Distributeur\",\"Canal\",\"Groupe\",\"Marque\",\"Product\"],\r\n            ascending=[False, True, True, True, True, True]\r\n        ).reset_index(drop=True)\r\nexcept Exception:\r\n    pass\r\n\r\n# ================= FIN ============================================================"
       },
       "row_count": 1000,
       "columns_filled": {
+        "Date_début": 100.0,
+        "Date_fin": 100.0,
+        "Année_N": 100.0,
+        "Enseigne": 100.0,
+        "Géographie": 100.0,
+        "Région": 100.0,
+        "Concurrence": 100.0,
+        "Famille": 100.0,
+        "Segment": 100.0,
+        "Groupe": 100.0,
+        "Marque": 100.0,
+        "Product": 100.0,
+        "Produit_détaillé": 100.0,
+        "Unité_volume": 100.0,
+        "Chiffre_d_affaires": 100.0,
+        "Distribution_numérique": 100.0,
+        "Prix_moyen": 100.0,
+        "Volume": 100.0,
         "Distributeur": 100.0,
-        "Canal": 100.0,
-        "Finance code": 100.0,
-        "Axe": 100.0,
-        "Metier": 100.0,
-        "SubMetier": 100.0,
-        "Product name": 100.0,
-        "Brand": 100.0,
-        "SubBrand": 100.0,
-        "Start week week": 100.0,
-        "End week": 100.0,
-        "Units": 100.0,
-        "Volume sold": 100.0,
-        "Liters sold": 100.0,
-        "DN": 100.0,
-        "Prix moyen": 100.0,
-        "CA": 100.0
+        "Canal": 100.0
       },
-      "last_validated_at": "2025-10-16T19:00:12+02:00"
+      "last_validated_at": "2025-10-17T10:38:00+02:00"
     }
   ],
   "created_at": "2025-10-16T16:01:22+02:00",
-  "updated_at": "2025-10-16T19:00:12+02:00"
+  "updated_at": "2025-10-17T11:26:32+02:00"
 }

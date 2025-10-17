@@ -374,45 +374,73 @@ for (gname, gver), info in sorted(required_gabarits.items()):
                             "sep": sep,
                             "encoding": encoding
                         }
-                        
                         if st.session_state[buffer_key]["python"].strip():
                             source_config["python"] = st.session_state[buffer_key]["python"]
-                        
-                        # Sauvegarder temporairement
+
+                        # Sauvegarder temporairement (pour que validate lise la même conf)
                         ps.set_data_source(project_id, gname, gver, "client", source_config)
-                        
-                        # Valider
+
+                        # Valider (retourne lignes/colonnes + diff de schéma)
                         result = ps.validate_data_source(project_id, gname, gver)
-                        
+
                         st.success("✅ Validation effectuée")
-                        
-                        # Afficher les résultats
+
+                        # KPIs
                         col_r1, col_r2 = st.columns(2)
-                        
                         with col_r1:
-                            st.metric("Lignes", result["row_count"])
-                        
+                            st.metric("Lignes", result.get("row_count", "—"))
                         with col_r2:
-                            st.metric("Colonnes", len(result["columns"]))
-                        
-                        # Complétude par colonne
+                            st.metric("Colonnes", len(result.get("columns", [])))
+
+                        # Complétude
                         if result.get("columns_filled"):
-                            with st.expander("📊 Complétude par colonne", expanded=True):
+                            with st.expander("📊 Complétude par colonne", expanded=False):
                                 completeness = result["columns_filled"]
-                                
-                                # Créer un DataFrame pour affichage
                                 df_comp = pd.DataFrame([
                                     {"Colonne": col, "Complétude (%)": pct}
                                     for col, pct in sorted(completeness.items(), key=lambda x: x[1], reverse=True)
                                 ])
-                                
                                 st.dataframe(df_comp, use_container_width=True, hide_index=True, height=300)
-                    
+
+                        # Diff de schéma
+                        with st.expander("🧩 Écart au gabarit attendu", expanded=True):
+                            exp_cols = result.get("expected_columns", []) or []
+                            miss = result.get("missing_columns", []) or []
+                            extra = result.get("extra_columns", []) or []
+                            dtypes = result.get("dtype_mismatches", {}) or {}
+
+                            c1, c2, c3 = st.columns(3)
+                            with c1:
+                                st.metric("Colonnes attendues", len(exp_cols))
+                            with c2:
+                                st.metric("Manquantes", len(miss))
+                            with c3:
+                                st.metric("En trop", len(extra))
+
+                            if miss:
+                                st.warning("Colonnes **manquantes** :", icon="⚠️")
+                                st.code(", ".join(miss))
+
+                            if extra:
+                                st.info("Colonnes **en trop** :", icon="ℹ️")
+                                st.code(", ".join(extra))
+
+                            if dtypes:
+                                st.error("Incohérences de **types** :", icon="❗")
+                                df_types = pd.DataFrame([
+                                    {"Colonne": k, "Attendu": v.get("expected"), "Trouvé": v.get("found")}
+                                    for k, v in dtypes.items()
+                                ])
+                                st.dataframe(df_types, use_container_width=True, hide_index=True)
+                            else:
+                                st.success("Aucune incohérence de type détectée (ou type non spécifié dans le gabarit).")
+
                     except Exception as e:
                         st.error(f"❌ Erreur validation : {e}")
                         import traceback
                         with st.expander("🔍 Détails"):
                             st.code(traceback.format_exc())
+
             
             with col_save:
                 if st.button("💾 Enregistrer", key=f"save_{gname}_{gver}", type="primary", use_container_width=True, disabled=not path):
@@ -505,36 +533,3 @@ with col_refresh:
         except Exception as e:
             st.error(f"❌ Erreur : {e}")
 
-
-# ==================== TEST build_dataframe ====================
-st.markdown("---")
-with st.expander("🔬 Test build_dataframe (mode PROJET)"):
-    db = DatabaseService()
-    ps = ProjectService(db)
-
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        test_project_id = st.text_input("project_id", st.session_state.get("selected_project_id", "l-oréal-promo-2022"))
-    with col2:
-        test_gabarit_name = st.text_input("gabarit_name", "Compte de résultat des entreprises")
-    with col3:
-        test_gabarit_version = st.text_input("gabarit_version", "v1")
-
-    limit = st.number_input("limit (preview)", min_value=0, value=20, step=10)
-
-    if st.button("▶️ Charger DF (build_dataframe)", use_container_width=True):
-        try:
-            df = ps.build_dataframe(
-                project_id=test_project_id,
-                gabarit_name=test_gabarit_name,
-                gabarit_version=test_gabarit_version,
-                expected_columns=None,
-                usage=None,
-                limit=limit
-            )
-            source_type = getattr(df, "attrs", {}).get("kaivaa_meta", {}).get("source_type", "n/a")
-            st.success(f"OK — rows={len(df)}, cols={len(df.columns)}, source_type={source_type}")
-            st.dataframe(df.head(limit))
-            st.caption(f"Colonnes : {list(df.columns)}")
-        except Exception as e:
-            st.error(f"Erreur build_dataframe: {e}")

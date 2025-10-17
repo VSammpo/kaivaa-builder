@@ -1,0 +1,45 @@
+{
+  "gabarit_usages": [
+    {
+      "gabarit_name": "Sell Out",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "Data",
+        "table": "Sell Out"
+      },
+      "columns_enabled": [
+        "Date_début",
+        "Date_fin",
+        "Année_N",
+        "Distributeur",
+        "Enseigne",
+        "Canal",
+        "Géographie",
+        "Région",
+        "Concurrence",
+        "Famille",
+        "Segment",
+        "Marque",
+        "Groupe",
+        "Product",
+        "Produit_détaillé",
+        "Unité_volume",
+        "Chiffre_d_affaires",
+        "Distribution_numérique",
+        "Prix_moyen",
+        "Volume"
+      ],
+      "methods": [],
+      "enrichments": [],
+      "overlay_python": "",
+      "final_renames": {},
+      "final_sort": [],
+      "source_kind": "gabarit",
+      "transformation_name": "",
+      "transformation_version": "v1"
+    }
+  ],
+  "name": "test",
+  "version": "1.0",
+  "parameters": []
+}
