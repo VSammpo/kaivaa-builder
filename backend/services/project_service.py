@@ -218,6 +218,64 @@ class ProjectService:
         # Tri par date de mise à jour (plus récent en premier)
         return sorted(out, key=lambda x: x.get("updated_at", ""), reverse=True)
     
+
+    def duplicate_project(self, src_project_id: str, new_name: str, new_client_name: str = "") -> Dict[str, Any]:
+        """
+        Duplique INTÉGRALEMENT un projet :
+        - copie le dossier configuration/projets/{src}/ → {dst}/ (masters, cache, etc.)
+        - met à jour config.json (project_id, name, client_name, status, dates)
+        - renvoie le dict projet chargé (config.json)
+        """
+        new_name = (new_name or "").strip()
+        if not new_name:
+            raise ValueError("Nouveau nom de projet requis")
+
+        # 1) Charger la source pour lire sa config (et vérifier existence)
+        src_dir = _project_dir(src_project_id)
+        if not src_dir.exists():
+            raise FileNotFoundError(f"Projet source introuvable : {src_project_id}")
+
+        # 2) Générer un project_id unique à partir du nom
+        base_pid = _slugify(new_name)
+        dst_pid = base_pid
+        k = 1
+        while (_project_dir(dst_pid)).exists():
+            k += 1
+            dst_pid = f"{base_pid}-{k}"
+
+        dst_dir = _project_dir(dst_pid)
+
+        # 3) Copie physique complète (masters, cache, etc.)
+        shutil.copytree(src_dir, dst_dir)
+
+        # 4) Mettre à jour config.json dans la copie
+        cfg_path = dst_dir / "config.json"
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"config.json manquant dans la copie : {cfg_path}")
+
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+
+        # Champs à remettre à jour
+        data["project_id"] = dst_pid
+        data["name"] = new_name
+        data["client_name"] = (new_client_name or "").strip()
+        data["status"] = "active"
+        data["created_at"] = _now_paris_iso()
+        data["updated_at"] = _now_paris_iso()
+
+        # (Option) si tu veux nettoyer des traces spécifiques, fais-le ici :
+        # ex: data.pop("archived_at", None)
+
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        logger.success(f"Projet dupliqué : {src_project_id} → {dst_pid}")
+
+        # 5) Retourner l'objet projet (chargé)
+        return self.load_project(dst_pid)
+
+
     # ==================== ARCHIVAGE ====================
     
     def soft_delete(self, project_id: str) -> str:

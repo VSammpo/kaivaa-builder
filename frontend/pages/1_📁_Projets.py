@@ -77,19 +77,28 @@ else:
                         st.markdown("")
                         
                         # Actions
-                        col_btn1, col_btn2 = st.columns(2)
-                        
+                        col_btn1, col_btn2, col_btn3 = st.columns(3)
+
                         with col_btn1:
                             if st.button("🗂️ Ouvrir", key=f"open_{proj['project_id']}", use_container_width=True):
                                 st.session_state.selected_project_id = proj["project_id"]
                                 st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
-                        
+
                         with col_btn2:
+                            if st.button("📄 Dupliquer", key=f"dup_{proj['project_id']}", use_container_width=True):
+                                st.session_state.duplicate_project_id = proj["project_id"]
+                                st.session_state.duplicate_project_name = proj.get("name", "")
+                                st.session_state.duplicate_project_client = proj.get("client_name", "")
+                                st.session_state.show_duplicate_modal = True
+                                st.rerun()
+
+                        with col_btn3:
                             if st.button("🗑️ Archiver", key=f"del_{proj['project_id']}", 
-                                       use_container_width=True, type="secondary"):
+                                    use_container_width=True, type="secondary"):
                                 st.session_state.delete_project_id = proj["project_id"]
                                 st.session_state.show_delete_modal = True
                                 st.rerun()
+
 
 # ===== MODALE CRÉATION PROJET =====
 if st.session_state.get('show_create_project_modal'):
@@ -142,6 +151,62 @@ if st.session_state.get('show_create_project_modal'):
                         st.error(f"❌ Erreur : {e}")
     
     create_project_modal()
+
+
+# ===== MODALE DUPLICATION PROJET =====
+if st.session_state.get('show_duplicate_modal'):
+    @st.dialog("📄 Dupliquer le projet", width="large")
+    def duplicate_project_modal():
+        src_project_id = st.session_state.get('duplicate_project_id')
+        src_name = st.session_state.get('duplicate_project_name', '') or ''
+        src_client = st.session_state.get('duplicate_project_client', '') or ''
+
+        st.markdown("### Copier ce projet vers un **nouveau projet**")
+        st.caption("La duplication recopie la configuration, les livrables, les sources de données, les masters et le cache du projet.")
+
+        new_name = st.text_input("Nouveau nom du projet *", value=f"{src_name} (copie)")
+        new_client = st.text_input("Nouveau client", value=src_client)
+
+        st.divider()
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("❌ Annuler", use_container_width=True):
+                st.session_state.show_duplicate_modal = False
+                for k in ("duplicate_project_id", "duplicate_project_name", "duplicate_project_client"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+
+        with col2:
+            disabled = not (new_name or "").strip()
+            if st.button("✅ Dupliquer", type="primary", disabled=disabled, use_container_width=True):
+                try:
+                    with DatabaseService.get_session() as db:
+                        ps = ProjectService(db)
+                        # 👇 Duplication complète (see backend patch)
+                        new_proj = ps.duplicate_project(
+                            src_project_id=src_project_id,
+                            new_name=new_name.strip(),
+                            new_client_name=(new_client or "").strip()
+                        )
+
+                    st.success(f"✅ Projet dupliqué : **{new_proj.get('name','')}**")
+                    st.session_state.show_duplicate_modal = False
+                    for k in ("duplicate_project_id", "duplicate_project_name", "duplicate_project_client"):
+                        st.session_state.pop(k, None)
+
+                    # Ouvrir le nouveau projet
+                    st.session_state.selected_project_id = new_proj["project_id"]
+                    import time
+                    time.sleep(1)
+                    st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+
+                except Exception as e:
+                    st.error(f"❌ Erreur : {e}")
+
+    duplicate_project_modal()
+
+
 
 # ===== MODALE SUPPRESSION =====
 if st.session_state.get('show_delete_modal'):
