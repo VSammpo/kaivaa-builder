@@ -108,12 +108,38 @@ if msg := st.session_state.pop("_flash_success", None):
 
 # =============== En-tête & filtres ===============
 st.title("📚 Bibliothèque de Templates")
-col1, col2 = st.columns([3, 1])
-with col1:
-    search = st.text_input("🔍 Rechercher", placeholder="Nom du template…")
-with col2:
-    show_inactive = st.checkbox("Afficher inactifs", value=False)
+
+# Barre de recherche (nom)
+search = st.text_input("🔍 Rechercher", placeholder="Nom du template…")
+
+# Préparer les options de filtres (scan rapide)
+with DatabaseService.get_session() as db:
+    svc = TemplateService(db)
+    all_templates = svc.list_templates(active_only=True)
+    # Construire les options pour gabarits / thématiques / familles
+    all_gabarits, all_themes, all_families = set(), set(), set()
+    for t in all_templates:
+        facets = svc.extract_template_facets(t.id)
+        all_gabarits |= facets["gabarits"]
+        all_themes   |= facets["themes"]
+        all_families |= facets["families"]
+    gabarit_options = sorted(all_gabarits, key=str.lower)
+    theme_options   = sorted(all_themes, key=str.lower)
+    family_options  = sorted(all_families, key=str.lower)
+
+# Filtres avancés
+fc1, fc2, fc3, fc4 = st.columns([2, 2, 2, 1])
+with fc1:
+    selected_gabarits = st.multiselect("Sources (gabarits)", options=gabarit_options, placeholder="Sélectionner…")
+with fc2:
+    selected_themes = st.multiselect("Thématiques", options=theme_options, placeholder="Sélectionner…")
+with fc3:
+    selected_families = st.multiselect("Familles", options=family_options, placeholder="Sélectionner…")
+with fc4:
+    strict_sources = st.toggle("Recherche stricte", value=False, help="ON : n’affiche que les templates dont les sources sont exclusivement dans la sélection")
+
 st.divider()
+
 
 colr1, _, _ = st.columns([1,1,6])
 with colr1:
@@ -123,18 +149,65 @@ with colr1:
 # =============== Données ===============
 with DatabaseService.get_session() as db:
     service = TemplateService(db)
-    templates = service.list_templates(active_only=not show_inactive)
-    templates_data = [{
-        "id": t.id,
-        "name": t.name,
-        "version": t.version,
-        "description": t.description,
-        "ppt_path": t.ppt_template_path,
-        "is_active": t.is_active,
-    } for t in templates]
+    templates = service.list_templates(active_only=True)
 
-if search:
-    templates_data = [t for t in templates_data if search.lower() in (t["name"] or "").lower()]
+    # Construire une table enrichie avec facettes
+    enriched = []
+    for t in templates:
+        facets = service.extract_template_facets(t.id)
+        enriched.append({
+            "id": t.id,
+            "name": t.name,
+            "version": t.version,
+            "description": t.description,
+            "ppt_path": t.ppt_template_path,
+            "is_active": t.is_active,
+            "gabarits": facets["gabarits"],
+            "themes": facets["themes"],
+            "families": facets["families"],
+        })
+
+# Filtres (nom + facettes)
+def _pass_sources(item) -> bool:
+    if not selected_gabarits:
+        return True
+    G = set(item["gabarits"])
+    S = set(selected_gabarits)
+    if not G:
+        return False
+    if strict_sources:
+        # Contient au moins un sélectionné ET aucun gabarit hors sélection
+        return (len(G & S) > 0) and (G.issubset(S))
+    else:
+        # OU logique
+        return len(G & S) > 0
+
+def _pass_themes(item) -> bool:
+    if not selected_themes:
+        return True
+    return len(set(item["themes"]) & set(selected_themes)) > 0
+
+def _pass_families(item) -> bool:
+    if not selected_families:
+        return True
+    return len(set(item["families"]) & set(selected_families)) > 0
+
+templates_data = [
+    {
+        "id": e["id"],
+        "name": e["name"],
+        "version": e["version"],
+        "description": e["description"],
+        "ppt_path": e["ppt_path"],
+        "is_active": e["is_active"],
+    }
+    for e in enriched
+    if (search.lower() in (e["name"] or "").lower() if search else True)
+    and _pass_sources(e)
+    and _pass_themes(e)
+    and _pass_families(e)
+]
+
 
 # =============== Affichage ===============
 if not templates_data:

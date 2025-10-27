@@ -21,7 +21,8 @@ from backend.models.template_config import (
     DataSourceConfig,
     LoopConfig,
     ImageInjection,
-    SlideMapping
+    SlideMapping,
+    TemplateTags,  # ✅ ajout
 )
 
 st.set_page_config(page_title="Paramètres généraux", page_icon="⚙️", layout="wide")
@@ -148,6 +149,13 @@ else:
     template_description = ""
     template_card_image_path = None
 
+# === State key unique par template (évite la fuite A↔B) ===
+tid_key = str(template_id_to_edit) if edit_mode else "new"
+THEMES_KEY  = f"_tags_themes_{tid_key}"
+FAMS_KEY    = f"_tags_families_{tid_key}"
+W_THEME_KEY = f"new_theme_input_{tid_key}"
+W_FAM_KEY   = f"new_family_input_{tid_key}"
+
 
 # Sidebar récap
 with st.sidebar:
@@ -193,6 +201,64 @@ with col2:
         value=template_description if edit_mode and template_description else "",
         placeholder="Description du template..."
     )
+
+# === Tags : Thématiques & Familles ===
+# (1) Charger les valeurs existantes pour alimenter les listes (union simple)
+with DatabaseService.get_session() as db:
+    _svc_for_tags = TemplateService(db)
+    existing_tags = _svc_for_tags.list_all_tag_values()
+
+# (2) Initialiser l'état persistant PROPRE AU TEMPLATE COURANT
+if THEMES_KEY not in st.session_state or FAMS_KEY not in st.session_state:
+    pref_themes, pref_families = [], []
+    if edit_mode:
+        with DatabaseService.get_session() as db:
+            _svc = TemplateService(db)
+            _cfg = _svc.get_config(template_id_to_edit) or {}
+            _tags = (_cfg.get("tags") or {})
+            pref_themes   = list(_tags.get("themes")   or [])
+            pref_families = list(_tags.get("families") or [])
+    st.session_state[THEMES_KEY] = pref_themes
+    st.session_state[FAMS_KEY]   = pref_families
+
+# (3) Options = existants ∪ sélection courante (sinon Streamlit n’affiche pas les valeurs non listées)
+theme_options  = sorted(set(existing_tags.get("themes", []))   | set(st.session_state[THEMES_KEY]), key=str.lower)
+family_options = sorted(set(existing_tags.get("families", [])) | set(st.session_state[FAMS_KEY]),   key=str.lower)
+
+tag_col1, tag_col2 = st.columns(2)
+with tag_col1:
+    selected_themes = st.multiselect(
+        "Thématiques",
+        options=theme_options,
+        default=st.session_state[THEMES_KEY],
+        placeholder="Sélectionner des thématiques…",
+        key=f"ms_themes_{tid_key}"
+    )
+    st.session_state[THEMES_KEY] = selected_themes
+
+    new_theme = st.text_input("➕ Ajouter une thématique", value="", key=W_THEME_KEY)
+    if st.button("Ajouter la thématique", key=f"btn_add_theme_{tid_key}"):
+        v = (new_theme or "").strip()
+        if v and v not in st.session_state[THEMES_KEY]:
+            st.session_state[THEMES_KEY].append(v)
+        st.rerun()
+
+with tag_col2:
+    selected_families = st.multiselect(
+        "Familles",
+        options=family_options,
+        default=st.session_state[FAMS_KEY],
+        placeholder="Sélectionner des familles…",
+        key=f"ms_families_{tid_key}"
+    )
+    st.session_state[FAMS_KEY] = selected_families
+
+    new_family = st.text_input("➕ Ajouter une famille", value="", key=W_FAM_KEY)
+    if st.button("Ajouter la famille", key=f"btn_add_family_{tid_key}"):
+        v = (new_family or "").strip()
+        if v and v not in st.session_state[FAMS_KEY]:
+            st.session_state[FAMS_KEY].append(v)
+        st.rerun()
 
 st.divider()
 
@@ -778,6 +844,14 @@ if st.button(button_label, type="primary", use_container_width=True):
                     type="excel",
                     required_tables=[]
                 ),
+
+                # ✅ SAUVEGARDE DES TAGS
+                tags=TemplateTags(
+                    themes=st.session_state[THEMES_KEY],
+                    families=st.session_state[FAMS_KEY]
+                ),
+
+
                 loops=[LoopConfig(**loop) for loop in st.session_state.loops],
                 image_injections={
                     slide_id: [ImageInjection(**img) for img in images]
@@ -785,6 +859,7 @@ if st.button(button_label, type="primary", use_container_width=True):
                 },
                 slide_mappings=[SlideMapping(**m) for m in st.session_state.mappings]
             )
+
             
             if edit_mode:
                 # MODE MISE À JOUR
@@ -803,12 +878,19 @@ if st.button(button_label, type="primary", use_container_width=True):
                         user_id=1
                     )
 
+                    # ✅ ÉCRITURE DISQUE DU config.json (source de vérité pour la Bibliothèque)
+                    service.update_config(
+                        template_id=template_id_to_edit,
+                        new_config=config.model_dump(mode='json')
+                    )
+
                     if card_image is not None:
                         service.save_card_image(
                             template_id=template_id_to_edit,
                             file_bytes=card_image.getvalue(),
                             original_filename=card_image.name
                         )
+
                 
                 st.session_state["_flash_success"] = f"✅ Template '{name}' mis à jour !"
                 st.session_state.selected_template_detail = template_id_to_edit

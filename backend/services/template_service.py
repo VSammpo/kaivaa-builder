@@ -583,11 +583,11 @@ class TemplateService:
 
         return abs_path_str
     
-
     def get_config(self, template_id: int) -> dict:
         """
         Lit la config file-based : configuration/templates/<Nom>/<Version>/config.json
-        (migre/élimine un éventuel <version>.json à la racine du template).
+        (migre/élimine un éventuel <version>.json).
+        Garantit la présence de 'parameters', 'gabarit_usages' et 'tags'.
         """
         with DatabaseService.get_session() as db:
             tpl = db.query(Template).filter(Template.id == template_id).first()
@@ -598,21 +598,35 @@ class TemplateService:
 
         version_dir = _ensure_version_layout(name, version)
         cfg_path = version_dir / "config.json"
+
+        base = {"name": name, "version": version, "parameters": [], "gabarit_usages": [], "tags": {"themes": [], "families": []}}
         if not cfg_path.exists():
-            return {"name": name, "version": version, "parameters": [], "gabarit_usages": []}
+            return base
 
         import json
         try:
-            return json.loads(cfg_path.read_text(encoding="utf-8"))
+            data = json.loads(cfg_path.read_text(encoding="utf-8")) or {}
         except Exception:
-            return {}
+            data = {}
 
+        # Défauts robustes
+        data.setdefault("name", name)
+        data.setdefault("version", version)
+        data.setdefault("parameters", [])
+        data.setdefault("gabarit_usages", [])
+        data.setdefault("tags", {"themes": [], "families": []})
+        if not isinstance(data.get("tags"), dict):
+            data["tags"] = {"themes": [], "families": []}
+        data["tags"].setdefault("themes", [])
+        data["tags"].setdefault("families", [])
 
+        return data
 
     def update_config(self, template_id: int, new_config: dict) -> None:
         """
         Écrit configuration/templates/<Nom>/<Version>/config.json
         (fusion simple avec l'existant) et supprime tout <version>.json résiduel.
+        Force les clés 'parameters', 'gabarit_usages' et 'tags'.
         """
         with DatabaseService.get_session() as db:
             tpl = db.query(Template).filter(Template.id == template_id).first()
@@ -638,10 +652,16 @@ class TemplateService:
         for k, v in (new_config or {}).items():
             merged[k] = v
 
+        # Défauts robustes (⚠️ inclut 'tags')
         merged.setdefault("name", name)
         merged.setdefault("version", version)
         merged.setdefault("parameters", current.get("parameters", []))
         merged.setdefault("gabarit_usages", current.get("gabarit_usages", []))
+        merged.setdefault("tags", current.get("tags", {"themes": [], "families": []}))
+        if not isinstance(merged.get("tags"), dict):
+            merged["tags"] = {"themes": [], "families": []}
+        merged["tags"].setdefault("themes", [])
+        merged["tags"].setdefault("families", [])
 
         tmp = cfg_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1476,4 +1496,48 @@ class TemplateService:
                 return u
         return None
 
+    def list_all_tag_values(self) -> dict:
+        """
+        Scanne tous les templates ACTIFS et retourne les valeurs uniques de tags.
+        Returns: {"themes": [..], "families": [..]}
+        """
+        themes, families = set(), set()
+        templates = self.list_templates(active_only=True)
+        for t in templates:
+            cfg = self.get_config(t.id)
+            tags = cfg.get("tags", {}) or {}
+            for v in tags.get("themes", []) or []:
+                if isinstance(v, str) and v.strip():
+                    themes.add(v.strip())
+            for v in tags.get("families", []) or []:
+                if isinstance(v, str) and v.strip():
+                    families.add(v.strip())
+        return {
+            "themes": sorted(themes, key=str.lower),
+            "families": sorted(families, key=str.lower),
+        }
 
+    def extract_template_facets(self, template_id: int) -> dict:
+        """
+        Retourne les facettes (gabarits, themes, families) pour un template donné.
+        - gabarits : lit correctement 'gabarit_name' dans gabarit_usages[]
+        - themes/families : lit config.tags
+        """
+        cfg = self.get_config(template_id) or {}
+
+        # ---- Gabarits ----
+        gset = set()
+        for g in cfg.get("gabarit_usages", []) or []:
+            if not isinstance(g, dict):
+                continue
+            # ✅ CLÉ CORRECTE
+            n = (g.get("gabarit_name") or "").strip()
+            if n:
+                gset.add(n)
+
+        # ---- Tags ----
+        tags = cfg.get("tags", {}) or {}
+        tset = set([x.strip() for x in (tags.get("themes") or []) if isinstance(x, str) and x.strip()])
+        fset = set([x.strip() for x in (tags.get("families") or []) if isinstance(x, str) and x.strip()])
+
+        return {"gabarits": gset, "themes": tset, "families": fset}

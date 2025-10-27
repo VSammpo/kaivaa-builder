@@ -100,6 +100,9 @@ class LoopConfig(BaseModel):
     slides: List[str] = Field(..., description="Liste des slide IDs concernés")
     sheet_name: str = Field("Boucles", description="Feuille contenant le tableau Loop")
 
+class TemplateTags(BaseModel):
+    themes: List[str] = Field(default_factory=list, description="Thématiques (ex. FMCG)")
+    families: List[str] = Field(default_factory=list, description="Familles de livrables (ex. Diagnostic flash FMCG)")
 
 class TemplateConfig(BaseModel):
     """Configuration complète d'un template"""
@@ -110,7 +113,8 @@ class TemplateConfig(BaseModel):
     description: Optional[str] = Field(None, description="Description")
     created_by: Optional[str] = Field(None, description="Créateur")
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    
+    tags: TemplateTags = Field(default_factory=TemplateTags, description="Tags de classification du template")
+
     # Paramètres
     parameters: List[ParameterConfig] = Field(..., description="Paramètres du template")
     

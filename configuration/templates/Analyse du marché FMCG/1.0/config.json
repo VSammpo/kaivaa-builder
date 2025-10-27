@@ -105,9 +105,9 @@
       "name": "Marque",
       "type": "string",
       "required": true,
-      "balise_ppt": "[Marque]",
+      "default": "HENNESSY",
       "description": "Choisir la marque que l'on souhaite mettre en avant.",
-      "default": "",
+      "balise_ppt": "[Marque]",
       "options_mode": "from_column",
       "options_manual": null,
       "options_source": {
@@ -207,40 +207,36 @@
           "column": "Marque"
         }
       }
-    },
-    {
-      "name": "Famille",
-      "type": "string",
-      "required": true,
-      "balise_ppt": "[Famille]",
-      "description": "",
-      "default": "",
-      "options_mode": "from_column",
-      "options_manual": null,
-      "options_source": {
-        "gabarit": "Sell Out",
-        "version": "v1",
-        "column": "Famille"
-      },
-      "options_cache": {
-        "values": [
-          "BRANDY",
-          "COGNAC",
-          "CORDIALS",
-          "LIQUEUR",
-          "MEZCAL",
-          "SCOTCH",
-          "TEQUILA",
-          "VODKA",
-          "WHISKEY",
-          "WHISKY"
-        ],
-        "source": {
-          "gabarit": "Sell Out",
-          "version": "v1",
-          "column": "Famille"
-        }
-      }
     }
-  ]
+  ],
+  "description": "Analyse stratégique du marché reposant exclusivement sur du sell-out.",
+  "created_by": null,
+  "created_at": "2025-10-27T11:44:59.734690",
+  "tags": {
+    "themes": [
+      "FMCG"
+    ],
+    "families": [
+      "Diagnostic Flash FMCG"
+    ]
+  },
+  "data_source": {
+    "type": "excel",
+    "connection_string": null,
+    "required_tables": []
+  },
+  "slide_mappings": [],
+  "loops": [
+    {
+      "loop_id": "Marque",
+      "slides": [
+        "A001"
+      ],
+      "sheet_name": "Boucles"
+    }
+  ],
+  "image_injections": {},
+  "ppt_template_path": null,
+  "excel_template_path": null,
+  "estimated_generation_time": null
 }
