@@ -27,27 +27,8 @@ class GenerationService:
         self.ps = ProjectService(db_session)
         self.ts = TemplateService(db_session)
     
-    def generate_deliverable(
-        self,
-        project_id: str,
-        template_id: int,
-        parameters: Dict[str, Any],
-        generate_excel: bool = True,
-        generate_ppt: bool = True
-    ) -> Dict[str, Any]:
-        """
-        Génère un livrable pour un projet avec les paramètres donnés.
-        
-        Args:
-            project_id: ID du projet
-            template_id: ID du template/livrable
-            parameters: Paramètres de génération (dict nom -> valeur)
-            generate_excel: Générer le fichier Excel
-            generate_ppt: Générer le fichier PowerPoint
-        
-        Returns:
-            Dict avec 'job_id', 'excel_path', 'ppt_path'
-        """
+    def generate_deliverable(self, project_id: str, template_id: int, parameters: Dict[str, Any], 
+                         generate_excel: bool = True, generate_ppt: bool = True) -> Dict[str, Any]:
         logger.info(f"[GenerationService] Génération livrable template={template_id} projet={project_id}")
         
         # 1. Charger le projet et le livrable
@@ -61,10 +42,15 @@ class GenerationService:
         if not deliverable.get("is_functional"):
             raise ValueError("Le livrable n'est pas prêt (données manquantes)")
         
-        # 3. Récupérer la config du template
+        # 3. Récupérer les masters personnalisés du projet ✅
+        masters = deliverable.get("custom_masters", {})
+        excel_master = masters.get("excel_path")
+        ppt_master = masters.get("ppt_path")
+        
+        # 4. Récupérer la config du template
         template_config = self.ts.load_template_config(template_id)
         
-        # 4. Créer un job d'exécution
+        # 5. Créer un job d'exécution
         job = ExecutionJob(
             project_id=project_id,
             template_id=template_id,
@@ -77,18 +63,20 @@ class GenerationService:
         self.db.refresh(job)
         
         try:
-            # 5. Créer le ReportService avec la config du template
+            # 6. Créer le ReportService avec la config du template
             report_service = ReportService(template_config)
             
-            # 6. Préparer le nom de sortie
+            # 7. Préparer le nom de sortie
             timestamp = datetime.now(ZoneInfo("Europe/Paris")).strftime("%Y%m%d_%H%M%S")
             output_name = f"{proj.get('name', 'projet')}_{template_config.name}_{timestamp}"
             
-            # 7. Générer via ReportService (qui gère l'injection depuis le projet)
+            # 8. Générer via ReportService avec les masters du projet ✅
             result = report_service.generate_report(
                 parameters=parameters,
                 output_name=output_name,
-                project_id=project_id
+                project_id=project_id,
+                excel_master_path=excel_master,  # ✅ Maintenant défini
+                ppt_master_path=ppt_master        # ✅ Maintenant défini
             )
             
             if not result.get("success"):

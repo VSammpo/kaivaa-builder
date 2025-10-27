@@ -42,11 +42,14 @@ class ReportService:
         """Datetime en Europe/Paris (évite les décalages si la machine est en UTC)."""
         return datetime.now(ZoneInfo("Europe/Paris"))
 
+    
     def generate_report(
         self,
         parameters: Dict[str, Any],
         output_name: Optional[str] = None,
-        project_id: Optional[str] = None
+        project_id: Optional[str] = None,
+        excel_master_path: Optional[str] = None,  # AJOUTER
+        ppt_master_path: Optional[str] = None     # AJOUTER
     ) -> Dict[str, Any]:
         """Génère un rapport complet."""
         logger.info(f"Génération du rapport '{self.config.name}'")
@@ -75,7 +78,8 @@ class ReportService:
             # ÉTAPE 1 : Préparation Excel (copie + balises paramètres)
             # ========================================================================
             logger.info("Étape 1/7 : Préparation Excel")
-            excel_path = self._prepare_excel(effective_params, output_paths['excel_path'])
+            excel_path = self._prepare_excel(effective_params, output_paths['excel_path'], excel_master_path)
+
 
             self.current_excel_path = excel_path  # ✅ Stocké pour injection
             
@@ -110,7 +114,8 @@ class ReportService:
             # ÉTAPE 4 : Génération PowerPoint (avec données Excel déjà présentes)
             # ========================================================================
             logger.info("Étape 4/7 : Génération PowerPoint")
-            ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters)
+            ppt_path = self._generate_powerpoint(excel_path, output_paths['pptx_path'], parameters, ppt_master_path)
+
 
             # ========================================================================
             # ÉTAPE 5 : Conversion graphiques statiques (Excel déjà rempli)
@@ -196,7 +201,6 @@ class ReportService:
             except:
                 pass
 
-
     def _validate_parameters(self, parameters: Dict[str, Any]) -> None:
         """Valide que tous les paramètres requis sont fournis"""
         for param in self.config.parameters:
@@ -252,19 +256,24 @@ class ReportService:
             "pptx_path": str(output_dir / f"{base_name}.pptx")
         }
 
-    def _prepare_excel(self, parameters: Dict[str, Any], output_path: str) -> Path:
+    def _prepare_excel(self, parameters: Dict[str, Any], output_path: str, master_path: Optional[str] = None) -> Path:
         """Prépare le fichier Excel avec les paramètres"""
         import shutil
         
-        # ✅ CORRECTION : Charger depuis configuration/templates/<Nom>/<Version>/master.xlsx
-        from pathlib import Path
-        config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
-        template_excel = config_root / self.config.name / self.config.version / "master.xlsx"
+        # Utiliser le master personnalisé si fourni, sinon le master du template
+        if master_path and Path(master_path).exists():
+            source_excel = Path(master_path)
+            logger.info(f"Utilisation du master Excel personnalisé : {source_excel}")
+        else:
+            # Fallback sur le master du template
+            config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
+            source_excel = config_root / self.config.name / self.config.version / "master.xlsx"
+            logger.info(f"Utilisation du master Excel du template : {source_excel}")
         
-        if not template_excel.exists():
-            raise FileNotFoundError(f"Fichier Excel master introuvable : {template_excel}")
+        if not source_excel.exists():
+            raise FileNotFoundError(f"Fichier Excel master introuvable : {source_excel}")
         
-        shutil.copy2(template_excel, output_path)
+        shutil.copy2(source_excel, output_path)
         
         logger.info(f"Excel copié : {output_path}")
         
@@ -304,20 +313,24 @@ class ReportService:
         return data
     
     
-    def _generate_powerpoint(self, excel_path: Path, output_path: str, parameters: Dict[str, Any]) -> Path:
-        """Génère le PowerPoint final en préservant les slides qui seront bouclées"""
+    def _generate_powerpoint(self, excel_path: Path, output_path: str, parameters: Dict[str, Any], master_path: Optional[str] = None) -> Path:
+        """Génère le PowerPoint final"""
         import shutil
-        import os
         
-        # ✅ CORRECTION : Charger depuis configuration/templates/<Nom>/<Version>/master.pptx
-        from pathlib import Path
-        config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
-        template_ppt = config_root / self.config.name / self.config.version / "master.pptx"
+        # Utiliser le master personnalisé si fourni
+        if master_path and Path(master_path).exists():
+            source_ppt = Path(master_path)
+            logger.info(f"Utilisation du master PowerPoint personnalisé : {source_ppt}")
+        else:
+            # Fallback sur le master du template
+            config_root = Path(__file__).resolve().parents[2] / "configuration" / "templates"
+            source_ppt = config_root / self.config.name / self.config.version / "master.pptx"
+            logger.info(f"Utilisation du master PowerPoint du template : {source_ppt}")
         
-        if not template_ppt.exists():
-            raise FileNotFoundError(f"Fichier PowerPoint master introuvable : {template_ppt}")
+        if not source_ppt.exists():
+            raise FileNotFoundError(f"Fichier PowerPoint master introuvable : {source_ppt}")
         
-        shutil.copy2(template_ppt, output_path)
+        shutil.copy2(source_ppt, output_path)
         
         logger.info(f"PowerPoint copié : {output_path}")
         # 🔗 Relinker le PPT de sortie vers l'Excel de sortie
