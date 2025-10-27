@@ -4,8 +4,8 @@
       "gabarit_name": "Sell Out",
       "gabarit_version": "v1",
       "excel_target": {
-        "sheet": "Data",
-        "table": "Sell Out"
+        "sheet": "D001",
+        "table": "BD"
       },
       "columns_enabled": [
         "Date_début",
@@ -31,15 +31,212 @@
       ],
       "methods": [],
       "enrichments": [],
-      "overlay_python": "",
+      "final_order": [
+        "Marque",
+        "Segment",
+        "CA_N-1",
+        "Effet_DN",
+        "Effet_vol_par_dn",
+        "Effet_prix",
+        "Mix_distributeur",
+        "Mix_canal",
+        "Mix_géographique",
+        "Mix_produit",
+        "CA_N",
+        "Evol_CA",
+        "Effet_DN_Percent",
+        "Effet_vol_par_dn_Percent",
+        "Effet_prix_Percent",
+        "Mix_distributeur_Percent",
+        "Mix_canal_Percent",
+        "Mix_géographique_Percent",
+        "Mix_produit_Percent",
+        "CA_N_Percent"
+      ],
+      "final_excludes": [],
+      "final_renames": {},
+      "overlay_python": "df[\"FLAG_MARQUE\"] = (df[\"Marque\"] == Marque).astype(int)"
+    },
+    {
+      "gabarit_name": "Sell Out",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "D003",
+        "table": "BD_Impacts"
+      },
+      "columns_enabled": [],
+      "methods": [],
+      "enrichments": [],
+      "overlay_python": " ",
       "final_renames": {},
       "final_sort": [],
-      "source_kind": "gabarit",
-      "transformation_name": "",
+      "final_order": [
+        "Marque",
+        "Segment",
+        "CA_N-1",
+        "Effet_DN",
+        "Effet_vol_par_dn",
+        "Effet_prix",
+        "Mix_distributeur",
+        "Mix_canal",
+        "Mix_géographique",
+        "Mix_produit",
+        "CA_N",
+        "Evol_CA",
+        "Effet_DN_Percent",
+        "Effet_vol_par_dn_Percent",
+        "Effet_prix_Percent",
+        "Mix_distributeur_Percent",
+        "Mix_canal_Percent",
+        "Mix_géographique_Percent",
+        "Mix_produit_Percent",
+        "CA_N_Percent"
+      ],
+      "final_excludes": [],
+      "source_kind": "transformation",
+      "transformation_name": "Effets_Sell_Out",
       "transformation_version": "v1"
     }
   ],
-  "name": "test",
+  "name": "Test",
   "version": "1.0",
-  "parameters": []
+  "parameters": [
+    {
+      "name": "Marque",
+      "type": "string",
+      "required": true,
+      "default": "HENNESSY",
+      "description": "Choisir la marque que l'on souhaite mettre en avant.",
+      "balise_ppt": "[Marque]",
+      "options_mode": "from_column",
+      "options_manual": null,
+      "options_source": {
+        "gabarit": "Sell Out",
+        "version": "v1",
+        "column": "Marque"
+      },
+      "options_cache": {
+        "values": [
+          "A DE FUSSIGNY",
+          "A E DOR",
+          "ALIZE",
+          "ANSAC",
+          "ARMAN",
+          "BIJOUX",
+          "BOSSARD",
+          "BRANSON",
+          "CAMUS",
+          "CASAMIGOS",
+          "CHALFONTE",
+          "CHATEAU MONTIFAUD",
+          "CIROC",
+          "CLAUDE CHATELIER",
+          "COGNAC PARK",
+          "CONJURE",
+          "COURVOISIER",
+          "CROWN ROYAL",
+          "D'USSE",
+          "DAVIDOFF",
+          "DE LUZE",
+          "DEAU",
+          "DECOURTET",
+          "DELAMAIN",
+          "DISTILLERIE DU PEYRAT",
+          "DON JULIO",
+          "ESPRIT CLASSIQUE",
+          "EXCLUSIV",
+          "FOUCAULD",
+          "FRANCET",
+          "FRANCOIS DE LYON",
+          "FRANCOIS PEYROT",
+          "FRAPIN",
+          "GABRIEL AND ASSOCIES",
+          "GASTON DE LA GRANGE",
+          "GAUTIER",
+          "GM TITANIUM",
+          "GODET",
+          "GREY GOOSE",
+          "HARDY",
+          "HEMERY",
+          "HENNESSY",
+          "HENRY IV",
+          "HINE",
+          "JACK DANIELS",
+          "JACQUES CARDIN",
+          "KELT",
+          "KNOB CREEK",
+          "LANDY",
+          "LASSERRE",
+          "LAURENDEAUX",
+          "LE REVISEUR",
+          "LEOPOLDS",
+          "LOUIS ROYER",
+          "LUE",
+          "MACALLAN",
+          "MAISON ROUGE",
+          "MAISON SURRENNE",
+          "MARTELL",
+          "MAXIMS",
+          "MENORVAL",
+          "MERLET",
+          "MEUKOW",
+          "MONTAILLAC",
+          "NYAK",
+          "ORIGINE",
+          "PASQUINET",
+          "PATRON",
+          "PATRON GUILLERMO DEL TORO",
+          "PAUL GIRAUD",
+          "PIERRE FERRAND",
+          "PIERRE PATOU",
+          "PLANAT",
+          "PRIVATE LABEL",
+          "PRUNIER",
+          "RASTIGNAC",
+          "REMY MARTIN",
+          "SALIGNAC",
+          "ST REMY",
+          "TESSERON",
+          "THE GLENLIVET",
+          "TSAR ALEXANDER I",
+          "VVE PASQUINET"
+        ],
+        "source": {
+          "gabarit": "Sell Out",
+          "version": "v1",
+          "column": "Marque"
+        }
+      }
+    }
+  ],
+  "description": "Analyse stratégique du marché reposant exclusivement sur du sell-out.",
+  "created_by": null,
+  "created_at": "2025-10-27T14:45:18.188736",
+  "tags": {
+    "themes": [
+      "FMCG"
+    ],
+    "families": [
+      "Diagnostic Flash FMCG"
+    ]
+  },
+  "data_source": {
+    "type": "excel",
+    "connection_string": null,
+    "required_tables": []
+  },
+  "slide_mappings": [],
+  "loops": [
+    {
+      "loop_id": "Marque",
+      "slides": [
+        "A001"
+      ],
+      "sheet_name": "Boucles"
+    }
+  ],
+  "image_injections": {},
+  "ppt_template_path": null,
+  "excel_template_path": null,
+  "estimated_generation_time": null
 }

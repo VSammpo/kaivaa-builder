@@ -7,6 +7,8 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from loguru import logger
+import shutil
+import json
 
 from backend.config import DatabaseConfig, PathConfig
 from backend.database.models import Template, User, TemplateVersion
@@ -271,6 +273,122 @@ class TemplateService:
         
         logger.success(f"Template '{config.name}' créé (ID: {template.id})")
         return template
+    
+    def duplicate_template(
+        self,
+        src_template_id: int,
+        new_name: str,
+        new_version: str,
+        user_id: int,
+    ) -> Template:
+        """
+        Duplique INTÉGRALEMENT un template :
+        - Copie physique de configuration/templates/<SrcName>/<SrcVersion>/ → <NewName>/<NewVersion>/
+        - Met à jour config.json (name, version) en conservant TOUT le reste (parameters, defaults, tables, usages,
+        transformations, gabarits, tags 'themes'/'families', relations, scripts, etc.)
+        - Crée l’entrée Template en base avec chemins PPT/Excel recalculés
+        """
+        new_name = (new_name or "").strip()
+        new_version = (new_version or "").strip() or "1.0"
+        if not new_name:
+            raise ValueError("Nouveau nom de template requis")
+
+        # 1) Source
+        src = self.get_template(src_template_id)
+        if not src:
+            raise ValueError(f"Template source {src_template_id} introuvable")
+
+        # 2) Unicité (nom + version)
+        exists = (
+            self.db.query(Template)
+            .filter(Template.name == new_name, Template.version == new_version)
+            .first()
+        )
+        if exists:
+            raise ValueError(f"Un template '{new_name}' en version '{new_version}' existe déjà")
+
+        # 3) Répertoires source / destination
+        src_dir = _ensure_version_layout(src.name, src.version or "1.0")
+        dst_dir = _ensure_version_layout(new_name, new_version)
+
+        # copytree exige un dossier destination inexistant
+        if dst_dir.exists():
+            # s'il est vide après _ensure_version_layout, on le supprime pour laisser place à copytree
+            try:
+                if not any(dst_dir.iterdir()):
+                    dst_dir.rmdir()
+            except Exception:
+                pass
+        if dst_dir.exists():
+            raise ValueError(f"Le dossier destination existe déjà : {dst_dir}")
+
+        # 4) Copie physique complète (TOUT le sous-dossier de version)
+        shutil.copytree(src_dir, dst_dir)
+
+        # 5) Mise à jour du config.json copié (name/version), en conservant toutes les autres clés
+        cfg_path = dst_dir / "config.json"
+        if not cfg_path.exists():
+            raise FileNotFoundError(f"config.json introuvable dans {dst_dir}")
+
+        try:
+            data = json.loads(cfg_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            data = {}
+
+        data["name"] = new_name
+        data["version"] = new_version
+        # garanties minimales (sans écraser ce qui existe)
+        data.setdefault("parameters", data.get("parameters", []))
+        data.setdefault("gabarit_usages", data.get("gabarit_usages", []))
+        tags = data.get("tags")
+        if not isinstance(tags, dict):
+            tags = {}
+        tags.setdefault("themes", tags.get("themes", []))
+        tags.setdefault("families", tags.get("families", []))
+        data["tags"] = tags
+
+        cfg_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        # 6) PPT / Excel : si les masters sont dans le dossier de version, recalculer chemins absolus
+        def _rel_in(src_abs: Optional[str], base: Path) -> Optional[Path]:
+            if not src_abs:
+                return None
+            try:
+                p = Path(src_abs).resolve()
+                b = base.resolve()
+                if str(p).startswith(str(b)):
+                    return p.relative_to(b)
+            except Exception:
+                return None
+            return None
+
+        ppt_rel = _rel_in(src.ppt_template_path, src_dir)
+        xls_rel = _rel_in(src.excel_template_path, src_dir)
+        ppt_dst = str((dst_dir / ppt_rel).resolve()) if ppt_rel else None
+        xls_dst = str((dst_dir / xls_rel).resolve()) if xls_rel else None
+
+        # 7) Créer l’entrée en base (config complet)
+        new_tpl = Template(
+            name=new_name,
+            description=src.description,
+            version=new_version,
+            created_by=user_id,
+            is_active=True,
+            config=data,  # on enregistre le JSON complet (incl. defaults, tables, transformations, tags…)
+            config_file_path=str(cfg_path.resolve()),
+            ppt_template_path=ppt_dst,
+            excel_template_path=xls_dst,
+        )
+        self.db.add(new_tpl)
+        self.db.commit()
+        self.db.refresh(new_tpl)
+
+        # 8) Historiser
+        self._create_version(new_tpl, user_id, f"Duplication depuis {src.name}/{src.version}")
+
+        logger.success(f"[template_service] ✅ Duplication {src.name}/{src.version} → {new_name}/{new_version}")
+        return new_tpl
+
     
     def get_template(self, template_id: int) -> Optional[Template]:
         """

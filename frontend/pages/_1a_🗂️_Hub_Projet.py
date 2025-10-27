@@ -5,6 +5,12 @@ import sys
 import subprocess
 import platform
 from loguru import logger
+import re
+def _slug(s: str) -> str:
+    s = str(s)
+    s = re.sub(r"\s+", "-", s.strip())
+    s = re.sub(r"[^A-Za-z0-9_\-]", "", s)
+    return s or "x"
 
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -15,6 +21,50 @@ from backend.services.template_service import TemplateService
 from backend.database.models import ExecutionJob
 
 st.set_page_config(page_title="Hub Projet", page_icon="🗂️", layout="wide")
+
+# === ÉTAT MULTI-GÉNÉRATION ===
+if 'batch_selected' not in st.session_state:
+    st.session_state.batch_selected = set()  # {template_id, ...}
+
+if 'batch_toggle_all' not in st.session_state:
+    st.session_state.batch_toggle_all = False  # True = tout coché
+
+if 'scroll_to_batch' not in st.session_state:
+    st.session_state.scroll_to_batch = False
+
+# === ÉTAT D'OUVERTURE PAR FAMILLE (évite la fermeture des accordéons) ===
+if 'batch_fam_expanded' not in st.session_state:
+    st.session_state.batch_fam_expanded = {}  # {fam_label: bool}
+
+def _ensure_item_key(item_id: int, selected: bool):
+    """
+    Évite l'erreur Streamlit "default value but also set via Session State".
+    On initialise st.session_state[key] si absent, puis on rend la checkbox
+    SANS passer 'value=' quand la clé existe.
+    """
+    key = f"batch_item_{item_id}"
+    if key not in st.session_state:
+        st.session_state[key] = bool(selected)
+    return key
+
+def _ensure_family_key(fam_label: str, all_selected: bool):
+    key = f"batch_family_{fam_label}"
+    if key not in st.session_state:
+        st.session_state[key] = bool(all_selected)
+    return key
+
+def _ensure_expanded_key(fam_label: str, default=False):
+    if fam_label not in st.session_state.batch_fam_expanded:
+        st.session_state.batch_fam_expanded[fam_label] = bool(default)
+
+# === ÉTAT MODALE SUPPRESSION ===
+if "delete_dialog" not in st.session_state:
+    st.session_state.delete_dialog = {
+        "show": False,
+        "template_id": None,
+        "template_name": "",
+    }
+
 
 # ===== NAVBAR PROJET (sans Configuration) =====
 def render_project_subnav(active: str):
@@ -136,84 +186,238 @@ with col_m4:
 
 st.divider()
 
-# ===== LISTE DES LIVRABLES =====
-st.subheader("📦 Livrables du projet")
+# ===== MULTI-GÉNÉRATION PAR FAMILLE =====
+st.subheader("🎛️ Générer plusieurs livrables")
 
 if not deliverables:
-    st.info("Aucun livrable configuré. Ajoutez-en un pour démarrer.")
+    st.info("Ajoutez des livrables pour activer la multi-génération.")
 else:
-    cols_per_row = 2
-    
-    for i in range(0, len(deliverables), cols_per_row):
-        cols = st.columns(cols_per_row)
-        
-        for j, col in enumerate(cols):
-            idx = i + j
-            if idx < len(deliverables):
-                deliv = deliverables[idx]
-                
-                with col:
-                    with st.container(border=True):
-                        col_name, col_badge = st.columns([3, 1])
-                        
-                        with col_name:
-                            st.markdown(f"### {deliv.get('template_name', 'Template inconnu')}")
-                            st.caption(f"v{deliv.get('template_version', '1.0')}")
-                        
-                        with col_badge:
-                            if deliv.get('is_functional', False):
-                                st.markdown("🟢 **Prêt**")
-                            else:
-                                st.markdown("🔴 **Incomplet**")
-                        
-                        completion = deliv.get('completion_rate', 0.0)
-                        st.progress(completion / 100.0)
-                        st.caption(f"Complétude : {completion}%")
-                        
-                        st.markdown("")
-                        ds_status = deliv.get('data_sources_status', {})
-                        col_s1, col_s2 = st.columns(2)
-                        
-                        with col_s1:
-                            st.caption(f"📁 Client : {ds_status.get('client', 0)}")
-                        
-                        with col_s2:
-                            st.caption(f"🔄 Défaut : {ds_status.get('default', 0)}")
-                        
-                        if deliv.get('last_generated_at'):
-                            from datetime import datetime
+    # -- Options de sortie (globales à la sélection)
+    col_out1, col_out2, col_tools = st.columns([1, 1, 2])
+    with col_out1:
+        batch_generate_excel = st.checkbox("📊 Excel", value=True, key="batch_opt_excel")
+    with col_out2:
+        batch_generate_ppt = st.checkbox("📄 PowerPoint", value=True, key="batch_opt_ppt")
+    with col_tools:
+        # Toggle global
+        def _toggle_all():
+            # toggle global
+            target_state = not st.session_state.get("batch_toggle_all", False)
+            st.session_state.batch_toggle_all = target_state
+
+            all_ids = {d['template_id'] for d in deliverables}
+
+            if target_state:
+                # → tout cocher
+                st.session_state.batch_selected = set(all_ids)
+
+                # cocher les checkboxes livrables
+                for _id in all_ids:
+                    _ensure_item_key(_id, True)
+                    st.session_state[f"batch_item_{_id}"] = True
+
+                # cocher les checkboxes familles
+                for fam_label, fam_delivs in families_sorted:
+                    st.session_state[f"batch_family_{fam_label}"] = True
+
+            else:
+                # → tout décocher
+                st.session_state.batch_selected = set()
+
+                # décocher les checkboxes livrables
+                for d in deliverables:
+                    _id = d['template_id']
+                    _ensure_item_key(_id, False)
+                    st.session_state[f"batch_item_{_id}"] = False
+
+                # décocher les checkboxes familles
+                for fam_label, _ in families_sorted:
+                    st.session_state[f"batch_family_{fam_label}"] = False
+
+        st.button(
+            "Tout sélectionner / désélectionner",
+            key="btn_toggle_all_global",
+            on_click=_toggle_all,
+            use_container_width=True,
+        )
+
+    # -- Regroupement par Famille (depuis la config du template)
+    #    On utilise TemplateService.get_config(...) -> tags.families
+    families_map = {}  # {family_label: [deliverable_dict, ...]}
+    for d in deliverables:
+        try:
+            cfg = ts.get_config(d['template_id'])
+            fams = (cfg.get("tags", {}) or {}).get("families", [])
+            fams = [f for f in fams if (f or "").strip()]
+            fams = fams or ["Autre"]
+        except Exception:
+            fams = ["Autre"]
+
+        for fam in fams:
+            families_map.setdefault(fam, []).append(d)
+
+    # Tri alpha des familles puis des livrables
+    families_sorted = sorted(families_map.items(), key=lambda kv: kv[0].lower())
+
+    st.caption("Astuce : cocher une famille coche tous ses livrables. Vous pouvez ensuite ajuster finement livrable par livrable.")
+
+    # -- Accordéons par famille (entête cliquable + checkbox famille)
+    for fam_label, fam_delivs in families_sorted:
+        fam_ids = {d['template_id'] for d in fam_delivs}
+        selected_in_family = fam_ids & st.session_state.batch_selected
+        fam_all_selected = (selected_in_family == fam_ids)
+
+        # mémoriser état expanded (évite que l'accordéon se referme)
+        _ensure_expanded_key(fam_label, default=False)
+
+        # EN-TÊTE HORS ACCORDÉON : checkbox famille + compteur X/Y + bouton afficher/masquer
+        hcol1, hcol2 = st.columns([0.12, 0.88])
+
+        with hcol1:
+            fam_key = _ensure_family_key(fam_label, fam_all_selected)
+
+            def _on_toggle_family(fam=fam_label, ids=fam_ids):
+                check = st.session_state[f"batch_family_{fam}"]
+                if check:
+                    # cocher toute la famille
+                    st.session_state.batch_selected |= ids
+                    for _id in ids:
+                        _ensure_item_key(_id, True)
+                        st.session_state[f"batch_item_{_id}"] = True
+                else:
+                    # décocher toute la famille
+                    st.session_state.batch_selected -= ids
+                    for _id in ids:
+                        _ensure_item_key(_id, False)
+                        st.session_state[f"batch_item_{_id}"] = False
+                # rester ouvert
+                st.session_state.batch_fam_expanded[fam] = True
+
+            # IMPORTANT : ne PAS passer 'value=' si la clé existe déjà
+            if f"batch_family_{fam_label}" in st.session_state:
+                st.checkbox("", key=f"batch_family_{fam_label}", on_change=_on_toggle_family)
+            else:
+                st.checkbox("", key=f"batch_family_{fam_label}", value=fam_all_selected, on_change=_on_toggle_family)
+
+        with hcol2:
+            st.markdown(f"**📚 {fam_label} — {len(selected_in_family)}/{len(fam_delivs)} livrable(s) sélectionné(s)**")
+
+
+        # CONTENU DE LA FAMILLE (accordéon contrôlé par l'état persistant)
+        with st.expander("", expanded=st.session_state.batch_fam_expanded[fam_label]):
+            for d in sorted(fam_delivs, key=lambda x: x.get("template_name", "").lower()):
+                lid = d['template_id']
+                # init clé enfant pour éviter le warning Streamlit
+                item_key = _ensure_item_key(lid, selected=(lid in st.session_state.batch_selected))
+
+                col_chk, col_title, col_actions = st.columns([0.08, 0.52, 0.40])
+
+                with col_chk:
+                    def _toggle_item_cb(_k=lid, fam=fam_label):
+                        if st.session_state.get(f"batch_item_{_k}", False):
+                            st.session_state.batch_selected.add(_k)
+                        else:
+                            st.session_state.batch_selected.discard(_k)
+                        # rester ouvert
+                        st.session_state.batch_fam_expanded[fam] = True
+
+                    # idem : pas de 'value=' si la clé existe déjà
+                    if item_key in st.session_state:
+                        st.checkbox("", key=item_key, on_change=_toggle_item_cb)
+                    else:
+                        st.checkbox("", key=item_key, value=(lid in st.session_state.batch_selected), on_change=_toggle_item_cb)
+
+                with col_title:
+                    st.markdown(f"**{d.get('template_name','?')}** · v{d.get('template_version','1.0')}")
+                    st.caption("🟢 Prêt" if d.get("is_functional", False) else "🔴 Incomplet")
+
+                with col_actions:
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        if st.button("⚙️ Config", key=f"batch_cfg_{lid}", use_container_width=True):
+                            st.session_state.selected_deliverable_id = lid
+                            # rester ouvert après navigation
+                            st.session_state.batch_fam_expanded[fam_label] = True
+                            st.switch_page("pages/_1c_⚙️_Config_Deliverable.py")
+                    with c2:
+                        if st.button("▶️ Générer", key=f"batch_gen_{lid}", use_container_width=True,
+                                     disabled=not d.get("is_functional", False)):
+                            st.session_state.generate_deliverable = lid
+                            # rester ouvert même après rerun
+                            st.session_state.batch_fam_expanded[fam_label] = True
+                            st.rerun()
+                    with c3:
+                        if st.button("🗑️ Supprimer", key=f"batch_del_{lid}", use_container_width=True):
+                            # Ouvre la modale de confirmation avec saisie du nom exact
+                            st.session_state.delete_dialog = {
+                                "show": True,
+                                "template_id": lid,
+                                "template_name": d.get("template_name", ""),
+                            }
+                            # rester ouvert même après rerun
+                            st.session_state.batch_fam_expanded[fam_label] = True
+                            st.rerun()
+
+
+    # ===== Boutons d’action (GLOBAUX) =====
+    st.markdown("---")
+    col_run, col_clear = st.columns([2, 1])
+    with col_clear:
+        if st.button("Vider la sélection", key=f"btn_clear_selection_{project_id}", use_container_width=True):
+            st.session_state.batch_selected = set()
+            st.session_state.batch_toggle_all = False
+            st.rerun()
+
+    with col_run:
+        disabled = (not st.session_state.batch_selected) or (not (batch_generate_excel or batch_generate_ppt))
+        if st.button("▶️ Générer la sélection", key=f"btn_generate_batch_{project_id}", type="primary", use_container_width=True, disabled=disabled):
+
+            if not st.session_state.batch_selected:
+                st.warning("Veuillez sélectionner au moins un livrable.")
+            elif not (batch_generate_excel or batch_generate_ppt):
+                st.warning("Sélectionnez au moins un format de sortie (Excel/PPT).")
+            else:
+                # Exécution séquentielle (paramètres sauvegardés)
+                from backend.services.generation_service import GenerationService
+                with DatabaseService.get_session() as db_gen:
+                    gen = GenerationService(db_gen)
+                    ok_count, ko_count = 0, 0
+                    with st.spinner("Exécution en cours..."):
+                        for tid in list(st.session_state.batch_selected):
+                            d = next((x for x in deliverables if x['template_id'] == tid), None)
+                            if not d:
+                                ko_count += 1
+                                continue
+                            if not d.get("is_functional", False):
+                                # On skip les incomplets pour éviter l'échec de la série
+                                ko_count += 1
+                                continue
                             try:
-                                dt = datetime.fromisoformat(deliv['last_generated_at'])
-                                st.caption(f"🕒 Généré : {dt.strftime('%d/%m %H:%M')}")
-                            except:
-                                pass
-                        
-                        st.markdown("")
-                        
-                        col_btn1, col_btn2, col_btn3 = st.columns(3)
-                        
-                        with col_btn1:
-                            if st.button("▶️ Générer", 
-                                       key=f"gen_{deliv['template_id']}",
-                                       use_container_width=True,
-                                       disabled=not deliv.get('is_functional', False)):
-                                st.session_state.generate_deliverable = deliv['template_id']
-                                st.rerun()
-                        
-                        with col_btn2:
-                            if st.button("⚙️ Config", 
-                                       key=f"cfg_{deliv['template_id']}",
-                                       use_container_width=True):
-                                st.session_state.selected_deliverable_id = deliv['template_id']
-                                st.switch_page("pages/_1c_⚙️_Config_Deliverable.py")
-                        
-                        with col_btn3:
-                            if st.button("🗑️", 
-                                       key=f"del_{deliv['template_id']}",
-                                       use_container_width=True,
-                                       help="Retirer ce livrable"):
-                                st.session_state.remove_deliverable_id = deliv['template_id']
-                                st.rerun()
+                                params = d.get("custom_parameters", {}) or {}
+                                gen.generate_deliverable(
+                                    project_id=project_id,
+                                    template_id=tid,
+                                    parameters=params,
+                                    generate_excel=batch_generate_excel,
+                                    generate_ppt=batch_generate_ppt
+                                )
+                                ok_count += 1
+                            except Exception as e:
+                                ko_count += 1
+                                st.warning(f"Échec sur {d.get('template_name','?')} : {e}")
+
+                st.success(f"✅ Génération terminée — Succès: {ok_count}  •  Échecs: {ko_count}")
+                # Reset (à ton choix : on peut conserver la sélection si tu préfères)
+                st.session_state.batch_selected = set()
+                st.session_state.batch_toggle_all = False
+                st.rerun()
+
+
+    # (scroll automatique si on a cliqué 'Pré-sélectionner seul')
+    if st.session_state.scroll_to_batch:
+        st.write("")  # ancre légère
+        st.session_state.scroll_to_batch = False
+
 
 st.markdown("---")
 
@@ -718,19 +922,50 @@ if st.session_state.get('generate_deliverable'):
     
     generate_modal()
     
-# ===== ACTION SUPPRESSION LIVRABLE =====
-if 'remove_deliverable_id' in st.session_state:
-    tid = st.session_state.remove_deliverable_id
-    
-    try:
-        with DatabaseService.get_session() as db_remove:
-            ps_remove = ProjectService(db_remove)
-            ps_remove.remove_deliverable(project_id, tid)
-        
-        st.success("Livrable retiré")
-        del st.session_state.remove_deliverable_id
-        st.rerun()
-    
-    except Exception as e:
-        st.error(f"Erreur : {e}")
-        del st.session_state.remove_deliverable_id
+# ===== MODALE : confirmer la suppression d'un template =====
+if st.session_state.delete_dialog.get("show"):
+    @st.dialog("Confirmer la suppression")
+    def _confirm_delete_dialog():
+        tname = st.session_state.delete_dialog.get("template_name") or ""
+        tid = st.session_state.delete_dialog.get("template_id")
+
+        st.warning(
+            "Cette action est **définitive**. Pour confirmer, "
+            "veuillez **taper exactement** le nom du template ci-dessous."
+        )
+        st.markdown(f"**Nom attendu :** `{tname}`")
+
+        typed = st.text_input(
+            "Tapez ici le nom du template pour confirmer",
+            key="delete_type_name",
+            placeholder="Nom du template"
+        )
+
+        col_cancel, col_confirm = st.columns(2)
+        with col_cancel:
+            if st.button("Annuler", key="btn_delete_cancel", use_container_width=True):
+                # fermer la modale
+                st.session_state.delete_dialog = {"show": False, "template_id": None, "template_name": ""}
+                st.rerun()
+
+        with col_confirm:
+            disabled = (typed.strip() != tname.strip())
+            if st.button(
+                "Supprimer définitivement",
+                key="btn_delete_confirm",
+                type="primary",
+                disabled=disabled,
+                use_container_width=True
+            ):
+                try:
+                    with DatabaseService.get_session() as db_remove:
+                        ps_remove = ProjectService(db_remove)
+                        ps_remove.remove_deliverable(project_id, tid)
+                    st.success(f"✅ Template **{tname}** supprimé.")
+                except Exception as e:
+                    st.error(f"Erreur : {e}")
+                # reset & refresh
+                st.session_state.delete_dialog = {"show": False, "template_id": None, "template_name": ""}
+                st.rerun()
+
+    _confirm_delete_dialog()

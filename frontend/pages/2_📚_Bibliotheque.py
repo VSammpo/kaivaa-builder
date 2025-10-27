@@ -161,11 +161,13 @@ with DatabaseService.get_session() as db:
             "version": t.version,
             "description": t.description,
             "ppt_path": t.ppt_template_path,
+            "excel_path": t.excel_template_path,  
             "is_active": t.is_active,
             "gabarits": facets["gabarits"],
             "themes": facets["themes"],
             "families": facets["families"],
         })
+
 
 # Filtres (nom + facettes)
 def _pass_sources(item) -> bool:
@@ -199,8 +201,10 @@ templates_data = [
         "version": e["version"],
         "description": e["description"],
         "ppt_path": e["ppt_path"],
+        "excel_path": e.get("excel_path"), 
         "is_active": e["is_active"],
     }
+
     for e in enriched
     if (search.lower() in (e["name"] or "").lower() if search else True)
     and _pass_sources(e)
@@ -260,19 +264,33 @@ else:
                     )
 
                     st.markdown('<div class="ka-card__actions">', unsafe_allow_html=True)
-                    spacer1, a1, a2, spacer2 = st.columns([0.5, 5, 5, 0.5])
-                    open_clicked   = a1.form_submit_button("📊 Ouvrir", use_container_width=True)
-                    delete_clicked = a2.form_submit_button("🗑️ Supprimer", use_container_width=True)
+                    spacer1, a1, a2, a3, spacer2 = st.columns([0.5, 4, 4, 4, 0.5])
+                    open_clicked      = a1.form_submit_button("📊 Ouvrir", use_container_width=True)
+                    duplicate_clicked = a2.form_submit_button("📄 Dupliquer", use_container_width=True)   # 👈 nouveau
+                    delete_clicked    = a3.form_submit_button("🗑️ Supprimer", use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
 
                     if open_clicked:
                         st.session_state.selected_template_detail = t["id"]
                         st.switch_page("pages/_2a_📊_Detail_Livrable.py")
 
+                    if duplicate_clicked:
+                        # Ouvrir la modale de duplication
+                        st.session_state._dup_template = {
+                            "id": t["id"],
+                            "name": t["name"],
+                            "version": t["version"],
+                            "ppt_path": t.get("ppt_path"),
+                            "excel_path": t.get("excel_path"),
+                        }
+                        st.session_state.show_duplicate_modal = True
+                        st.rerun()
+
                     if delete_clicked:
                         st.session_state.delete_template_id = t["id"]
                         st.session_state.show_delete_modal = True
                         st.rerun()
+
 
 st.divider()
 
@@ -320,3 +338,72 @@ if st.session_state.get("show_delete_modal"):
                     except Exception as e:
                         st.error(f"❌ Erreur lors de la suppression : {e}")
     confirm_delete()
+
+# =============== Modal duplication ===============
+if st.session_state.get("show_duplicate_modal"):
+    @st.dialog("📄 Dupliquer le template")
+    def duplicate_template_dialog():
+        from pathlib import Path
+        from backend.services.template_service import TemplateService
+        from backend.services.database_service import DatabaseService
+
+        src = st.session_state.get("_dup_template") or {}
+        src_id      = src.get("id")
+        src_name    = src.get("name") or ""
+        src_version = src.get("version") or "1.0"
+        src_ppt     = src.get("ppt_path")
+        src_excel   = src.get("excel_path")
+
+        st.markdown("**Source :**")
+        st.markdown(f"- Nom : `{src_name}`  \n- Version : `{src_version}`")
+        st.divider()
+
+        new_name = st.text_input("Nouveau nom du template", key="dup_new_name",
+                                 placeholder=f"{src_name} (copie)")
+        new_version = st.text_input("Version", key="dup_new_version",
+                                    value=src_version)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Annuler", use_container_width=True, key="dup_cancel"):
+                st.session_state.show_duplicate_modal = False
+                st.session_state.pop("_dup_template", None)
+                st.rerun()
+
+        with c2:
+            can_go = bool((new_name or "").strip())
+            if st.button("Dupliquer", type="primary", disabled=not can_go,
+                         use_container_width=True, key="dup_confirm"):
+                try:
+                    with DatabaseService.get_session() as db:
+                        svc = TemplateService(db)
+                        # 1) Charger la config d'origine
+                        cfg = svc.load_template_config(src_id)
+                        # 2) Muter le nom + version
+                        cfg.name = new_name.strip()
+                        cfg.version = (new_version or src_version).strip()
+                        # 3) Construire les chemins PPT/Excel (s'ils existent)
+                        ppt_src = Path(src_ppt) if src_ppt else None
+                        if ppt_src and not ppt_src.exists():
+                            ppt_src = None
+                        excel_src = Path(src_excel) if src_excel else None
+                        if excel_src and not excel_src.exists():
+                            excel_src = None
+                        # 4) Créer le nouveau template (duplication physique + en base)
+                        svc.duplicate_template(
+                            src_template_id=src_id,
+                            new_name=new_name.strip(),
+                            new_version=(new_version or src_version).strip(),
+                            user_id=1,   # adapte si tu gères l'utilisateur courant
+                        )
+
+
+                    st.session_state["_flash_success"] = f"✅ Template '{new_name}' créé (duplication de '{src_name}')"
+                    st.session_state.show_duplicate_modal = False
+                    st.session_state.pop("_dup_template", None)
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"❌ Erreur lors de la duplication : {e}")
+
+    duplicate_template_dialog()
