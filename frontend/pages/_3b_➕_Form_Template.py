@@ -70,24 +70,24 @@ def render_template_subnav(active: str, template_id: int | None):
                 st.session_state.selected_template_detail = template_id
             if "selected_template" in st.session_state:
                 del st.session_state.selected_template
-            st.switch_page("pages/2_📚_Bibliotheque.py")
+            st.switch_page("pages/3_📚_Bibliotheque.py")
     with cols[1]:
         if st.button("🗂️ Détail du template", type=("primary" if active=="detail" else "secondary"), use_container_width=True):
             if template_id:
                 st.session_state.selected_template_detail = template_id
-            st.switch_page("pages/_2a_📊_Detail_Livrable.py")
+            st.switch_page("pages/_3a_📊_Detail_Livrable.py")
     with cols[2]:
         st.button("⚙️ Paramètres généraux", type="primary" if active=="general" else "secondary", use_container_width=True)
     with cols[3]:
         if st.button("📑 Injection des données", type=("primary" if active=="inject" else "secondary"), use_container_width=True):
             if template_id:
                 st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b3_📑_Tables_Template.py")
+            st.switch_page("pages/_3c_📑_Tables_Template.py")
     with cols[4]:
         if st.button("🧾 Ajustement de la table", type=("primary" if active=="adjust" else "secondary"), use_container_width=True):
             if template_id:
                 st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b4_🧾_Ajustement_Table.py")
+            st.switch_page("pages/_3d_🧾_Ajustement_Table.py")
     st.divider()
 
 # États init
@@ -894,7 +894,7 @@ if st.button(button_label, type="primary", use_container_width=True):
                 
                 st.session_state["_flash_success"] = f"✅ Template '{name}' mis à jour !"
                 st.session_state.selected_template_detail = template_id_to_edit
-                st.switch_page("pages/2_📚_Bibliotheque.py")
+                st.switch_page("pages/3_📚_Bibliotheque.py")
                 st.stop()
 
                 
@@ -981,7 +981,7 @@ if st.button(button_label, type="primary", use_container_width=True):
 
                 st.session_state["_flash_success"] = f"✅ Template '{name}' créé ! (ID: {template_id})"
                 st.session_state.selected_template_detail = template_id
-                st.switch_page("pages/2_📚_Bibliotheque.py")
+                st.switch_page("pages/3_📚_Bibliotheque.py")
                 st.stop()
 
         

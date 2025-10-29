@@ -24,7 +24,7 @@ def render_project_subnav(active: str):
                 del st.session_state.selected_project_id
             if 'selected_deliverable_id' in st.session_state:
                 del st.session_state.selected_deliverable_id
-            st.switch_page("pages/1_📁_Projets.py")
+            st.switch_page("pages/4_📁_Projets.py")
     
     with cols[1]:
         if st.button("🗂️ Hub", 
@@ -32,7 +32,7 @@ def render_project_subnav(active: str):
                     use_container_width=True):
             if 'selected_deliverable_id' in st.session_state:
                 del st.session_state.selected_deliverable_id
-            st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+            st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
     
     with cols[2]:
         if st.button("💾 Données", 
@@ -40,7 +40,7 @@ def render_project_subnav(active: str):
                     use_container_width=True):
             if 'selected_deliverable_id' in st.session_state:
                 del st.session_state.selected_deliverable_id
-            st.switch_page("pages/_1b_💾_Data_Projet.py")
+            st.switch_page("pages/_4b_💾_Data_Projet.py")
     
     st.divider()
 
@@ -48,7 +48,7 @@ def render_project_subnav(active: str):
 if 'selected_project_id' not in st.session_state or not st.session_state.selected_project_id:
     st.error("Aucun projet sélectionné")
     if st.button("← Retour aux projets"):
-        st.switch_page("pages/1_📁_Projets.py")
+        st.switch_page("pages/4_📁_Projets.py")
     st.stop()
 
 project_id = st.session_state.selected_project_id
@@ -63,7 +63,7 @@ with DatabaseService.get_session() as db:
     except FileNotFoundError:
         st.error(f"Projet introuvable : {project_id}")
         if st.button("← Retour aux projets"):
-            st.switch_page("pages/1_📁_Projets.py")
+            st.switch_page("pages/4_📁_Projets.py")
         st.stop()
 
 render_project_subnav("data")
@@ -132,7 +132,7 @@ required_gabarits = compute_required_gabarits(proj)
 if not required_gabarits:
     st.info("Aucun livrable configuré. Retournez au Hub pour ajouter des livrables.")
     if st.button("← Retour au Hub", use_container_width=True):
-        st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+        st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
     st.stop()
 
 # ===== STATISTIQUES GLOBALES =====
@@ -516,7 +516,7 @@ col_back, col_refresh = st.columns(2)
 
 with col_back:
     if st.button("← Retour au Hub", use_container_width=True):
-        st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+        st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
 
 with col_refresh:
     if st.button("🔄 Recalculer les statuts", use_container_width=True):

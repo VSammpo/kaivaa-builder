@@ -92,13 +92,13 @@ with tab_list:
                     with col1:
                         if st.button("👁️ Voir", key=f"view_{idx}_{transfo['name']}_{transfo['version']}"):
                             st.session_state.selected_transformation = (transfo['name'], transfo['version'])
-                            st.switch_page("pages/_3d1_🔀_Detail_Transformation.py")
+                            st.switch_page("pages/_2a_🔀_Detail_Transformation.py")
                     
                     with col2:
                         if st.button("✏️ Éditer", key=f"edit_{idx}_{transfo['name']}_{transfo['version']}"):
                             st.session_state.selected_transformation = (transfo['name'], transfo['version'])
                             st.session_state.edit_mode = True
-                            st.switch_page("pages/_3d2_🔀_Builder_Transformation.py")
+                            st.switch_page("pages/_2b_🔀_Builder_Transformation.py")
                     
                     with col3:
                         if st.button("🗑️", key=f"del_{idx}_{transfo['name']}_{transfo['version']}", 
@@ -173,7 +173,7 @@ with tab_create:
                     st.session_state.selected_transformation = (name, version)
                     st.session_state.edit_mode = True
                     st.success("Transformation créée ! Redirection...")
-                    st.switch_page("pages/_3d2_🔀_Builder_Transformation.py")
+                    st.switch_page("pages/_2b_🔀_Builder_Transformation.py")
                     
                 except ValueError as e:
                     st.error(str(e))

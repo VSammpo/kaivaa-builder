@@ -82,7 +82,7 @@ else:
                         with col_btn1:
                             if st.button("🗂️ Ouvrir", key=f"open_{proj['project_id']}", use_container_width=True):
                                 st.session_state.selected_project_id = proj["project_id"]
-                                st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+                                st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
 
                         with col_btn2:
                             if st.button("📄 Dupliquer", key=f"dup_{proj['project_id']}", use_container_width=True):
@@ -145,7 +145,7 @@ if st.session_state.get('show_create_project_modal'):
                         
                         import time
                         time.sleep(1)
-                        st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+                        st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
                     
                     except Exception as e:
                         st.error(f"❌ Erreur : {e}")
@@ -199,7 +199,7 @@ if st.session_state.get('show_duplicate_modal'):
                     st.session_state.selected_project_id = new_proj["project_id"]
                     import time
                     time.sleep(1)
-                    st.switch_page("pages/_1a_🗂️_Hub_Projet.py")
+                    st.switch_page("pages/_4a_🗂️_Hub_Projet.py")
 
                 except Exception as e:
                     st.error(f"❌ Erreur : {e}")

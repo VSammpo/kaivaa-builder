@@ -54,7 +54,7 @@ st.markdown("""
 if 'selected_gabarit' not in st.session_state or not st.session_state.selected_gabarit:
     st.error("Aucun gabarit sélectionné")
     if st.button("Retour aux gabarits", use_container_width=True):
-        st.switch_page("pages/3_🧱_Gabarits.py")
+        st.switch_page("pages/1_🧱_Gabarits.py")
     st.stop()
 
 gab_name, gab_version = st.session_state.selected_gabarit
@@ -70,7 +70,7 @@ col_back, col_title, col_actions = st.columns([1, 4, 2])
 with col_back:
     if st.button("← Retour", use_container_width=True):
         del st.session_state.selected_gabarit
-        st.switch_page("pages/3_🧱_Gabarits.py")
+        st.switch_page("pages/1_🧱_Gabarits.py")
 
 with col_title:
     st.title(f"🧱 {gabarit.name}")
@@ -126,7 +126,7 @@ with tab_structure:
     edit_col1, edit_col2 = st.columns([1,5])
     with edit_col1:
         if st.button("✏️ Éditer la structure", use_container_width=True, key="edit_structure_btn"):
-            st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+            st.switch_page("pages/_1b_🧱_Structure_Gabarit.py")
 
     
     cols_data = []
@@ -161,7 +161,7 @@ with tab_methods:
     with col_btn:
         if st.button("⚙️ Gérer les méthodes", use_container_width=True, type="primary"):
             st.session_state.selected_gabarit = (gabarit.name, gabarit.version)
-            st.switch_page("pages/_3c_⚙️_Methodes_Gabarit.py")
+            st.switch_page("pages/_1e_⚙️_Methodes_Gabarit.py")
     with col_count:
         st.metric("Méthodes", len(methods or []))
     
@@ -197,7 +197,7 @@ with tab_methods:
 with tab_enrichments:
     st.subheader("Enrichissements déclarés")
     if st.button("🔗 Gérer les enrichissements", use_container_width=True, key="edit_enrich_btn", type="primary"):
-        st.switch_page("pages/_3b2_🔗_Enrichissements_Gabarit.py")
+        st.switch_page("pages/_1c_🔗_Enrichissements_Gabarit.py")
 
     
     rels = get_relations(gabarit.name, gabarit.version)
@@ -228,7 +228,7 @@ with tab_enrichments:
 with tab_data:
     st.subheader("Donnée par défaut")
     if st.button("📁 Configurer la donnée par défaut", use_container_width=True, key="edit_default_btn"):
-        st.switch_page("pages/_3b3_📁_Donnee_Par_Defaut.py")
+        st.switch_page("pages/_1d_📁_Donnee_Par_Defaut.py")
 
     src = get_default_source(gabarit.name, gabarit.version)
     preview = get_default_preview(gabarit.name, gabarit.version)
@@ -308,6 +308,6 @@ if st.session_state.get('show_delete_modal_gabarit'):
                 st.session_state.show_delete_modal_gabarit = False
                 if 'selected_gabarit' in st.session_state:
                     del st.session_state.selected_gabarit
-                st.switch_page("pages/3_🧱_Gabarits.py")
+                st.switch_page("pages/1_🧱_Gabarits.py")
 
     delete_confirmation()

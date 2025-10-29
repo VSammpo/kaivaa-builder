@@ -23,35 +23,35 @@ def render_gabarit_subnav(active: str):
 
     with cols[0]:
         if st.button("← Fiche gabarit", key=f"subnav_back_{active}", use_container_width=True):
-            st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+            st.switch_page("pages/_1a_🧱_Detail_Gabarit.py")
 
     with cols[1]:
         if st.button("📊 Structure", key=f"subnav_struct_{active}",
                      type=("primary" if active == "structure" else "secondary"),
                      use_container_width=True):
             if active != "structure":
-                st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+                st.switch_page("pages/_1b_🧱_Structure_Gabarit.py")
 
     with cols[2]:
         if st.button("🔗 Enrichissements", key=f"subnav_enrich_{active}",
                      type=("primary" if active == "enrich" else "secondary"),
                      use_container_width=True):
             if active != "enrich":
-                st.switch_page("pages/_3b2_🔗_Enrichissements_Gabarit.py")
+                st.switch_page("pages/_1c_🔗_Enrichissements_Gabarit.py")
 
     with cols[3]:
         if st.button("⚙️ Méthodes", key=f"subnav_methods_{active}",
                      type=("primary" if active == "methods" else "secondary"),
                      use_container_width=True):
             if active != "methods":
-                st.switch_page("pages/_3c_⚙️_Methodes_Gabarit.py")
+                st.switch_page("pages/_1e_⚙️_Methodes_Gabarit.py")
 
     with cols[4]:
         if st.button("📁 Données par défaut", key=f"subnav_default_{active}",
                      type=("primary" if active == "default" else "secondary"),
                      use_container_width=True):
             if active != "default":
-                st.switch_page("pages/_3b3_📁_Donnee_Par_Defaut.py")
+                st.switch_page("pages/_1d_📁_Donnee_Par_Defaut.py")
     st.divider()
 
 # ========= Déterminer mode (création vs édition)
@@ -119,9 +119,9 @@ with st.form("structure_form"):
     with c2:
         if st.form_submit_button("Annuler", use_container_width=True):
             if create_mode:
-                st.switch_page("pages/3_🧱_Gabarits.py")
+                st.switch_page("pages/1_🧱_Gabarits.py")
             else:
-                st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+                st.switch_page("pages/_1a_🧱_Detail_Gabarit.py")
 
     if save:
         rows = edited.fillna("").to_dict(orient="records")
@@ -151,6 +151,6 @@ with st.form("structure_form"):
                 set_role(g.name, g.version, role)
                 st.session_state.selected_gabarit = (g.name, g.version)
                 st.success("✅ Gabarit créé" if create_mode else "✅ Structure enregistrée")
-                st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+                st.switch_page("pages/_1a_🧱_Detail_Gabarit.py")
             except Exception as e:
                 st.error(f"❌ Erreur : {e}")

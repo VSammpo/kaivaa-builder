@@ -287,4 +287,4 @@ if ss.get("selected_client_for_projects"):
                         ss.selected_project_id = p["project_id"]
                         ss.selected_project_name = p.get("name", "")
                         ss.selected_project_client = p.get("client_name", "")
-                        st.switch_page("pages/4b_📁_Livrables_Projet.py")
+                        st.switch_page("pages/_5a_📁_Livrables_Projet.py")

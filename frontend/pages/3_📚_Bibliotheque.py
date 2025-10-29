@@ -218,7 +218,7 @@ if not templates_data:
     st.info("Aucun template trouvé. Créez-en un pour démarrer.")
     if st.button("➕ Nouveau template", type="primary", use_container_width=True):
         st.session_state.selected_template = None
-        st.switch_page("pages/_2b_➕_Form_Template.py")
+        st.switch_page("pages/_3b_➕_Form_Template.py")
 else:
     top1, top2 = st.columns([3, 1])
     with top1:
@@ -226,7 +226,7 @@ else:
     with top2:
         if st.button("➕ Nouveau template", type="primary", use_container_width=True):
             st.session_state.selected_template = None
-            st.switch_page("pages/_2b_➕_Form_Template.py")
+            st.switch_page("pages/_3b_➕_Form_Template.py")
 
     st.markdown("")
 
@@ -272,7 +272,7 @@ else:
 
                     if open_clicked:
                         st.session_state.selected_template_detail = t["id"]
-                        st.switch_page("pages/_2a_📊_Detail_Livrable.py")
+                        st.switch_page("pages/_3a_📊_Detail_Livrable.py")
 
                     if duplicate_clicked:
                         # Ouvrir la modale de duplication

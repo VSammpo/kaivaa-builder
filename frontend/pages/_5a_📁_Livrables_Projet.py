@@ -76,7 +76,7 @@ ss = st.session_state
 if "selected_project_id" not in ss:
     st.warning("⚠️ Aucun projet sélectionné. Retournez à la page Bibliothèque.")
     if st.button("🔙 Retour à la bibliothèque"):
-        st.switch_page("pages/4_📚_Bibliotheque_Livrables.py")
+        st.switch_page("pages/5_📚_Bibliotheque_Livrables.py")
     st.stop()
 
 project_id = ss.selected_project_id
@@ -100,7 +100,7 @@ ss.setdefault("show_all_raw_versions", "latest")
 col_back, col_title = st.columns([1, 5])
 with col_back:
     if st.button("⬅️ Retour", use_container_width=True):
-        st.switch_page("pages/4_📚_Bibliotheque_Livrables.py")
+        st.switch_page("pages/5_📚_Bibliotheque_Livrables.py")
 
 with col_title:
     st.markdown(f"<div class='section-header'><h1>📁 {project_name}</h1><p style='margin:0; opacity:0.9;'>Client: {client_name} | ID: {project_id}</p></div>", unsafe_allow_html=True)

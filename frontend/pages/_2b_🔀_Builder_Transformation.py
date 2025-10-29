@@ -626,4 +626,4 @@ with col2:
 
 with col3:
     if st.button("📋 Retour", use_container_width=True):
-        st.switch_page("pages/_3d1_🔀_Detail_Transformation.py")
+        st.switch_page("pages/_2a_🔀_Detail_Transformation.py")

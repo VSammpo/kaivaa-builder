@@ -74,7 +74,7 @@ def render_project_subnav(active: str):
         if st.button("← Projets", use_container_width=True):
             if 'selected_project_id' in st.session_state:
                 del st.session_state.selected_project_id
-            st.switch_page("pages/1_📁_Projets.py")
+            st.switch_page("pages/4_📁_Projets.py")
     
     with cols[1]:
         st.button("🗂️ Hub", 
@@ -85,7 +85,7 @@ def render_project_subnav(active: str):
         if st.button("💾 Données", 
                     type="primary" if active == "data" else "secondary",
                     use_container_width=True):
-            st.switch_page("pages/_1b_💾_Data_Projet.py")
+            st.switch_page("pages/_4b_💾_Data_Projet.py")
     
     st.divider()
 
@@ -93,7 +93,7 @@ def render_project_subnav(active: str):
 if 'selected_project_id' not in st.session_state or not st.session_state.selected_project_id:
     st.error("Aucun projet sélectionné")
     if st.button("← Retour aux projets"):
-        st.switch_page("pages/1_📁_Projets.py")
+        st.switch_page("pages/4_📁_Projets.py")
     st.stop()
 
 project_id = st.session_state.selected_project_id
@@ -109,7 +109,7 @@ with DatabaseService.get_session() as db:
     except FileNotFoundError:
         st.error(f"Projet introuvable : {project_id}")
         if st.button("← Retour aux projets"):
-            st.switch_page("pages/1_📁_Projets.py")
+            st.switch_page("pages/4_📁_Projets.py")
         st.stop()
 
 render_project_subnav("hub")
@@ -338,7 +338,7 @@ else:
                             st.session_state.selected_deliverable_id = lid
                             # rester ouvert après navigation
                             st.session_state.batch_fam_expanded[fam_label] = True
-                            st.switch_page("pages/_1c_⚙️_Config_Deliverable.py")
+                            st.switch_page("pages/_4c_⚙️_Config_Deliverable.py")
                     with c2:
                         if st.button("▶️ Générer", key=f"batch_gen_{lid}", use_container_width=True,
                                      disabled=not d.get("is_functional", False)):
@@ -669,7 +669,7 @@ if st.session_state.get('generate_deliverable'):
                 if st.button("💾 Configurer les données", use_container_width=True, type="primary"):
                     if 'generate_deliverable' in st.session_state:
                         del st.session_state.generate_deliverable
-                    st.switch_page("pages/_1b_💾_Data_Projet.py")
+                    st.switch_page("pages/_4b_💾_Data_Projet.py")
             
             with col_cancel:
                 if st.button("❌ Annuler", use_container_width=True):

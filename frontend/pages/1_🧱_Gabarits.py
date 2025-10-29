@@ -21,7 +21,7 @@ col1, col2 = st.columns([3, 1])
 with col2:
     if st.button("➕ Nouveau gabarit", type="primary", use_container_width=True):
         st.session_state.selected_gabarit = None
-        st.switch_page("pages/_3b1_🧱_Structure_Gabarit.py")
+        st.switch_page("pages/_1b_🧱_Structure_Gabarit.py")
 
 
 st.divider()
@@ -92,4 +92,4 @@ else:
                         # Bouton d'accès
                         if st.button("📊 Ouvrir", key=f"open_{gab.name}_{gab.version}", use_container_width=True):
                             st.session_state.selected_gabarit = (gab.name, gab.version)
-                            st.switch_page("pages/_3a_🧱_Detail_Gabarit.py")
+                            st.switch_page("pages/_1a_🧱_Detail_Gabarit.py")

@@ -49,7 +49,7 @@ col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
 with col1:
     if st.button("✏️ Éditer", type="primary", use_container_width=True):
         st.session_state.edit_mode = True
-        st.switch_page("pages/_3d2_🔀_Builder_Transformation.py")
+        st.switch_page("pages/_2b_🔀_Builder_Transformation.py")
 with col2:
     if st.button("📋 Dupliquer", use_container_width=True):
         st.info("Fonctionnalité à venir")

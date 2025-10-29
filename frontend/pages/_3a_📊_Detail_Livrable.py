@@ -56,7 +56,7 @@ st.set_page_config(page_title="Détail du template", page_icon="🗂️", layout
 if "selected_template_detail" not in st.session_state or not st.session_state.selected_template_detail:
     st.error("Aucun template sélectionné.")
     if st.button("← Retour bibliothèque", use_container_width=True):
-        st.switch_page("pages/2_📚_Bibliotheque.py")
+        st.switch_page("pages/3_📚_Bibliotheque.py")
     st.stop()
 
 template_id = st.session_state.selected_template_detail
@@ -84,21 +84,21 @@ def render_template_subnav(active: str, template_id: int):
         if st.button("← Retour bibliothèque", use_container_width=True):
             if "selected_template" in st.session_state:
                 del st.session_state.selected_template
-            st.switch_page("pages/2_📚_Bibliotheque.py")
+            st.switch_page("pages/3_📚_Bibliotheque.py")
     with cols[1]:
         st.button("🗂️ Détail du template", type="primary" if active=="detail" else "secondary", use_container_width=True)
     with cols[2]:
         if st.button("⚙️ Paramètres généraux", type=("primary" if active=="general" else "secondary"), use_container_width=True):
             st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b_➕_Form_Template.py")
+            st.switch_page("pages/_3b_➕_Form_Template.py")
     with cols[3]:
         if st.button("📑 Injection des données", type=("primary" if active=="inject" else "secondary"), use_container_width=True):
             st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b3_📑_Tables_Template.py")
+            st.switch_page("pages/_3c_📑_Tables_Template.py")
     with cols[4]:
         if st.button("🧾 Ajustement de la table", type=("primary" if active=="adjust" else "secondary"), use_container_width=True):
             st.session_state.selected_template = template_id
-            st.switch_page("pages/_2b4_🧾_Ajustement_Table.py")
+            st.switch_page("pages/_3d_🧾_Ajustement_Table.py")
     st.divider()
 
 
@@ -590,7 +590,7 @@ if st.session_state.get('show_delete_modal_detail'):
                         if 'selected_template_detail' in st.session_state:
                             del st.session_state.selected_template_detail
                         
-                        st.switch_page("pages/2_📚_Bibliotheque.py")
+                        st.switch_page("pages/3_📚_Bibliotheque.py")
                     
                     except Exception as e:
                         st.error(f"❌ Erreur lors de la suppression : {e}")
