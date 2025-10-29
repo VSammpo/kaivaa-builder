@@ -141,10 +141,18 @@ with st.form("structure_form"):
             st.error("❌ Au moins une colonne est requise")
         else:
             try:
+                # CORRECTION : Préserver les données existantes (defaults, methods, relations)
+                # En mode édition, on charge le gabarit existant et on met à jour uniquement la structure
+                if not create_mode and gabarit:
+                    # Conserver description existante
+                    desc = gabarit.description if gabarit else ""
+                else:
+                    desc = ""
+                
                 g = TableGabarit(
                     name=(name_val if create_mode else gab_name).strip(),
                     version=(ver_val if create_mode else gab_version).strip(),
-                    description=gabarit.description if gabarit else "",
+                    description=desc,
                     columns=cols
                 )
                 upsert_gabarit(g)

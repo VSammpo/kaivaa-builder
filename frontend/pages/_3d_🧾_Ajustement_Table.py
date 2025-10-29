@@ -382,9 +382,12 @@ with tab_adjust:
     if not fresh_usage:
         fresh_usage = usage
     
-    # ✅ Utiliser le FRESH usage pour calculer les colonnes
-    with st.spinner("🔄 Calcul des colonnes disponibles (inclut script + enrichissements + méthodes)..."):
+    # ✅ Utiliser le FRESH usage pour calculer les colonnes disponibles
+    # (les colonnes clés sont maintenant automatiquement incluses par le backend)
+    with st.spinner("🔄 Calcul des colonnes disponibles (inclut script + enrichissements + méthodes + clés)..."):
         default_cols = _force_recalc_columns(fresh_usage, template_id)
+
+
     
     if not default_cols:
         st.error("❌ Impossible de calculer les colonnes. Vérifiez la configuration dans l'onglet 'Script Python'.")
@@ -414,7 +417,14 @@ with tab_adjust:
     # ✅ Utiliser fresh_usage pour les métadonnées
     g = get_gabarit(gname, gver)
     type_map = {c.name: (c.type or "text") for c in (g.columns or [])}
-    source_map = {c: "gabarit" for c in (fresh_usage.get("columns_enabled") or [c.name for c in (g.columns or [])])}
+    
+    # ✅ CORRECTION : Inclure TOUJOURS les colonnes clés (is_key=True) même si non sélectionnées
+    key_cols = [c.name for c in (g.columns or []) if getattr(c, 'is_key', False)]
+    enabled_cols = fresh_usage.get("columns_enabled") or [c.name for c in (g.columns or [])]
+    
+    # Combiner colonnes activées + colonnes clés (déduplication en gardant l'ordre)
+    all_base_cols = list(dict.fromkeys(enabled_cols + key_cols))
+    source_map = {c: "gabarit [CLÉ]" if c in key_cols else "gabarit" for c in all_base_cols}
 
     for e in (fresh_usage.get("enrichments") or []):
         if not e.get("path"):
@@ -432,6 +442,11 @@ with tab_adjust:
         type_map.setdefault(m, "unknown")
 
     # --- entête ---
+    
+    # 🔑 Afficher un avertissement si colonnes clés détectées
+    if key_cols:
+        st.info(f"🔑 **Colonnes clés protégées** (toujours présentes) : {", ".join(key_cols)}")
+
     st.markdown("### Colonnes injectées")
     st.caption(
         "Cochez/décochez pour inclure/exclure une colonne dans la **sortie finale** "

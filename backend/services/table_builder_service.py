@@ -24,6 +24,17 @@ from backend.services.dataset_service import get_default_dataframe_for_gabarit
 
 # === DEBUG ENRICHISSEMENTS ===
 DEBUG_ENRICH = True
+
+def _get_key_columns(gabarit_name: str, gabarit_version: str) -> list[str]:
+    """Retourne les colonnes marquées is_key=True dans un gabarit."""
+    try:
+        g = get_gabarit(gabarit_name, gabarit_version)
+        if g and g.columns:
+            return [c.name for c in g.columns if getattr(c, 'is_key', False)]
+    except Exception as e:
+        logger.warning(f"Impossible de récupérer les colonnes clés pour {gabarit_name}: {e}")
+    return []
+
 def _normalize_to_usage(transfo_or_usage: dict) -> dict:
     """
     Convertit une transformation OU un usage en format usage unifié.
@@ -177,160 +188,88 @@ def _debug_merge(left_df, right_df, *, how: str, left_on: str, right_on: str, ta
         r_nonnull = right_df[right_on].notna().sum() if right_on in right_df.columns else 0
         l_dtype = str(left_df[left_on].dtype) if left_on in left_df.columns else "?"
         r_dtype = str(right_df[right_on].dtype) if right_on in right_df.columns else "?"
-
-        if left_on in left_df.columns:
-            l_sample = list(map(str, left_df[left_on].dropna().astype(str).head(5).unique()))
-        else:
-            l_sample = []
-        if right_on in right_df.columns:
-            r_sample = list(map(str, right_df[right_on].dropna().astype(str).head(5).unique()))
-        else:
-            r_sample = []
-
-        if DEBUG_ENRICH:
-            logger.info(
-                f"[ENRICH{(':'+tag) if tag else ''}] how={how} "
-                f"left({len(left_df)} rows) on={left_on}[{l_dtype}] nnz={l_nonnull} sample={l_sample} "
-                f"right({len(right_df)} rows) on={right_on}[{r_dtype}] nnz={r_nonnull} sample={r_sample}"
-            )
-        out = left_df.merge(
-            right_df,
-            how=how,
-            left_on=left_on,
-            right_on=right_on,
-            suffixes=("_L", "_R"),
-        )
-        if DEBUG_ENRICH:
-            logger.info(f"[ENRICH{(':'+tag) if tag else ''}] result rows={len(out)} cols={len(out.columns)}")
-        return out
-    except Exception as e:
-        if DEBUG_ENRICH:
-            logger.exception(f"[ENRICH{(':'+tag) if tag else ''}] merge failed: {e}")
-        raise
-
-
-def _normalize_key(series: pd.Series, colname: str) -> pd.Series:
-    """Normalise les clés pour les jointures (SIREN/SIRET, etc.)"""
-    s = series.astype(str).str.strip()
-    s = s.str.replace(r"[^0-9A-Za-z]", "", regex=True)
-    low = (colname or "").lower()
-    if any(k in low for k in ["siren", "siret"]):
-        digits = s.str.replace(r"[^0-9]", "", regex=True)
-        if "siret" in low:
-            s = digits.str.zfill(14)
-        else:
-            s = digits.str.zfill(9)
-    return s
-
-
-def _load_df_for_gabarit(name: str, ver: str, full: bool = False) -> Tuple[Optional[pd.DataFrame], bool]:
-    """
-    Charge le DataFrame d'un gabarit (full ou preview).
-    Retourne (df, is_preview).
-    """
-    if full:
-        # Tenter le FULL
-        try:
-            df_full = get_default_dataframe(name, ver)
-            if isinstance(df_full, pd.DataFrame) and not df_full.empty:
-                return df_full, False
-        except Exception:
-            pass
-        try:
-            df_full = get_default_dataframe_for_gabarit(name, ver)
-            if isinstance(df_full, pd.DataFrame) and not df_full.empty:
-                return df_full, False
-        except Exception:
-            pass
-        return None, False
-    
-    # Preview
-    try:
-        prev = get_default_preview(name, ver) or {}
-        rows, cols = prev.get("rows") or [], prev.get("columns") or []
-        if rows and cols:
-            return pd.DataFrame(rows, columns=cols), True
+        logger.debug(f"[MERGE {tag}] AVANT : left={len(left_df)} (key {left_on} non-null={l_nonnull}, dtype={l_dtype}), right={len(right_df)} (key {right_on} non-null={r_nonnull}, dtype={r_dtype}), how={how}")
     except Exception:
         pass
-    
-    # Fallback : lire FULL et ne renvoyer qu'un échantillon
+
+    merged = pd.merge(left_df, right_df, how=how, left_on=left_on, right_on=right_on)
+
     try:
-        df_full = get_default_dataframe(name, ver)
-        if isinstance(df_full, pd.DataFrame) and not df_full.empty:
-            return df_full.head(20).copy(), True
+        logger.debug(f"[MERGE {tag}] APRES : {len(merged)} lignes")
     except Exception:
         pass
+    return merged
+
+
+def _normalize_key(series: pd.Series, key_name: str) -> pd.Series:
+    """
+    Normalise une colonne-clé (strip, casse, NaN, etc.) de façon agressive.
+    """
+    def _norm(val):
+        if pd.isna(val):
+            return val
+        s = str(val).strip().upper()
+        return s if s else None
+
+    return series.apply(_norm)
+
+
+def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str, only: list[str] | None = None) -> pd.DataFrame:
+    """
+    Applique les méthodes (colonnes calculées) listées dans 'only'.
+    Si only est None ou vide, on ne fait rien.
+    """
+    from backend.services.method_executor import apply_method
     
-    return None, True
-
-
-def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str, 
-                   only: list[str] | None = None) -> pd.DataFrame:
-    """Applique les méthodes du gabarit dans l'ordre"""
-    try:
-        from backend.services.method_executor import apply_method
-    except Exception:
+    if not only:
         return df
     
-    methods = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
-    methods = sorted(methods, key=lambda m: m.get("order", 1))
-    names_filter = set([n.strip() for n in (only or []) if n and str(n).strip()])
+    # Récupérer toutes les méthodes du gabarit
+    all_methods = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
     
-    cur = df.copy()
-    for m in methods:
-        if names_filter and m.get("name") not in names_filter:
-            continue
-        schema = m.get("param_schema") or []
-        pvals = {}
-        for spec in schema:
-            nm = spec.get("name")
-            dv = spec.get("default")
-            if nm:
-                pvals[nm] = dv
+    # Si c'est un dict, convertir en liste
+    if isinstance(all_methods, dict):
+        all_methods = list(all_methods.values())
+    
+    # Filtrer selon 'only'
+    selected = [m for m in all_methods if isinstance(m, dict) and m.get("name") in only]
+    
+    df_out = df.copy()
+    for method in selected:
         try:
-            cur = apply_method(cur, m, pvals)
+            df_out = apply_method(df_out, method, params={})
         except Exception as e:
-            logger.warning(f"Erreur lors de l'application de la méthode {m.get('name')}: {e}")
+            logger.warning(f"Erreur méthode '{method.get('name')}': {e}")
     
-    return cur
+    return df_out
 
 
-
-def _apply_overlay(df: pd.DataFrame, code: str, params: dict | None = None):
+def _apply_overlay(df: pd.DataFrame, code: str, params: dict | None = None) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
-    Exécute un script d'usage (overlay) sur un DataFrame.
-    - Injecte pd, df (copie), params dans un namespace unique (globals == locals)
-    - Expose chaque paramètre sous plusieurs alias (k, k.lower(), k.upper(), Capitalized)
-    - Le script doit laisser le résultat final dans 'df'
+    Exécute un script Python overlay sur le DataFrame.
+    Le script a accès à : df, pd, params
+    Il doit modifier df in-place OU redéfinir df.
     """
     if not code or not code.strip():
         return df, None
+    
     try:
-        env: dict = {
-            "pd": pd,
+        env = {
             "df": df.copy(),
+            "pd": pd,
             "params": params or {},
             "__builtins__": __builtins__,
         }
-        # Alias de paramètres utilisables dans le script
-        for k, v in (params or {}).items():
-            if not isinstance(k, str):
-                continue
-            if k in {"pd", "df", "params"}:
-                continue
-            aliases = {k, k.lower(), k.upper(), (k[:1].upper() + k[1:])}
-            for alias in aliases:
-                if isinstance(alias, str) and alias.isidentifier():
-                    env.setdefault(alias, v)
-
-        exec(code, env, env)  # 👈 un seul namespace
-        result = env.get("df", None)
-        if isinstance(result, pd.DataFrame):
-            return result, None
-        return None, "Le script n'a pas produit de DataFrame 'df'."
-    except Exception as ex:
-        import traceback
-        return None, f"{type(ex).__name__}: {ex}\n{traceback.format_exc()}"
+        exec(code, env, env)
+        new_df = env.get("df")
+        
+        if not isinstance(new_df, pd.DataFrame):
+            return None, f"Le script doit produire un DataFrame dans 'df' (type actuel: {type(new_df).__name__})"
+        
+        return new_df, None
+    
+    except Exception as e:
+        return None, f"Erreur script overlay: {e}"
 
 
 def build_table_from_usage(
@@ -341,95 +280,132 @@ def build_table_from_usage(
     params: dict | None = None
 ) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
-    Construit le DataFrame final à partir d'un usage de gabarit.
-    ORDRE STRICT : Base → Enrichissements → Méthodes → Script → Renommages → Tri → Ordre/Exclusions
+    Point d'entrée UNIQUE pour construire une table depuis un usage (ou transformation).
     
     Args:
-        usage: Configuration de l'usage
-        full: Charger données complètes (True) ou preview (False)
-        log_kpis: Afficher les KPIs de construction
-        params: Paramètres du template pour injection dans le script
+        usage: Dict représentant l'usage (ou transformation)
+        full: Si True, charge le FULL dataframe. Si False, utilise le preview (20 lignes).
+        log_kpis: Active les logs détaillés du pipeline
+        params: Paramètres de template (ex: {"sous_marque": "BOMBAY"})
+    
+    Returns:
+        (DataFrame, erreur) où erreur=None si succès
     """
     
-    # ✅ NOUVEAU : Normaliser transformation → usage
+    # Normalisation usage/transformation
     usage = _normalize_to_usage(usage)
-    if not usage:
-        return None, "Usage vide ou invalide après normalisation"
     
     gabarit_name = usage.get("gabarit_name", "")
     gabarit_version = usage.get("gabarit_version", "v1")
     
+    if not gabarit_name:
+        return None, "gabarit_name manquant dans l'usage"
+    
+    # Récupérer le gabarit
+    gabarit = get_gabarit(gabarit_name, gabarit_version)
+    if not gabarit:
+        return None, f"Gabarit '{gabarit_name}' v{gabarit_version} introuvable"
+    
     if log_kpis:
-        logger.info(f"[PIPELINE] 🚀 DÉBUT pour {gabarit_name} (v{gabarit_version})")
-        logger.info(f"[PIPELINE]   • Mode: {'FULL' if full else 'PREVIEW'}")
-        logger.info(f"[PIPELINE]   • Params: {list(params.keys()) if params else []}")
+        logger.info(f"[PIPELINE] 🚀 DÉBUT construction table : {gabarit_name} v{gabarit_version}")
+        logger.info(f"[PIPELINE]   Mode: {'FULL' if full else 'PREVIEW (20 lignes)'}")
     
     # ============================================================================
-    # ÉTAPE 1 : CHARGEMENT BASE
+    # CHARGEMENT DES DONNÉES (preview ou full)
     # ============================================================================
-    if "_source_df" in usage:
-        df = usage["_source_df"].copy()
-        is_preview = False
-        complete = True
+    
+    # Vérifier si un DataFrame custom est fourni
+    custom_df = usage.get("_source_df")
+    if isinstance(custom_df, pd.DataFrame):
+        df = custom_df.copy()
         if log_kpis:
-            logger.info(f"[PIPELINE] 📦 ÉTAPE 1 : Base fournie - {len(df)} lignes × {len(df.columns)} colonnes")
+            logger.info(f"[PIPELINE] 📥 Source: DataFrame personnalisé ({len(df)} lignes)")
+    elif full:
+        # Mode FULL : charger toutes les données
+        df = get_default_dataframe_for_gabarit(gabarit_name, gabarit_version)
+        if df is None or df.empty:
+            return None, f"Impossible de charger les données FULL pour {gabarit_name} v{gabarit_version}"
+        if log_kpis:
+            logger.info(f"[PIPELINE] 📥 Source: FULL dataframe ({len(df)} lignes)")
     else:
-        df, is_preview = _load_df_for_gabarit(gabarit_name, gabarit_version, full=full)
-        if df is None:
-            if full:
-                return None, f"FULL demandé mais aucune source n'est définie pour {gabarit_name} (v{gabarit_version})."
-            return None, f"Aucune donnée par défaut pour {gabarit_name} ({gabarit_version})."
-
+        # Mode PREVIEW : utiliser le preview (20 lignes)
+        preview_data = get_default_preview(gabarit_name, gabarit_version)
+        if not preview_data or not preview_data.get("rows"):
+            return None, f"Aucun preview disponible pour {gabarit_name} v{gabarit_version}"
         
-        complete = (not is_preview) if full else True
+        rows = preview_data.get("rows", [])
+        cols = preview_data.get("columns", [])
+        df = pd.DataFrame(rows, columns=cols)
         
         if log_kpis:
-            logger.info(f"[PIPELINE] 📦 ÉTAPE 1 : Base chargée - {len(df)} lignes × {len(df.columns)} colonnes")
-            logger.info(f"[PIPELINE]   • Mode: {'PREVIEW' if is_preview else 'FULL'}")
-            logger.info(f"[PIPELINE]   • Colonnes: {list(df.columns)[:10]}{'...' if len(df.columns) > 10 else ''}")
+            logger.info(f"[PIPELINE] 📥 Source: PREVIEW ({len(df)} lignes)")
     
-    # Mémoriser les colonnes ajoutées par enrichissements
-    cols_before_enrich = set(df.columns)
-    added_enriched_cols: set[str] = set()
+    # ============================================================================
+    # ÉTAPE 1 : COLONNES DE BASE + CLÉS OBLIGATOIRES
+    # ============================================================================
+    cols_enabled = list(usage.get("columns_enabled") or [])
+    
+    if not cols_enabled:
+        cols_enabled = [c.name for c in (gabarit.columns or [])]
+    
+    # 🔑 CORRECTION CRITIQUE : Forcer l'inclusion des colonnes clés
+    key_cols = _get_key_columns(gabarit_name, gabarit_version)
+    cols_enabled_with_keys = list(dict.fromkeys(cols_enabled + key_cols))  # Déduplication en gardant l'ordre
+    
+    if log_kpis:
+        logger.info(f"[PIPELINE] 📋 ÉTAPE 1 : Colonnes de base")
+        logger.info(f"[PIPELINE]   • Colonnes sélectionnées: {len(cols_enabled)}")
+        logger.info(f"[PIPELINE]   • Colonnes clés ajoutées: {key_cols}")
+        logger.info(f"[PIPELINE]   • Total: {len(cols_enabled_with_keys)}")
+    
+    cols_in_df = [c for c in cols_enabled_with_keys if c in df.columns]
+    df = df[cols_in_df]
     
     # ============================================================================
     # ÉTAPE 2 : ENRICHISSEMENTS
     # ============================================================================
     enrichments = usage.get("enrichments") or []
+    cols_before_enrich = set(df.columns)
+    added_enriched_cols = set()
+    
     if enrichments and log_kpis:
         logger.info(f"[PIPELINE] 🔗 ÉTAPE 2 : {len(enrichments)} enrichissement(s)")
     
-    for idx_enrich, e in enumerate(enrichments):
-        path = e.get("path") or []
+    complete = full
+    for idx, e in enumerate(enrichments):
+        join_type = e.get("join", "left")
+        path = e.get("path", [])
+        
         if not path:
             continue
         
         if log_kpis:
-            logger.info(f"[PIPELINE]   • Enrichissement #{idx_enrich+1} : {len(path)} saut(s)")
+            logger.info(f"[PIPELINE]   Enrichissement #{idx+1} (type: {join_type})")
         
-        for i, step in enumerate(path):
-            frm, left_key, to, right_key = step
+        # Parcourir le chemin
+        for i, hop in enumerate(path):
+            if len(hop) < 4:
+                continue
             
-            df_to, is_prev_to = _load_df_for_gabarit(to, "v1", full=full)
-            if df_to is None:
-                if full:
-                    return df, f"FULL demandé mais aucune source n'est définie pour {to} (v1)."
-                return df, f"Aucune donnée par défaut pour {to} (v1)."
+            frm, left_key, to, right_key = hop[0], hop[1], hop[2], hop[3]
             
-            # Colonnes à rapatrier
-            cols_to_fetch: set[str] = set()
-            
-            if i + 1 < len(path):
-                next_left_key = path[i + 1][1]
-                if next_left_key and next_left_key in df_to.columns:
-                    cols_to_fetch.add(next_left_key)
+            # Charger la table cible
+            is_prev_to = False  # Flag pour savoir si on utilise preview
+            if full:
+                df_to = get_default_dataframe_for_gabarit(to, "v1")
             else:
-                for c in (e.get("columns") or []):
-                    if c and c in df_to.columns:
-                        cols_to_fetch.add(c)
+                prev_to = get_default_preview(to, "v1")
+                is_prev_to = prev_to and prev_to.get("rows")
+                if is_prev_to:
+                    df_to = pd.DataFrame(prev_to["rows"], columns=prev_to["columns"])
+                else:
+                    df_to = None
             
-            cols_to_fetch.discard(right_key)
-            cols_to_add = [c for c in cols_to_fetch if c not in df.columns]
+            if df_to is None or df_to.empty:
+                return df, f"Table cible '{to}' introuvable ou vide."
+            
+            # Colonnes à ajouter
+            cols_to_add = [c for c in (e.get("columns") or []) if c and c in df_to.columns and c not in df.columns]
             
             # Vérifier les clés
             if left_key not in df.columns or right_key not in df_to.columns:
@@ -450,17 +426,41 @@ def build_table_from_usage(
                 logger.info(f"[PIPELINE]       Colonnes ajoutées: {cols_to_add if cols_to_add else 'aucune'}")
             
             # MERGE
-            df = _debug_merge(
-                df,
-                right_subset,
-                how="left",
-                left_on=left_key,
-                right_on=right_key,
-                tag=f"{frm}->{to}"
-            )
-            
-            if right_key in df.columns:
-                df.drop(columns=[right_key], inplace=True)
+            # 🔑 CORRECTION : Si right_key existe déjà dans df, éviter le conflit
+            if right_key in df.columns and right_key != left_key:
+                # La clé existe déjà côté gauche (c'est une clé commune)
+                # On ne veut pas la dupliquer, donc on la retire du sous-ensemble droit
+                right_subset_cols = [c for c in right_subset.columns if c != right_key]
+                if right_subset_cols:  # S'il reste des colonnes à ajouter
+                    right_subset_for_merge = right_subset[right_subset_cols].copy()
+                    # Ajouter temporairement la clé pour le merge
+                    right_subset_for_merge[right_key] = right_subset[right_key]
+                    
+                    df = _debug_merge(
+                        df,
+                        right_subset_for_merge,
+                        how="left",
+                        left_on=left_key,
+                        right_on=right_key,
+                        tag=f"{frm}->{to}"
+                    )
+                    
+                    # Supprimer la clé dupliquée si elle existe
+                    if right_key in df.columns and left_key in df.columns and left_key != right_key:
+                        df.drop(columns=[right_key], inplace=True, errors='ignore')
+            else:
+                # Cas standard : pas de conflit
+                df = _debug_merge(
+                    df,
+                    right_subset,
+                    how="left",
+                    left_on=left_key,
+                    right_on=right_key,
+                    tag=f"{frm}->{to}"
+                )
+                
+                if right_key in df.columns and left_key != right_key:
+                    df.drop(columns=[right_key], inplace=True)
             
             added_enriched_cols.update([c for c in cols_to_add if c in df.columns])
             
@@ -577,10 +577,18 @@ def build_table_from_usage(
             df = df.sort_values(by=by, ascending=ascending, kind="mergesort", ignore_index=True)
     
     # ============================================================================
-    # ÉTAPE 7 : ORDRE / EXCLUSIONS
+    # ÉTAPE 7 : ORDRE / EXCLUSIONS (+ PROTECTION CLÉS)
     # ============================================================================
-    src_order = usage.get("final_order") or df.columns.tolist()
+    src_order = usage.get("final_order") or []
     src_excl = set(usage.get("final_excludes") or [])
+    
+    # 🔑 CORRECTION CRITIQUE : Les colonnes clés ne peuvent JAMAIS être exclues
+    key_cols_original = _get_key_columns(gabarit_name, gabarit_version)
+    key_cols_renamed = [ren.get(k, k) for k in key_cols_original]  # Prendre en compte les renommages
+    
+    # Si final_order est vide, utiliser toutes les colonnes actuelles
+    if not src_order:
+        src_order = list(df.columns)
     
     # Mapper l'ordre via les renommages
     mapped_order = []
@@ -591,20 +599,37 @@ def build_table_from_usage(
             mapped_order.append(cc)
             seen.add(cc)
     
-    # Exclusions
+    # 🔑 Ajouter les colonnes clés manquantes dans mapped_order (AU DÉBUT)
+    for key_col in key_cols_renamed:
+        if key_col in df.columns and key_col not in mapped_order:
+            mapped_order.insert(0, key_col)
+            if log_kpis:
+                logger.warning(f"[PIPELINE] 🔑 Colonne clé '{key_col}' absente de final_order → ajoutée automatiquement")
+    
+    # Exclusions (SAUF les colonnes clés)
     excl_names = set()
     for c in src_excl:
+        # ❌ Ne PAS exclure les colonnes clés (ni leur version originale, ni leur version renommée)
+        if c in key_cols_original or c in key_cols_renamed:
+            if log_kpis:
+                logger.warning(f"[PIPELINE] ⚠️ Tentative d'exclusion de la colonne clé '{c}' → IGNORÉE")
+            continue
+        
         excl_names.add(c)
         rc = ren.get(c)
-        if rc:
+        if rc and rc not in key_cols_renamed:
             excl_names.add(rc)
     
-    final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names] + \
-                 [c for c in df.columns if c not in mapped_order and c not in excl_names]
+    # Construction de la liste finale
+    final_cols = [c for c in mapped_order if c in df.columns and c not in excl_names]
+    
+    # Ajouter les colonnes non ordonnées (sauf exclusions)
+    final_cols += [c for c in df.columns if c not in final_cols and c not in excl_names]
     
     if log_kpis:
         logger.info(f"[PIPELINE] 📦 ÉTAPE 7 : Ordre final")
-        logger.info(f"[PIPELINE]   • Exclusions: {len(excl_names)} colonne(s)")
+        logger.info(f"[PIPELINE]   • Colonnes clés protégées: {key_cols_renamed}")
+        logger.info(f"[PIPELINE]   • Exclusions appliquées: {len(excl_names)} colonne(s)")
         logger.info(f"[PIPELINE]   • Colonnes finales: {len(final_cols)}")
         logger.info(f"[PIPELINE] ✅ FIN : {len(df)} lignes × {len(final_cols)} colonnes")
     

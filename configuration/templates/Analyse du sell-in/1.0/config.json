@@ -1,0 +1,110 @@
+{
+  "name": "Analyse du sell-in",
+  "version": "1.0",
+  "parameters": [],
+  "gabarit_usages": [
+    {
+      "gabarit_name": "SELL-IN",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "BD",
+        "table": "BD"
+      },
+      "columns_enabled": [
+        "CODE_CLIENT",
+        "CODE_PRODUIT",
+        "CODE_PERIODE",
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes"
+      ],
+      "methods": [],
+      "enrichments": [
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_CLIENT",
+              "Dim_clients_fmcg",
+              "CODE_CLIENT"
+            ]
+          ],
+          "columns": [
+            "Nom_client",
+            "Distributeur",
+            "Enseigne",
+            "Centrale_regionale",
+            "CODE_CLIENT"
+          ]
+        },
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_PERIODE",
+              "Dim_date_FMCG",
+              "CODE_PERIODE"
+            ]
+          ],
+          "columns": [
+            "Année",
+            "Mois",
+            "Semaine",
+            "Date",
+            "CODE_PERIODE"
+          ]
+        },
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_PRODUIT",
+              "Dim_produits_FMCG",
+              "CODE_PRODUIT"
+            ]
+          ],
+          "columns": [
+            "Marque",
+            "Produit",
+            "Produit_détail",
+            "Format",
+            "CODE_PRODUIT"
+          ]
+        }
+      ],
+      "overlay_python": "",
+      "final_renames": {},
+      "final_sort": [],
+      "source_kind": "gabarit",
+      "transformation_name": "",
+      "transformation_version": "v1",
+      "final_order": [
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes",
+        "Nom_client",
+        "Enseigne",
+        "Distributeur",
+        "Centrale_regionale",
+        "Semaine",
+        "Année",
+        "Date",
+        "Mois",
+        "Format",
+        "Produit_détail",
+        "Produit",
+        "Marque"
+      ],
+      "final_excludes": []
+    }
+  ],
+  "tags": {
+    "themes": [],
+    "families": []
+  }
+}

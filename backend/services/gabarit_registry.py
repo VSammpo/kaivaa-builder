@@ -237,10 +237,29 @@ def get_gabarit(name: str, version: str = "v1") -> Optional[TableGabarit]:
 
 def upsert_gabarit(gabarit: TableGabarit) -> None:
     _ensure_dirs()
-    payload = _normalize_gabarit_payload(gabarit.model_dump(mode="json"))
-    p = _gab_path(payload["name"], payload["version"])
-    _write_json(p, payload)
-    logger.info(f"Gabarit upsert: {payload['name']} {payload['version']} -> {p}")
+    p = _gab_path(gabarit.name, gabarit.version)
+    
+    # Charger les données existantes si le fichier existe
+    existing_data = {}
+    if p.exists():
+        try:
+            existing_data = _read_json(p)
+        except Exception:
+            pass
+    
+    # Préparer le nouveau payload
+    new_payload = _normalize_gabarit_payload(gabarit.model_dump(mode="json"))
+    
+    # Fusionner : préserver defaults, methods, relations, role de l existant
+    if existing_data:
+        new_payload["defaults"] = existing_data.get("defaults", {})
+        new_payload["methods"] = existing_data.get("methods", [])
+        new_payload["relations"] = existing_data.get("relations", [])
+        new_payload["role"] = existing_data.get("role", None)
+    
+    _write_json(p, new_payload)
+    logger.info(f"Gabarit upsert: {new_payload['name']} {new_payload['version']} -> {p}")
+
 
 def delete_gabarit(name: str, version: str = "v1") -> bool:
     p = _gab_path((name or "").strip(), (version or "v1").strip())
@@ -583,3 +602,155 @@ def get_default_dataframe(gabarit_name: str, gabarit_version: str = "v1") -> Opt
         return _load_dataframe_from_source(src)
     except Exception:
         return None
+
+
+# --- FILTRES AVANCÉS POUR GABARITS -------------------------------------------
+
+def get_all_related_gabarits(gabarit_name: str, gabarit_version: str) -> dict:
+    """
+    Retourne toutes les tables liées à un gabarit donné (enrichissements in/out).
+    
+    Args:
+        gabarit_name: Nom du gabarit source
+        gabarit_version: Version du gabarit source
+        
+    Returns:
+        dict avec:
+        - "enrichment_sources": liste de (nom, version) des tables qui enrichissent CE gabarit
+        - "enrichment_targets": liste de (nom, version) des tables enrichies PAR ce gabarit
+        
+    Exemple:
+        Si SELL-IN est enrichi par Dim_clients et Dim_produits:
+        {
+            "enrichment_sources": [("Dim_clients", "v1"), ("Dim_produits", "v1")],
+            "enrichment_targets": []
+        }
+    """
+    _ensure_dirs()
+    v = (gabarit_version or "v1").strip()
+    
+    enrichment_sources = set()  # Tables qui enrichissent CE gabarit (to_gabarit = nous)
+    enrichment_targets = set()  # Tables enrichies PAR ce gabarit (from_gabarit = nous)
+    
+    if not GAB_DIR.exists():
+        return {"enrichment_sources": [], "enrichment_targets": []}
+    
+    # Scanner tous les fichiers de gabarits
+    for gdir in GAB_DIR.iterdir():
+        if not gdir.is_dir():
+            continue
+        if gdir.name.startswith("_"):  # ignore _trash
+            continue
+            
+        for jf in gdir.glob("*.json"):
+            try:
+                data = _normalize_gabarit_payload(_read_json(jf))
+                
+                # Parcourir les relations de ce gabarit
+                for r in data.get("relations", []) or []:
+                    from_gab = r.get("from_gabarit", "")
+                    from_ver = r.get("from_version", "v1")
+                    to_gab = r.get("to_gabarit", "")
+                    to_ver = r.get("to_version", "v1")
+                    
+                    # Si notre gabarit est le "from" (il enrichit quelqu'un)
+                    if from_gab == gabarit_name and from_ver == v:
+                        enrichment_targets.add((to_gab, to_ver))
+                    
+                    # Si notre gabarit est le "to" (il est enrichi par quelqu'un)
+                    if to_gab == gabarit_name and to_ver == v:
+                        enrichment_sources.add((from_gab, from_ver))
+                        
+            except Exception:
+                continue
+    
+    return {
+        "enrichment_sources": sorted(list(enrichment_sources)),
+        "enrichment_targets": sorted(list(enrichment_targets))
+    }
+
+
+def get_gabarits_by_role(role: str = None) -> List[TableGabarit]:
+    """
+    Retourne la liste des gabarits filtrés par rôle.
+    
+    Args:
+        role: "fact", "dimension", "mixed", ou None pour tous
+        
+    Returns:
+        Liste de TableGabarit
+    """
+    all_gabs = list_gabarits()
+    
+    if role is None:
+        return all_gabs
+    
+    filtered = []
+    for gab in all_gabs:
+        gab_role = get_role(gab.name, gab.version)
+        if gab_role == role:
+            filtered.append(gab)
+    
+    return filtered
+
+
+def get_gabarits_related_to(gabarit_name: str, gabarit_version: str) -> List[TableGabarit]:
+    """
+    Retourne tous les gabarits qui ont une relation avec le gabarit spécifié
+    (soit comme source d'enrichissement, soit comme cible).
+    
+    Args:
+        gabarit_name: Nom du gabarit de référence
+        gabarit_version: Version du gabarit de référence
+        
+    Returns:
+        Liste de TableGabarit liés (sans le gabarit de référence lui-même)
+    """
+    related = get_all_related_gabarits(gabarit_name, gabarit_version)
+    
+    # Récupérer tous les noms uniques
+    all_related_names = set()
+    for name, version in related["enrichment_sources"]:
+        all_related_names.add((name, version))
+    for name, version in related["enrichment_targets"]:
+        all_related_names.add((name, version))
+    
+    # Charger les gabarits correspondants
+    result = []
+    for name, version in all_related_names:
+        gab = get_gabarit(name, version)
+        if gab:
+            result.append(gab)
+    
+    return result
+
+
+def get_unique_roles() -> List[str]:
+    """
+    Retourne la liste des rôles uniques utilisés dans les gabarits existants.
+    
+    Returns:
+        Liste des rôles (ex: ["fact", "dimension", "mixed"])
+    """
+    _ensure_dirs()
+    roles = set()
+    
+    if not GAB_DIR.exists():
+        return []
+    
+    for gdir in GAB_DIR.iterdir():
+        if not gdir.is_dir():
+            continue
+        if gdir.name.startswith("_"):
+            continue
+            
+        for jf in gdir.glob("*.json"):
+            try:
+                data = _read_json(jf)
+                role = data.get("role")
+                if role:
+                    roles.add(role)
+            except Exception:
+                continue
+    
+    return sorted(list(roles))

@@ -1,0 +1,29 @@
+{
+  "project_id": "diagnostic-360",
+  "name": "Diagnostic 360°",
+  "client_name": "MBWS",
+  "description": "Analyse de l'activité de MBWS",
+  "status": "active",
+  "deliverables": [
+    {
+      "template_id": 45,
+      "template_name": "Analyse du sell-in",
+      "template_version": "1.0",
+      "custom_masters": {
+        "ppt_path": "configuration\\projets\\diagnostic-360\\masters\\45\\presentation.pptx",
+        "excel_path": "configuration\\projets\\diagnostic-360\\masters\\45\\donnees.xlsx"
+      },
+      "custom_parameters": {},
+      "is_functional": true,
+      "completion_rate": 100.0,
+      "data_sources_status": {
+        "client": 0,
+        "default": 1
+      },
+      "last_generated_at": "2025-10-29T20:47:39.192528+01:00"
+    }
+  ],
+  "data_sources": [],
+  "created_at": "2025-10-29T20:47:05+01:00",
+  "updated_at": "2025-10-29T20:47:39+01:00"
+}

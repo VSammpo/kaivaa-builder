@@ -1,0 +1,115 @@
+{
+  "project_id": "diagnostic-360",
+  "name": "Diagnostic 360°_Supr_n0001",
+  "client_name": "MBWS",
+  "description": "Analyse de l'activité à 360°",
+  "status": "archived",
+  "deliverables": [
+    {
+      "template_id": 45,
+      "template_name": "Analyse du sell-in",
+      "template_version": "1.0",
+      "custom_masters": {
+        "ppt_path": "configuration\\projets\\diagnostic-360\\masters\\45\\presentation.pptx",
+        "excel_path": "configuration\\projets\\diagnostic-360\\masters\\45\\donnees.xlsx"
+      },
+      "custom_parameters": {},
+      "is_functional": true,
+      "completion_rate": 100.0,
+      "data_sources_status": {
+        "client": 1,
+        "default": 0
+      },
+      "last_generated_at": "2025-10-29T19:20:07.138392+01:00"
+    }
+  ],
+  "data_sources": [
+    {
+      "gabarit_name": "Dim_clients_fmcg",
+      "gabarit_version": "v1",
+      "source_type": "client",
+      "source_config": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_client_FMCG.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig"
+      },
+      "row_count": 146,
+      "columns_filled": {
+        "CODE CLIENT": 100.0,
+        "Nom_client": 100.0,
+        "Distributeur": 100.0,
+        "Enseigne": 100.0,
+        "Centrale_regionale": 100.0
+      },
+      "last_validated_at": "2025-10-29T18:31:01+01:00"
+    },
+    {
+      "gabarit_name": "Dim_date_FMCG",
+      "gabarit_version": "v1",
+      "source_type": "client",
+      "source_config": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_date_FMCG.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig"
+      },
+      "row_count": 228,
+      "columns_filled": {
+        "CODE_PERIODE": 100.0,
+        "Année": 100.0,
+        "Mois": 100.0,
+        "Semaine": 100.0,
+        "Date": 0.0
+      },
+      "last_validated_at": "2025-10-29T18:31:22+01:00"
+    },
+    {
+      "gabarit_name": "Dim_produits_FMCG",
+      "gabarit_version": "v1",
+      "source_type": "client",
+      "source_config": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_produit_FMCG.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig"
+      },
+      "row_count": 145,
+      "columns_filled": {
+        "CODE_PRODUIT": 100.0,
+        "Ean": 100.0,
+        "Marque": 100.0,
+        "Produit": 100.0,
+        "Produit_détail": 100.0,
+        "Format": 100.0
+      },
+      "last_validated_at": "2025-10-29T18:40:02+01:00"
+    },
+    {
+      "gabarit_name": "SELL-IN",
+      "gabarit_version": "v1",
+      "source_type": "client",
+      "source_config": {
+        "type": "csv",
+        "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Sell_in_MBWS.csv",
+        "sep": ",",
+        "encoding": "utf-8-sig",
+        "python": "df = df.rename(columns={\"CODE_ARTICLE\": \"CODE_PRODUIT\"})\r\n"
+      },
+      "row_count": 1000,
+      "columns_filled": {
+        "CODE_CLIENT": 100.0,
+        "CODE_PRODUIT": 100.0,
+        "CODE_PERIODE": 100.0,
+        "CODE_PROMO": 100.0,
+        "Unite_volumes": 100.0,
+        "Chiffre_daffaires": 100.0,
+        "Volumes": 100.0
+      },
+      "last_validated_at": "2025-10-29T19:16:57+01:00"
+    }
+  ],
+  "created_at": "2025-10-29T18:22:10+01:00",
+  "updated_at": "2025-10-29T20:46:46+01:00",
+  "archived_at": "2025-10-29T20:46:46+01:00"
+}

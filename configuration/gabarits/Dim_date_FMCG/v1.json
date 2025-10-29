@@ -1,0 +1,235 @@
+{
+  "name": "Dim_date_FMCG",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "CODE_PERIODE",
+      "type": "text",
+      "is_key": true
+    },
+    {
+      "name": "Année",
+      "type": "number",
+      "is_key": false
+    },
+    {
+      "name": "Mois",
+      "type": "number",
+      "is_key": false
+    },
+    {
+      "name": "Semaine",
+      "type": "number",
+      "is_key": false
+    },
+    {
+      "name": "Date",
+      "type": "date",
+      "is_key": false
+    }
+  ],
+  "title": "Dim_date_FMCG",
+  "methods": [
+    {
+      "id": "cfc3452e-582c-41cd-afbe-781767172c12",
+      "name": "Numéro_semaine_table",
+      "description": "Numéro de la semaine (sans prendre en compte l'année)",
+      "output_column": "Numéro_semaine_table",
+      "param_schema": [],
+      "required_columns": [
+        "Année",
+        "Semaine"
+      ],
+      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\nvalue = (_ord - _ord.min() + 1).astype(int)\r\n",
+      "order": 1
+    },
+    {
+      "id": "74cb616b-68a1-41d8-b238-4a46679abf0c",
+      "name": "Année_relative",
+      "description": "N, N-1, etc.",
+      "output_column": "Année_relative",
+      "param_schema": [],
+      "required_columns": [
+        "Année",
+        "Semaine"
+      ],
+      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\n_delta = (_ord.max() - _ord)\r\n_block52 = (_delta // 52).astype(int)\r\nvalue = _block52.map(lambda b: \"N\" if b == 0 else f\"N-{b}\")\r\n",
+      "order": 2
+    },
+    {
+      "id": "4a9b200b-f8dc-4201-96d8-0d7c6f09cff8",
+      "name": "Trimestre_relatif",
+      "description": "T, T-1, etc.",
+      "output_column": "Trimestre_relatif",
+      "param_schema": [],
+      "required_columns": [
+        "Année",
+        "Semaine"
+      ],
+      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\n_delta = (_ord.max() - _ord)\r\n_block13 = (_delta // 13).astype(int)\r\nvalue = _block13.map(lambda b: \"T\" if b == 0 else f\"T-{b:02d}\")\r\n",
+      "order": 3
+    }
+  ],
+  "defaults": {
+    "source": {
+      "type": "csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_date_FMCG.csv",
+      "sep": ",",
+      "encoding": "utf-8-sig"
+    },
+    "preview": {
+      "columns": [
+        "CODE_PERIODE",
+        "Année",
+        "Mois",
+        "Semaine",
+        "Date"
+      ],
+      "rows": [
+        {
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "Année": 2024,
+          "Mois": 1,
+          "Semaine": 1,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Jan - 01",
+          "Année": 2025,
+          "Mois": 1,
+          "Semaine": 1,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Jan - 02",
+          "Année": 2024,
+          "Mois": 1,
+          "Semaine": 2,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Jan - 02",
+          "Année": 2025,
+          "Mois": 1,
+          "Semaine": 2,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Jan - 03",
+          "Année": 2024,
+          "Mois": 1,
+          "Semaine": 3,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Jan - 03",
+          "Année": 2025,
+          "Mois": 1,
+          "Semaine": 3,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Jan - 04",
+          "Année": 2024,
+          "Mois": 1,
+          "Semaine": 4,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Jan - 04",
+          "Année": 2025,
+          "Mois": 1,
+          "Semaine": 4,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Jan - 05",
+          "Année": 2025,
+          "Mois": 1,
+          "Semaine": 5,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Feb - 05",
+          "Année": 2024,
+          "Mois": 2,
+          "Semaine": 5,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Jan - 05",
+          "Année": 2024,
+          "Mois": 1,
+          "Semaine": 5,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Feb - 06",
+          "Année": 2024,
+          "Mois": 2,
+          "Semaine": 6,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Feb - 06",
+          "Année": 2025,
+          "Mois": 2,
+          "Semaine": 6,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Feb - 07",
+          "Année": 2024,
+          "Mois": 2,
+          "Semaine": 7,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Feb - 07",
+          "Année": 2025,
+          "Mois": 2,
+          "Semaine": 7,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Feb - 08",
+          "Année": 2025,
+          "Mois": 2,
+          "Semaine": 8,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Feb - 08",
+          "Année": 2024,
+          "Mois": 2,
+          "Semaine": 8,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Feb - 09",
+          "Année": 2024,
+          "Mois": 2,
+          "Semaine": 9,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - Feb - 09",
+          "Année": 2025,
+          "Mois": 2,
+          "Semaine": 9,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2024 - Mar - 09",
+          "Année": 2024,
+          "Mois": 3,
+          "Semaine": 9,
+          "Date": null
+        }
+      ]
+    }
+  },
+  "relations": [],
+  "role": "dimension"
+}

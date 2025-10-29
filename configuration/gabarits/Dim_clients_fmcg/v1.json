@@ -1,0 +1,196 @@
+{
+  "name": "Dim_clients_fmcg",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "CODE_CLIENT",
+      "type": "text",
+      "is_key": true
+    },
+    {
+      "name": "Nom_client",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Distributeur",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Enseigne",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Centrale_regionale",
+      "type": "text",
+      "is_key": false
+    }
+  ],
+  "title": "Dim_clients_fmcg",
+  "methods": [],
+  "defaults": {
+    "source": {
+      "type": "csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_client_FMCG.csv",
+      "sep": ",",
+      "encoding": "utf-8-sig",
+      "python": "df = df.rename(columns={\"CODE CLIENT\": \"CODE_CLIENT\"})"
+    },
+    "preview": {
+      "columns": [
+        "CODE_CLIENT",
+        "Nom_client",
+        "Distributeur",
+        "Enseigne",
+        "Centrale_regionale"
+      ],
+      "rows": [
+        {
+          "CODE_CLIENT": 10001058,
+          "Nom_client": "ALDI MARCHE TOULOUSE",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001197,
+          "Nom_client": "ALDI MARCHE HONFLEUR SARL",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001199,
+          "Nom_client": "ALDI MARCHE REIMS",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001465,
+          "Nom_client": "ALDI MARCHE DAMMARTIN",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001466,
+          "Nom_client": "ALDI MARCHE LYON",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 50013647,
+          "Nom_client": "ALDI MARCHE BOUFFERE",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 50013653,
+          "Nom_client": "ALDI MARCHE SAUVIAN",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001055,
+          "Nom_client": "ALDI MARCHE BEAUNE",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001056,
+          "Nom_client": "ALDI MARCHE BOIS GRENIER",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001464,
+          "Nom_client": "ALDI MARCHE CESTAS",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 50083910,
+          "Nom_client": "ALDI MARCHE BRIE COMTE ROBERT",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001051,
+          "Nom_client": "ALDI MARCHE ENNERY SARL",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001053,
+          "Nom_client": "ALDI MARCHE CUINCY",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001057,
+          "Nom_client": "ALDI MARCHE ABLIS",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001054,
+          "Nom_client": "ALDI MARCHE CAVAILLON SARL",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001181,
+          "Nom_client": "ALDI MARCHE COLMAR",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 50013649,
+          "Nom_client": "ALDI MARCHE BRIE COMTE ROBERT",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 50013714,
+          "Nom_client": "ALDI ENNERY SARL MARCH GRATUITE",
+          "Distributeur": "ALDI",
+          "Enseigne": "ALDI",
+          "Centrale_regionale": "ALDI"
+        },
+        {
+          "CODE_CLIENT": 10001045,
+          "Nom_client": "AUCHAN AMIENS LIV",
+          "Distributeur": "AUCHAN",
+          "Enseigne": "AUCHAN HYPER",
+          "Centrale_regionale": "AUCHAN HM"
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "Nom_client": "AUCHAN NIMES LIV 2",
+          "Distributeur": "AUCHAN",
+          "Enseigne": "AUCHAN HYPER",
+          "Centrale_regionale": "AUCHAN HM"
+        }
+      ]
+    }
+  },
+  "relations": [],
+  "role": "dimension"
+}

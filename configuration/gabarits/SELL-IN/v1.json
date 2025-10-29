@@ -1,0 +1,276 @@
+{
+  "name": "SELL-IN",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "CODE_CLIENT",
+      "type": "text",
+      "is_key": true
+    },
+    {
+      "name": "CODE_PRODUIT",
+      "type": "number",
+      "is_key": true
+    },
+    {
+      "name": "CODE_PERIODE",
+      "type": "date",
+      "is_key": true
+    },
+    {
+      "name": "CODE_PROMO",
+      "type": "text",
+      "is_key": true
+    },
+    {
+      "name": "Unite_volumes",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Chiffre_daffaires",
+      "type": "number",
+      "is_key": false
+    },
+    {
+      "name": "Volumes",
+      "type": "number",
+      "is_key": false
+    }
+  ],
+  "title": "SELL-IN",
+  "methods": [],
+  "defaults": {
+    "source": {
+      "type": "csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Sell_in_MBWS.csv",
+      "sep": ",",
+      "encoding": "utf-8-sig",
+      "python": "df = df.rename(columns={\"CODE CLIENT\": \"CODE_CLIENT\"})\ndf = df.rename(columns={\"CODE_ARTICLE\": \"CODE_PRODUIT\"})"
+    },
+    "preview": {
+      "columns": [
+        "CODE_CLIENT",
+        "CODE_PRODUIT",
+        "CODE_PERIODE",
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes"
+      ],
+      "rows": [
+        {
+          "CODE_CLIENT": 10001053,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "19973",
+          "Volumes": 583
+        },
+        {
+          "CODE_CLIENT": 10001054,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 10001055,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 10001056,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 10001057,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "15979",
+          "Volumes": 467
+        },
+        {
+          "CODE_CLIENT": 10001058,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 10001181,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 10001197,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "15979",
+          "Volumes": 467
+        },
+        {
+          "CODE_CLIENT": 10001464,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "9987",
+          "Volumes": 292
+        },
+        {
+          "CODE_CLIENT": 10001466,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 50013647,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 50013653,
+          "CODE_PRODUIT": 50002974,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7989",
+          "Volumes": 233
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 70000589,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "0342",
+          "Volumes": 5
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 50001494,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "1376",
+          "Volumes": 20
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 70005430,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "1211",
+          "Volumes": 45
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 70005438,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "1633",
+          "Volumes": 67
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 70005852,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "0216",
+          "Volumes": 5
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 50001848,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "7292",
+          "Volumes": 224
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 50001976,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "10990",
+          "Volumes": 350
+        },
+        {
+          "CODE_CLIENT": 50012398,
+          "CODE_PRODUIT": 50002124,
+          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PROMO": "STD",
+          "Unite_volumes": "C9L",
+          "Chiffre_daffaires": "4689",
+          "Volumes": 112
+        }
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from_gabarit": "SELL-IN",
+      "from_version": "v1",
+      "to_gabarit": "Dim_clients_fmcg",
+      "to_version": "v1",
+      "left_key": "CODE_CLIENT",
+      "right_key": "CODE_CLIENT",
+      "relation_id": "SELL-IN|v1->Dim_clients_fmcg|v1::CODE_CLIENT=CODE_CLIENT"
+    },
+    {
+      "from_gabarit": "SELL-IN",
+      "from_version": "v1",
+      "to_gabarit": "Dim_date_FMCG",
+      "to_version": "v1",
+      "left_key": "CODE_PERIODE",
+      "right_key": "CODE_PERIODE",
+      "relation_id": "SELL-IN|v1->Dim_date_FMCG|v1::CODE_PERIODE=CODE_PERIODE"
+    },
+    {
+      "from_gabarit": "SELL-IN",
+      "from_version": "v1",
+      "to_gabarit": "Dim_produits_FMCG",
+      "to_version": "v1",
+      "left_key": "CODE_PRODUIT",
+      "right_key": "CODE_PRODUIT",
+      "relation_id": "SELL-IN|v1->Dim_produits_FMCG|v1::CODE_PRODUIT=CODE_PRODUIT"
+    }
+  ],
+  "role": "fact"
+}

@@ -78,6 +78,7 @@ st.divider()
 def compute_required_gabarits(proj: dict) -> dict:
     """
     Calcule l'union des gabarits requis par tous les livrables.
+    INCLUT les gabarits d'enrichissement (dimensions).
     Retourne : {(gabarit_name, gabarit_version): {"columns": [...], "templates": [...]}}
     """
     from backend.services.template_service import TemplateService
@@ -108,7 +109,7 @@ def compute_required_gabarits(proj: dict) -> dict:
                     "templates": []
                 }
             
-            # Ajouter les colonnes (union)
+            # Ajouter les colonnes de la table principale (union)
             cols = u.get("columns_enabled", [])
             if not cols:
                 # Si aucune colonne spécifique, prendre toutes les colonnes du gabarit
@@ -124,6 +125,41 @@ def compute_required_gabarits(proj: dict) -> dict:
             tpl_name = deliv.get("template_name", f"Template #{template_id}")
             if tpl_name not in required[key]["templates"]:
                 required[key]["templates"].append(tpl_name)
+            
+            # ========= NOUVEAU : Extraire les gabarits d'enrichissement =========
+            enrichments = u.get("enrichments", [])
+            for enrich in enrichments:
+                if not isinstance(enrich, dict):
+                    continue
+                
+                # Extraire les gabarits depuis le path
+                # Format: [["SELL-IN", "CODE_CLIENT", "Dim_clients_fmcg", "CODE_CLIENT"], ...]
+                path = enrich.get("path", [])
+                for step in path:
+                    if not isinstance(step, list) or len(step) < 3:
+                        continue
+                    
+                    # step[2] est le gabarit de dimension
+                    dim_name = step[2]
+                    dim_ver = "v1"  # Par défaut v1, ou extraire si disponible
+                    
+                    dim_key = (dim_name, dim_ver)
+                    
+                    if dim_key not in required:
+                        required[dim_key] = {
+                            "columns": [],
+                            "templates": []
+                        }
+                    
+                    # Ajouter les colonnes demandées pour cet enrichissement
+                    enrich_cols = enrich.get("columns", [])
+                    for c in enrich_cols:
+                        if c not in required[dim_key]["columns"]:
+                            required[dim_key]["columns"].append(c)
+                    
+                    # Ajouter le template
+                    if tpl_name not in required[dim_key]["templates"]:
+                        required[dim_key]["templates"].append(tpl_name)
     
     return required
 
@@ -532,4 +568,3 @@ with col_refresh:
         
         except Exception as e:
             st.error(f"❌ Erreur : {e}")
-

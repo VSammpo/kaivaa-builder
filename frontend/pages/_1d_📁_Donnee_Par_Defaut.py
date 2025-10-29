@@ -103,6 +103,16 @@ if "selected_gabarit" not in st.session_state or not st.session_state.selected_g
 gab_name, gab_version = st.session_state.selected_gabarit
 gabarit = get_gabarit(gab_name, gab_version)
 
+# ==== Détecter si on a changé de gabarit pour forcer le rechargement
+k_last_gab = "last_viewed_gabarit"
+current_gab_id = f"{gab_name}|{gab_version}"
+if k_last_gab in st.session_state and st.session_state[k_last_gab] != current_gab_id:
+    # On a changé de gabarit, nettoyer tous les flags hydrated
+    keys_to_clean = [k for k in st.session_state.keys() if "hydrated_once__" in k]
+    for k in keys_to_clean:
+        del st.session_state[k]
+st.session_state[k_last_gab] = current_gab_id
+
 # ==== Clés de session namespacées
 k_enabled = _ns("default_enabled", gab_name, gab_version)
 k_mode    = _ns("default_mode", gab_name, gab_version)              # "file" | "python_only"
@@ -130,29 +140,32 @@ if k_flash in st.session_state:
     del st.session_state[k_flash]
 
 
-# ==== 2) Charger l'état depuis le JSON, puis hydrater au premier run
+# ==== 2) Charger l'état depuis le JSON au premier chargement de page
+# La clé est de détecter si on arrive sur la page (pas de k_hydrated) ou si on est déjà dessus
 current_default = get_default_source(gabarit.name, gabarit.version) or {}
 
-if k_hydrated not in st.session_state:
+# Recharger UNIQUEMENT si on vient d'arriver sur la page (k_hydrated absent)
+# ET qu'il n'y a pas de postsave en cours
+if k_hydrated not in st.session_state and k_post not in st.session_state:
     if current_default:
         mode = "file" if current_default.get("path") else (
             "python_only" if current_default.get("type") in {"python_only", "script"} else "file"
         )
-        st.session_state.setdefault(k_enabled, True)
-        st.session_state.setdefault(k_mode,    mode)
-        st.session_state.setdefault(k_fmt,     current_default.get("type") if current_default.get("type") in {"csv","parquet"} else ("python_only" if mode=="python_only" else "csv"))
-        st.session_state.setdefault(k_path,    current_default.get("path", ""))
-        st.session_state.setdefault(k_sep,     current_default.get("sep", ";"))
-        st.session_state.setdefault(k_enc,     current_default.get("encoding", "utf-8-sig"))
-        st.session_state.setdefault(k_codebuf, current_default.get("python", ""))
+        st.session_state[k_enabled] = True
+        st.session_state[k_mode]    = mode
+        st.session_state[k_fmt]     = current_default.get("type") if current_default.get("type") in {"csv","parquet"} else ("python_only" if mode=="python_only" else "csv")
+        st.session_state[k_path]    = current_default.get("path", "")
+        st.session_state[k_sep]     = current_default.get("sep", ";")
+        st.session_state[k_enc]     = current_default.get("encoding", "utf-8-sig")
+        st.session_state[k_codebuf] = current_default.get("python", "")
     else:
-        st.session_state.setdefault(k_enabled, False)
-        st.session_state.setdefault(k_mode,    "file")
-        st.session_state.setdefault(k_fmt,     "csv")
-        st.session_state.setdefault(k_path,    "")
-        st.session_state.setdefault(k_sep,     ";")
-        st.session_state.setdefault(k_enc,     "utf-8-sig")
-        st.session_state.setdefault(k_codebuf, "")
+        st.session_state[k_enabled] = False
+        st.session_state[k_mode]    = "file"
+        st.session_state[k_fmt]     = "csv"
+        st.session_state[k_path]    = ""
+        st.session_state[k_sep]     = ";"
+        st.session_state[k_enc]     = "utf-8-sig"
+        st.session_state[k_codebuf] = ""
     st.session_state[k_hydrated] = True
 
 render_gabarit_subnav("default")

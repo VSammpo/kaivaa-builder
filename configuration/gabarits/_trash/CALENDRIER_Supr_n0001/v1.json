@@ -1,0 +1,117 @@
+{
+  "name": "CALENDRIER_Supr_n0001",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "CODE_PERIODE",
+      "type": "text",
+      "is_key": true
+    },
+    {
+      "name": "date",
+      "type": "date",
+      "is_key": false
+    },
+    {
+      "name": "annee",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "jour",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "jour_semaine",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "nom_jour",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "nom_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "semaine_annee",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "trimestre",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "annee_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "est_ferie",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "nom_ferie",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "est_weekend",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "est_ouvre",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "est_debut_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "est_fin_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "nb_jours_ouvres_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "premier_jour_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "dernier_jour_mois",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "date_fr",
+      "type": "date",
+      "is_key": false
+    }
+  ],
+  "title": "CALENDRIER",
+  "methods": [],
+  "defaults": {},
+  "relations": [],
+  "role": "dimension"
+}

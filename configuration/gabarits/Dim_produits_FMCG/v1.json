@@ -1,0 +1,221 @@
+{
+  "name": "Dim_produits_FMCG",
+  "version": "v1",
+  "description": "",
+  "columns": [
+    {
+      "name": "CODE_PRODUIT",
+      "type": "number",
+      "is_key": true
+    },
+    {
+      "name": "Ean",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Marque",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Produit",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Produit_détail",
+      "type": "text",
+      "is_key": false
+    },
+    {
+      "name": "Format",
+      "type": "text",
+      "is_key": false
+    }
+  ],
+  "title": "Dim_produits_FMCG",
+  "methods": [],
+  "defaults": {
+    "source": {
+      "type": "csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_produit_FMCG.csv",
+      "sep": ",",
+      "encoding": "utf-8-sig"
+    },
+    "preview": {
+      "columns": [
+        "CODE_PRODUIT",
+        "Ean",
+        "Marque",
+        "Produit",
+        "Produit_détail",
+        "Format"
+      ],
+      "rows": [
+        {
+          "CODE_PRODUIT": 50002974,
+          "Ean": 3107872000507,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70000589,
+          "Ean": 3041311026577,
+          "Marque": "MARIE BRIZARD",
+          "Produit": "MARIE BRIZARD LIQUEUR ANISETTE",
+          "Produit_détail": "MARIE BRIZARD LIQUEUR ANISETTE 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 50001494,
+          "Ean": 3107872600394,
+          "Marque": "SAN JOSE",
+          "Produit": "SAN JOSE TEQUILA SILVER",
+          "Produit_détail": "SAN JOSE TEQUILA SILVER 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70005430,
+          "Ean": 5902738884530,
+          "Marque": "SOBIESKI",
+          "Produit": "SOBIESKI VODKA CLASSIC",
+          "Produit_détail": "SOBIESKI VODKA CLASSIC 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70005438,
+          "Ean": 5902738884554,
+          "Marque": "SOBIESKI",
+          "Produit": "SOBIESKI VODKA CLASSIC",
+          "Produit_détail": "SOBIESKI VODKA CLASSIC 1L/100CL",
+          "Format": "1L/100CL"
+        },
+        {
+          "CODE_PRODUIT": 70005852,
+          "Ean": 5902738884479,
+          "Marque": "SOBIESKI",
+          "Produit": "SOBIESKI VODKA CLASSIC",
+          "Produit_détail": "SOBIESKI VODKA CLASSIC 20CL",
+          "Format": "20CL"
+        },
+        {
+          "CODE_PRODUIT": 50001848,
+          "Ean": 3107872000507,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 50001976,
+          "Ean": 3107872000606,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 1L/100CL",
+          "Format": "1L/100CL"
+        },
+        {
+          "CODE_PRODUIT": 50002124,
+          "Ean": 3107872006769,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 50CL",
+          "Format": "50CL"
+        },
+        {
+          "CODE_PRODUIT": 70004981,
+          "Ean": 3107872007162,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 1L/100CL",
+          "Format": "1L/100CL"
+        },
+        {
+          "CODE_PRODUIT": 50001851,
+          "Ean": 3107872002723,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 2L/200CL",
+          "Format": "2L/200CL"
+        },
+        {
+          "CODE_PRODUIT": 70000533,
+          "Ean": 3041311027819,
+          "Marque": "MARIE BRIZARD",
+          "Produit": "MARIE BRIZARD LIQUEUR ELDERFLOWER",
+          "Produit_détail": "MARIE BRIZARD LIQUEUR ELDERFLOWER 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70005974,
+          "Ean": 5902738887814,
+          "Marque": "SOBIESKI",
+          "Produit": "SOBIESKI VODKA CLASSIC",
+          "Produit_détail": "SOBIESKI VODKA CLASSIC 6X20CL/1.2L",
+          "Format": "6X20CL/1.2L"
+        },
+        {
+          "CODE_PRODUIT": 70002802,
+          "Ean": 3041311025860,
+          "Marque": "BERGER",
+          "Produit": "BERGER BERGER BLANC",
+          "Produit_détail": "BERGER BERGER BLANC 1L/100CL",
+          "Format": "1L/100CL"
+        },
+        {
+          "CODE_PRODUIT": 70000643,
+          "Ean": 3041311028786,
+          "Marque": "MARIE BRIZARD",
+          "Produit": "MARIE BRIZARD LIQUEUR MINT'S GREEN",
+          "Produit_détail": "MARIE BRIZARD LIQUEUR MINT'S GREEN 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70003843,
+          "Ean": 3041311027635,
+          "Marque": "MARIE BRIZARD",
+          "Produit": "MARIE BRIZARD LIQUEUR APPLE MANZANITA",
+          "Produit_détail": "MARIE BRIZARD LIQUEUR APPLE MANZANITA 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 50001850,
+          "Ean": 3107872002808,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 1.5L/150CL",
+          "Format": "1.5L/150CL"
+        },
+        {
+          "CODE_PRODUIT": 70006154,
+          "Ean": 3107872000507,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 70CL",
+          "Format": "70CL"
+        },
+        {
+          "CODE_PRODUIT": 70006155,
+          "Ean": 3107872000606,
+          "Marque": "WILLIAM PEEL",
+          "Produit": "WILLIAM PEEL BLENDED SCOTCH WHISKY",
+          "Produit_détail": "WILLIAM PEEL BLENDED SCOTCH WHISKY 1L/100CL",
+          "Format": "1L/100CL"
+        },
+        {
+          "CODE_PRODUIT": 70002801,
+          "Ean": 3041311025853,
+          "Marque": "BERGER",
+          "Produit": "BERGER PASTIS",
+          "Produit_détail": "BERGER PASTIS 1L/100CL",
+          "Format": "1L/100CL"
+        }
+      ]
+    }
+  },
+  "relations": [],
+  "role": "dimension"
+}
