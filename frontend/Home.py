@@ -11,7 +11,8 @@ nav = st.navigation(
             st.Page("pages/2_📚_Bibliotheque.py",          title="Templates", icon="📚"),
             st.Page("pages/3d_🔀_Transformations.py",      title="Transformation",     icon="🔀"),
             st.Page("pages/3_🧱_Gabarits.py",              title="Gabarits",     icon="🧱"),
-            st.Page("pages/4_🕘_Historique.py",            title="Historique",   icon="🕘"),
+            st.Page("pages/4_📚_Bibliotheque_Livrables.py",            title="Livrables",   icon="📚"),
+
         ],
         # Pages secondaires “cachées” (ne s’affichent pas dans la nav)
         "Hidden": [
@@ -29,6 +30,8 @@ nav = st.navigation(
             st.Page("pages//_3b3_📁_Donnee_Par_Defaut.py", title=None),
             st.Page("pages//_3d1_🔀_Detail_Transformation.py", title=None),
             st.Page("pages//_3d2_🔀_Builder_Transformation.py", title=None),
+            st.Page("pages/4b_📁_Livrables_Projet.py", title=None),
+
         ],
     },
     position="hidden",  # masque la nav Streamlit par défaut
@@ -40,7 +43,8 @@ with st.sidebar:
     st.page_link("pages/2_📚_Bibliotheque.py",          label="Templates",      icon="📚")
     st.page_link("pages/3d_🔀_Transformations.py",      label="Transformation", icon="🔀")
     st.page_link("pages/3_🧱_Gabarits.py",              label="Gabarits",       icon="🧱")
-    st.page_link("pages/4_🕘_Historique.py",            label="Historique",     icon="🕘")
+    st.page_link("pages/4_📚_Bibliotheque_Livrables.py",label="Livrables",     icon="📚")
+
 
 nav.run()
 

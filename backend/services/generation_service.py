@@ -15,6 +15,8 @@ from backend.services.project_service import ProjectService
 from backend.services.template_service import TemplateService
 from backend.services.report_service import ReportService
 from backend.database.models import ExecutionJob
+from backend.services.iteration_service import IterationService
+from pathlib import Path
 
 
 class GenerationService:
@@ -93,6 +95,19 @@ class GenerationService:
             job.execution_time_seconds = int(result.get("execution_time_seconds", 0))
             job.completed_at = datetime.now(ZoneInfo("Europe/Paris"))
             self.db.commit()
+
+            try:
+                if project_id and ppt_path:
+                    IterationService(self.db).register_generated_output(
+                        project_id=project_id,
+                        template_name=template_config.name,
+                        ppt_path=Path(ppt_path) if ppt_path else None,
+                        parameters=parameters,
+                        excel_path=Path(excel_path) if excel_path else None,
+                    )
+            except Exception as meta_err:
+                logger.warning(f"[GenerationService] Impossible d'enregistrer l'itération : {meta_err}")
+
 
             # 10. Mettre à jour le livrable dans le projet
             deliverable["last_generated_at"] = datetime.now(ZoneInfo("Europe/Paris")).isoformat()

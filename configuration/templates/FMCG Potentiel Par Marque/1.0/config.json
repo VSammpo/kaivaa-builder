@@ -98,7 +98,7 @@
       "transformation_version": "v1"
     }
   ],
-  "name": "Test",
+  "name": "FMCG Potentiel Par Marque",
   "version": "1.0",
   "parameters": [
     {
@@ -211,7 +211,7 @@
   ],
   "description": "Analyse stratégique du marché reposant exclusivement sur du sell-out.",
   "created_by": null,
-  "created_at": "2025-10-27T14:45:18.188736",
+  "created_at": "2025-10-27T11:44:59.734690",
   "tags": {
     "themes": [
       "FMCG"

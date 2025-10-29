@@ -178,6 +178,13 @@ class ProjectService:
         
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
+        
+    def get_project_dir(self, project_id: str) -> Path:
+        """
+        Retourne le chemin absolu du dossier racine du projet :
+        configuration/projets/<project_id>
+        """
+        return _project_dir(project_id)
     
     def save_project(self, project: Dict[str, Any]) -> None:
         """Sauvegarde la config d'un projet dans config.json."""

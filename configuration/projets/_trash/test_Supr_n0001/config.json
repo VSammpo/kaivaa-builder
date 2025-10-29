@@ -1,9 +1,9 @@
 {
-  "project_id": "l-oréal",
-  "name": "L'Oréal",
-  "client_name": "L'Oréal",
+  "project_id": "test",
+  "name": "TEST_Supr_n0001",
+  "client_name": "TEST",
   "description": "Test",
-  "status": "active",
+  "status": "archived",
   "deliverables": [
     {
       "template_id": 36,
@@ -20,7 +20,7 @@
         "client": 1,
         "default": 0
       },
-      "last_generated_at": "2025-10-27T23:02:52.658562+01:00"
+      "last_generated_at": "2025-10-27T17:51:26.588121+01:00"
     },
     {
       "template_id": 34,
@@ -37,7 +37,7 @@
         "client": 0,
         "default": 1
       },
-      "last_generated_at": "2025-10-27T23:01:53.215453+01:00"
+      "last_generated_at": "2025-10-27T17:54:41.968290+01:00"
     },
     {
       "template_id": 44,
@@ -54,7 +54,7 @@
         "client": 1,
         "default": 0
       },
-      "last_generated_at": "2025-10-27T23:12:27.120447+01:00"
+      "last_generated_at": "2025-10-27T22:09:12.954552+01:00"
     }
   ],
   "data_sources": [
@@ -95,6 +95,7 @@
       "last_validated_at": "2025-10-17T10:38:00+02:00"
     }
   ],
-  "created_at": "2025-10-16T16:01:22+02:00",
-  "updated_at": "2025-10-27T23:12:27+01:00"
+  "created_at": "2025-10-27T22:38:35+01:00",
+  "updated_at": "2025-10-27T22:58:31+01:00",
+  "archived_at": "2025-10-27T22:58:31+01:00"
 }

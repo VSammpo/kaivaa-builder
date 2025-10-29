@@ -354,7 +354,7 @@ class ReportService:
             loop_slide_indices = set()
             for slide_id in loop_slide_ids:
                 slide = find_slide_by_id(presentation, slide_id)
-                if slide:
+                if slide is not None:
                     loop_slide_indices.add(slide.SlideIndex)
                     logger.debug(f"Slide loop {slide_id} trouvée à index {slide.SlideIndex}")
             
@@ -414,7 +414,7 @@ class ReportService:
                         source_slides = {}
                         for slide_id in loop_config.slides:
                             slide = find_slide_by_id(presentation, slide_id)
-                            if slide:
+                            if slide is not None:
                                 source_slides[slide_id] = {
                                     'slide': slide,
                                     'original_index': slide.SlideIndex

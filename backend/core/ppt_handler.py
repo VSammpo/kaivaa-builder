@@ -113,10 +113,6 @@ def replace_tags_in_text_range(text_range, replacements: Dict[str, str]) -> None
 def replace_tags_in_shape(shape, replacements: Dict[str, str]) -> None:
     """
     Remplace les balises dans une shape PowerPoint (texte, tableau, groupe).
-    
-    Args:
-        shape: Objet Shape PowerPoint
-        replacements: Dictionnaire {balise: valeur}
     """
     try:
         if shape.Type == 6:  # Groupe
@@ -129,13 +125,26 @@ def replace_tags_in_shape(shape, replacements: Dict[str, str]) -> None:
                     try:
                         text_range = table.Cell(row, col).Shape.TextFrame2.TextRange
                         replace_tags_in_text_range(text_range, replacements)
-                    except:
+                    except Exception as e:
+                        logger.debug(f"Erreur cellule ({row},{col}): {e}")
                         continue
         elif shape.HasTextFrame:
-            replace_tags_in_text_range(shape.TextFrame2.TextRange, replacements)
+            try:
+                if shape.TextFrame2.HasText:
+                    replace_tags_in_text_range(shape.TextFrame2.TextRange, replacements)
+            except Exception as e:
+                logger.debug(f"Erreur TextFrame shape: {e}")
+                # Essayer avec TextFrame classique
+                try:
+                    if shape.TextFrame.HasText:
+                        text = shape.TextFrame.TextRange.Text
+                        for tag, value in replacements.items():
+                            text = text.replace(tag, str(value))
+                        shape.TextFrame.TextRange.Text = text
+                except Exception as e2:
+                    logger.warning(f"Impossible de traiter la shape: {e2}")
     except Exception as e:
-        logger.debug(f"Erreur remplacement balises shape: {e}")
-
+        logger.warning(f"Erreur globale shape: {e}")
 
 def find_slide_by_id(presentation, slide_id: str) -> Optional[object]:
     """
@@ -235,3 +244,70 @@ def check_and_remove_suppressed_slides(presentation) -> List[str]:
         return []
     
     return slides_to_remove
+
+from pathlib import Path
+
+from pathlib import Path
+
+def merge_presentations(ppt_paths, output_path):
+    """
+    Concatène des PPTX en préservant toutes les relations (images, charts, médias)
+    via COM PowerPoint. PowerPoint est lancé en mode visible.
+    """
+    ppt_paths = [str(Path(p).resolve()) for p in ppt_paths]
+    output_path = str(Path(output_path).resolve())
+
+    import win32com.client as win32
+    
+    # Initialiser COM en STA sur ce thread
+    initialized_here = False
+    try:
+        pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+        initialized_here = True
+    except pywintypes.com_error as e:
+        if e.hresult != -2147417850:  # Déjà initialisé
+            raise
+
+    try:
+        app = win32.gencache.EnsureDispatch("PowerPoint.Application")
+        app.Visible = True  # debug friendly
+
+        dest = app.Presentations.Add()  # création d'une cible vide
+        try:
+            for src in ppt_paths:
+                pres = None
+                try:
+                    pres = app.Presentations.Open(src, WithWindow=False, ReadOnly=True)
+                    count = pres.Slides.Count
+                    if count > 0:
+                        pres.Slides.Range(list(range(1, count + 1))).Copy()
+                        dest.Slides.Paste(Index=dest.Slides.Count + 1)
+                except Exception as e:
+                    logger.warning(f"Erreur lors de la copie de {src}: {e}")
+                finally:
+                    if pres is not None:
+                        try:
+                            pres.Close()
+                        except:
+                            pass
+
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            dest.SaveAs(output_path)
+        finally:
+            try:
+                dest.Close()
+            except:
+                pass
+            try:
+                app.Quit()
+            except:
+                pass
+
+        return output_path
+    
+    finally:
+        if initialized_here:
+            try:
+                pythoncom.CoUninitialize()
+            except Exception:
+                pass
