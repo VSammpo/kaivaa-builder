@@ -540,22 +540,57 @@ else:
         return sorted(names)
 
     all_methods = _method_names(g.name, g.version)
+    # 🔑 CORRECTION : Charger les méthodes du gabarit de base + des gabarits enrichis
+    all_methods = _method_names(g.name, g.version)
+    all_methods_with_source = {f"{g.name}: {m}": m for m in all_methods}  # Format: "SELL-IN: ma_methode"
+    
+    # Ajouter les méthodes des gabarits enrichis
+    if st.session_state.get("tpl_enrich_rows"):
+        for enrich_row in st.session_state.get("tpl_enrich_rows", []):
+            target = enrich_row.get("target")
+            if target:
+                target_name, target_ver = target
+                target_methods = _method_names(target_name, target_ver)
+                for tm in target_methods:
+                    all_methods_with_source[f"{target_name}: {tm}"] = tm
 
     existing_methods = existing.get("methods", []) if existing else []
-    _clean_m, _renamed_m, _removed_m = _safe_reconcile_defaults(existing_methods, all_methods)
+    
+    # Mapper les anciennes méthodes (format court) vers le nouveau format (avec source)
+    existing_methods_mapped = []
+    for em in existing_methods:
+        # Chercher dans all_methods_with_source
+        found = False
+        for display_name, short_name in all_methods_with_source.items():
+            if short_name == em:
+                existing_methods_mapped.append(display_name)
+                found = True
+                break
+        if not found:
+            # Méthode introuvable, on garde quand même
+            existing_methods_mapped.append(em)
+    
+    options_display = sorted(list(all_methods_with_source.keys()))
+    _clean_m, _renamed_m, _removed_m = _safe_reconcile_defaults(existing_methods_mapped, options_display)
 
     if _renamed_m:
         st.caption("🪄 Renommages de méthodes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_m.items()]))
     if _removed_m:
         st.caption("⚠️ Méthodes introuvables (retirées) : " + ", ".join(_removed_m))
 
-    methods_selected = st.multiselect(
-        "Méthodes autorisées par le gabarit",
-        options=all_methods,
+    methods_selected_display = st.multiselect(
+        "Méthodes disponibles (gabarit de base + enrichissements)",
+        options=options_display,
         default=_clean_m,
         key=f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}",
-        help="Ces colonnes calculées seront disponibles et leurs colonnes d'entrée seront demandées dans la table d'entrée du projet."
+        help="Ces colonnes calculées seront disponibles. Les méthodes des tables enrichies sont préfixées par le nom du gabarit."
     )
+    
+    # Convertir les sélections affichées (avec source) en format court pour la sauvegarde
+    # Format sélectionné: "Dim_date_FMCG: Numéro_semaine_table"
+    # Format à sauvegarder: "Numéro_semaine_table"
+    methods_selected = [all_methods_with_source.get(m, m) for m in methods_selected_display]
+
 
 
 
@@ -632,9 +667,8 @@ if st.button("💾 Enregistrer l’usage", type="primary", use_container_width=T
             else:
                 # Mode gabarit brut (comportement actuel)
                 enrich_payload = _build_enrichments_payload(g, st.session_state.get("tpl_enrich_rows", []))
-                methods_selected = st.session_state.get(
-                    f"ms_methods_{g.name}_{g.version}_{default_sheet}_{default_table}", []
-                )
+                # ✅ CORRECTION : Utiliser la variable methods_selected déjà convertie (ligne 592)
+                # (pas besoin de relire depuis session_state car déjà calculée)
                 ts.upsert_gabarit_usage(
                     template_id=template_id,
                     gabarit_name=g.name,

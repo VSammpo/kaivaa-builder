@@ -19,7 +19,11 @@
         "Chiffre_daffaires",
         "Volumes"
       ],
-      "methods": [],
+      "methods": [
+        "Année_relative",
+        "Numéro_semaine_table",
+        "Trimestre_relatif"
+      ],
       "enrichments": [
         {
           "join": "left",

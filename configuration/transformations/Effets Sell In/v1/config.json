@@ -1,0 +1,106 @@
+{
+  "name": "Effets Sell In",
+  "version": "v1",
+  "description": "Décomposition de la croissance du chiffre d'affaires du producteur (Sell-in)",
+  "gabarit_base": {
+    "name": "SELL-IN",
+    "version": "v1"
+  },
+  "columns_enabled": [
+    "CODE_CLIENT",
+    "CODE_PRODUIT",
+    "CODE_PERIODE",
+    "CODE_PROMO",
+    "Unite_volumes",
+    "Chiffre_daffaires",
+    "Volumes"
+  ],
+  "enrichments": [
+    {
+      "join": "left",
+      "path": [
+        [
+          "SELL-IN",
+          "CODE_CLIENT",
+          "Dim_clients_fmcg",
+          "CODE_CLIENT"
+        ]
+      ],
+      "columns": [
+        "Nom_client",
+        "Distributeur",
+        "Enseigne",
+        "Centrale_regionale"
+      ]
+    },
+    {
+      "join": "left",
+      "path": [
+        [
+          "SELL-IN",
+          "CODE_PERIODE",
+          "Dim_date_FMCG",
+          "CODE_PERIODE"
+        ]
+      ],
+      "columns": [
+        "Année",
+        "Mois",
+        "Semaine",
+        "Date"
+      ]
+    },
+    {
+      "join": "left",
+      "path": [
+        [
+          "SELL-IN",
+          "CODE_PRODUIT",
+          "Dim_produits_FMCG",
+          "CODE_PRODUIT"
+        ]
+      ],
+      "columns": [
+        "Marque",
+        "Produit",
+        "Produit_détail",
+        "Format"
+      ]
+    }
+  ],
+  "methods": [
+    "Année_relative",
+    "Numéro_semaine_table",
+    "Trimestre_relatif"
+  ],
+  "overlay_python": "",
+  "final_order": [
+    "CODE_CLIENT",
+    "CODE_PRODUIT",
+    "CODE_PERIODE",
+    "CODE_PROMO",
+    "Unite_volumes",
+    "Chiffre_daffaires",
+    "Volumes",
+    "Nom_client",
+    "Distributeur",
+    "Enseigne",
+    "Centrale_regionale",
+    "Année",
+    "Mois",
+    "Semaine",
+    "Date",
+    "Marque",
+    "Produit",
+    "Produit_détail",
+    "Format",
+    "Année_relative",
+    "Numéro_semaine_table",
+    "Trimestre_relatif"
+  ],
+  "final_excludes": [],
+  "final_renames": {},
+  "final_sort": [],
+  "created_at": "2025-10-29T22:01:36+01:00",
+  "updated_at": "2025-10-30T10:38:08+01:00"
+}

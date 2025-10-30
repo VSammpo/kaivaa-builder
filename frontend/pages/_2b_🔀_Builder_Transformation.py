@@ -275,27 +275,80 @@ with tab_enrich:
 with tab_methods:
     st.subheader("⚙️ Méthodes (colonnes calculées)")
     
-    available_methods = list_methods_for_gabarit(gab_name, gab_version) or []
+    def _method_names(gname: str, gver: str) -> list[str]:
+        """Récupère les noms des méthodes d'un gabarit"""
+        allm = list_methods_for_gabarit(gname, gver) or []
+        if isinstance(allm, dict):
+            return sorted(list(allm.keys()))
+        names = []
+        for m in allm:
+            if isinstance(m, dict) and m.get("name"):
+                names.append(m["name"])
+        return sorted(names)
     
-    if available_methods:
-        method_names = [m.get("name", "") for m in available_methods]
+    # 🔑 CORRECTION : Charger méthodes du gabarit de base + enrichissements
+    available_methods = _method_names(gab_name, gab_version)
+    all_methods_with_source = {f"{gab_name}: {m}": m for m in available_methods}
+    
+    # Ajouter les méthodes des enrichissements
+    for enrich_row in st.session_state.get("transfo_enrich_rows", []):
+        target = enrich_row.get("target")
+        if target:
+            target_name, target_ver = target
+            target_methods = _method_names(target_name, target_ver)
+            for tm in target_methods:
+                all_methods_with_source[f"{target_name}: {tm}"] = tm
+    
+    if all_methods_with_source:
+        # Mapper les anciennes méthodes (format court) vers format avec source
         selected_methods = transformation.get("methods", [])
+        selected_methods_mapped = []
+        for sm in selected_methods:
+            found = False
+            for display_name, short_name in all_methods_with_source.items():
+                if short_name == sm:
+                    selected_methods_mapped.append(display_name)
+                    found = True
+                    break
+            if not found:
+                selected_methods_mapped.append(sm)
         
-        methods_selected = st.multiselect(
-            "Méthodes à appliquer",
-            options=method_names,
-            default=selected_methods,
-            help="Les méthodes seront appliquées dans l'ordre"
+        options_display = sorted(list(all_methods_with_source.keys()))
+        
+        methods_selected_display = st.multiselect(
+            "Méthodes à appliquer (gabarit de base + enrichissements)",
+            options=options_display,
+            default=selected_methods_mapped,
+            help="Les méthodes seront appliquées dans l'ordre. Les méthodes des tables enrichies sont préfixées par le nom du gabarit."
         )
         
+        # Convertir au format court pour la sauvegarde
+        methods_selected = [all_methods_with_source.get(m, m) for m in methods_selected_display]
+        
         # Afficher détails des méthodes
-        if methods_selected:
-            st.success(f"✅ {len(methods_selected)} méthode(s) sélectionnée(s)")
+        if methods_selected_display:
+            st.success(f"✅ {len(methods_selected_display)} méthode(s) sélectionnée(s)")
             
-            for method_name in methods_selected:
-                method = next((m for m in available_methods if m.get("name") == method_name), None)
+            # Charger toutes les méthodes (base + enrichis) pour affichage détails
+            all_method_objects = []
+            all_m_base = list_methods_for_gabarit(gab_name, gab_version) or []
+            if isinstance(all_m_base, list):
+                all_method_objects.extend(all_m_base)
+            
+            for enrich_row in st.session_state.get("transfo_enrich_rows", []):
+                target = enrich_row.get("target")
+                if target:
+                    target_name, target_ver = target
+                    enrich_methods = list_methods_for_gabarit(target_name, target_ver) or []
+                    if isinstance(enrich_methods, list):
+                        all_method_objects.extend(enrich_methods)
+            
+            for method_display in methods_selected_display:
+                # Extraire le nom court
+                method_name = all_methods_with_source.get(method_display, method_display)
+                method = next((m for m in all_method_objects if isinstance(m, dict) and m.get("name") == method_name), None)
                 if method:
-                    with st.expander(f"⚙️ {method_name}"):
+                    with st.expander(f"⚙️ {method_display}"):
                         st.markdown(f"**Description :** {method.get('description', '')}")
                         st.markdown(f"**Colonne créée :** `{method.get('output_column', '')}`")
                         req_cols = method.get('required_columns', [])

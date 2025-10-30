@@ -214,22 +214,41 @@ def _normalize_key(series: pd.Series, key_name: str) -> pd.Series:
     return series.apply(_norm)
 
 
-def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str, only: list[str] | None = None) -> pd.DataFrame:
+def _apply_methods(df: pd.DataFrame, gabarit_name: str, gabarit_version: str, only: list[str] | None = None, enrichments: list[dict] | None = None) -> pd.DataFrame:
     """
     Applique les méthodes (colonnes calculées) listées dans 'only'.
     Si only est None ou vide, on ne fait rien.
+    
+    🔧 CORRECTION : Charge aussi les méthodes des tables enrichies.
     """
     from backend.services.method_executor import apply_method
     
     if not only:
         return df
     
-    # Récupérer toutes les méthodes du gabarit
+    # Récupérer toutes les méthodes du gabarit de base
     all_methods = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
     
     # Si c'est un dict, convertir en liste
     if isinstance(all_methods, dict):
         all_methods = list(all_methods.values())
+    
+    # 🔧 CORRECTION : Ajouter les méthodes des tables enrichies
+    if enrichments:
+        enriched_gabarits = set()
+        for e in enrichments:
+            path = e.get("path", [])
+            if path:
+                # Récupérer le gabarit cible du dernier saut
+                last_hop = path[-1]
+                if len(last_hop) >= 3:
+                    target_gabarit = last_hop[2]  # [from, left_key, to, right_key]
+                    if target_gabarit not in enriched_gabarits:
+                        enriched_gabarits.add(target_gabarit)
+                        enriched_methods = list_methods_for_gabarit(target_gabarit, "v1") or []
+                        if isinstance(enriched_methods, dict):
+                            enriched_methods = list(enriched_methods.values())
+                        all_methods.extend(enriched_methods)
     
     # Filtrer selon 'only'
     selected = [m for m in all_methods if isinstance(m, dict) and m.get("name") in only]
@@ -494,7 +513,7 @@ def build_table_from_usage(
         if log_kpis:
             logger.info(f"[PIPELINE] ⚙️ ÉTAPE 3 : Application de {len(only_selected)} méthode(s) : {only_selected}")
         
-        df = _apply_methods(df, gabarit_name, gabarit_version, only=only_selected)
+        df = _apply_methods(df, gabarit_name, gabarit_version, only=only_selected, enrichments=enrichments)
         
         if log_kpis:
             cols_after_methods = set(df.columns)
@@ -577,7 +596,7 @@ def build_table_from_usage(
             df = df.sort_values(by=by, ascending=ascending, kind="mergesort", ignore_index=True)
     
     # ============================================================================
-    # ÉTAPE 7 : ORDRE / EXCLUSIONS (+ PROTECTION CLÉS)
+    # ÉTAPE 7 : ORDRE / EXCLUSIONS (+ PROTECTION CLÉS + MÉTHODES)
     # ============================================================================
     src_order = usage.get("final_order") or []
     src_excl = set(usage.get("final_excludes") or [])
@@ -585,6 +604,36 @@ def build_table_from_usage(
     # 🔑 CORRECTION CRITIQUE : Les colonnes clés ne peuvent JAMAIS être exclues
     key_cols_original = _get_key_columns(gabarit_name, gabarit_version)
     key_cols_renamed = [ren.get(k, k) for k in key_cols_original]  # Prendre en compte les renommages
+    
+    # ⚙️ CORRECTION : Identifier les colonnes créées par les méthodes
+    method_cols = []
+    if only_selected:
+        # Charger toutes les méthodes du gabarit de base + enrichis
+        all_methods_objs = list_methods_for_gabarit(gabarit_name, gabarit_version) or []
+        if isinstance(all_methods_objs, dict):
+            all_methods_objs = list(all_methods_objs.values())
+        
+        # Ajouter méthodes des enrichissements
+        for e in (enrichments or []):
+            path = e.get("path", [])
+            if path:
+                last_hop = path[-1]
+                if len(last_hop) >= 3:
+                    target_gabarit = last_hop[2]
+                    enriched_methods = list_methods_for_gabarit(target_gabarit, "v1") or []
+                    if isinstance(enriched_methods, dict):
+                        enriched_methods = list(enriched_methods.values())
+                    all_methods_objs.extend(enriched_methods)
+        
+        # Extraire les output_column des méthodes sélectionnées
+        for method_obj in all_methods_objs:
+            if isinstance(method_obj, dict) and method_obj.get("name") in only_selected:
+                output_col = method_obj.get("output_column")
+                if output_col:
+                    # Prendre en compte les renommages
+                    output_col_renamed = ren.get(output_col, output_col)
+                    if output_col_renamed in df.columns:
+                        method_cols.append(output_col_renamed)
     
     # Si final_order est vide, utiliser toutes les colonnes actuelles
     if not src_order:
@@ -606,18 +655,33 @@ def build_table_from_usage(
             if log_kpis:
                 logger.warning(f"[PIPELINE] 🔑 Colonne clé '{key_col}' absente de final_order → ajoutée automatiquement")
     
-    # Exclusions (SAUF les colonnes clés)
+    # ⚙️ Ajouter les colonnes de méthodes manquantes dans mapped_order (APRÈS LES CLÉS)
+    for method_col in method_cols:
+        if method_col not in mapped_order:
+            # Insérer après les clés mais avant le reste
+            insert_pos = len(key_cols_renamed)
+            mapped_order.insert(insert_pos, method_col)
+            if log_kpis:
+                logger.warning(f"[PIPELINE] ⚙️ Colonne de méthode '{method_col}' absente de final_order → ajoutée automatiquement")
+    
+    # Exclusions (SAUF les colonnes clés ET les colonnes de méthodes)
     excl_names = set()
     for c in src_excl:
-        # ❌ Ne PAS exclure les colonnes clés (ni leur version originale, ni leur version renommée)
+        # ❌ Ne PAS exclure les colonnes clés
         if c in key_cols_original or c in key_cols_renamed:
             if log_kpis:
                 logger.warning(f"[PIPELINE] ⚠️ Tentative d'exclusion de la colonne clé '{c}' → IGNORÉE")
             continue
         
+        # ❌ Ne PAS exclure les colonnes de méthodes
+        if c in method_cols:
+            if log_kpis:
+                logger.warning(f"[PIPELINE] ⚠️ Tentative d'exclusion de la colonne de méthode '{c}' → IGNORÉE")
+            continue
+        
         excl_names.add(c)
         rc = ren.get(c)
-        if rc and rc not in key_cols_renamed:
+        if rc and rc not in key_cols_renamed and rc not in method_cols:
             excl_names.add(rc)
     
     # Construction de la liste finale
@@ -629,6 +693,7 @@ def build_table_from_usage(
     if log_kpis:
         logger.info(f"[PIPELINE] 📦 ÉTAPE 7 : Ordre final")
         logger.info(f"[PIPELINE]   • Colonnes clés protégées: {key_cols_renamed}")
+        logger.info(f"[PIPELINE]   • Colonnes de méthodes protégées: {method_cols}")
         logger.info(f"[PIPELINE]   • Exclusions appliquées: {len(excl_names)} colonne(s)")
         logger.info(f"[PIPELINE]   • Colonnes finales: {len(final_cols)}")
         logger.info(f"[PIPELINE] ✅ FIN : {len(df)} lignes × {len(final_cols)} colonnes")
