@@ -454,13 +454,24 @@ with tab_adjust:
     }
     
     with st.spinner("Calcul des colonnes disponibles..."):
-        df_test, _ = build_table_from_usage(temp_config, full=False, log_kpis=False)
-        if df_test is not None:
+        # 🔥 IMPORTANT : on DOIT construire la table complète pour avoir les VRAIES colonnes de sortie
+        # (après enrichissements + méthodes + script Python)
+        df_test, error = build_table_from_usage(temp_config, full=True, log_kpis=False)
+        
+        if df_test is not None and not df_test.empty:
             available_cols = list(df_test.columns)
         else:
-            available_cols = enabled if 'enabled' in locals() else []
+            # Si erreur ou table vide, on ne peut pas continuer proprement
+            if error:
+                st.error(f"❌ Impossible de calculer les colonnes de sortie :\n```\n{error}\n```")
+            else:
+                st.warning("⚠️ La table de sortie est vide, impossible de déterminer les colonnes")
+            available_cols = []
     
-    st.success(f"✅ {len(available_cols)} colonnes disponibles")
+    if available_cols:
+        st.success(f"✅ {len(available_cols)} colonnes disponibles")
+    else:
+        st.warning("⚠️ Aucune colonne disponible")
     
     # État local
     state = st.session_state.transfo_adjust_state

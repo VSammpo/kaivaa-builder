@@ -620,7 +620,8 @@ class ReportService:
             for mapping in self.config.slide_mappings:
                 slide = find_slide_by_id(presentation, mapping.slide_id)
                 
-                if not slide:
+                # ✅ Tester explicitement None pour éviter erreur COM __len__
+                if slide is None:
                     logger.warning(f"Slide {mapping.slide_id} non trouvée pour mapping")
                     continue
                 

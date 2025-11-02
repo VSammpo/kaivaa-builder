@@ -251,11 +251,18 @@ def load_replacement_tags(xlsx_path: str, sheet_name: str = "Balises", table_nam
             tag = body.Cells(i, 1).Value
             if not tag:
                 continue
-            val = None
-            if n_cols >= 2:
-                val = body.Cells(i, 2).Value
-            if (val is None or val == "") and n_cols >= 3:
+            
+            # ✅ TOUJOURS lire la colonne 3 (Valeur), jamais la colonne 2 (Desc)
+            if n_cols < 3:
+                continue
+            
+            # ✅ UTILISER .Text pour préserver le formatage Excel affiché
+            val = body.Cells(i, 3).Text
+            
+            # Fallback sur .Value si .Text est vide
+            if not val or str(val).strip() == "":
                 val = body.Cells(i, 3).Value
+            
             replacements[str(tag)] = "" if val is None else str(val)
 
         return replacements

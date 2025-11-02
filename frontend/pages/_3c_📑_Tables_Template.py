@@ -306,97 +306,148 @@ def _build_enrichments_payload(start_g, rows: list[dict]) -> list[dict]:
 
 # Sélection gabarit
 gab_list = list_gabarits()
-labels = [f"{g.name} (v{g.version})" for g in gab_list]
 if not gab_list:
     st.error("Aucun gabarit disponible dans le registre.")
     st.stop()
 
-# mode EDIT ciblé ?
+# Mode EDIT ciblé ?
 edit_key = st.session_state.get("_inject_edit_target")
-if edit_key:
-    try:
-        idx = next(i for i, gg in enumerate(gab_list) if (gg.name, gg.version) == (edit_key["gname"], edit_key["gver"]))
-    except StopIteration:
-        idx = 0
-else:
-    idx = 0
 
-gab_choice = st.selectbox("Gabarit de départ", labels, index=idx if labels else 0)
-g = gab_list[labels.index(gab_choice)]
-
-# Valeurs Excel par défaut (clé d'usage)
-if edit_key and (edit_key["gname"], edit_key["gver"]) == (g.name, g.version):
-    default_sheet = edit_key.get("sheet","") or "Data"
-    default_table = edit_key.get("table","") or g.name
-else:
-    default_sheet = "Data"
-    default_table = g.name
-
-# Charger usage existant par (gabarit, sheet, table)
-with DatabaseService.get_session() as db:
-    ts = TemplateService(db)
-    existing = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, default_sheet, default_table) or {}
-
-# --- Source = Gabarit brut vs Transformation réutilisable (pré-sélectionnée depuis le JSON) ---
-_existing_source_kind = (existing.get("source_kind") or "gabarit").strip()
-_existing_tname = (existing.get("transformation_name") or "").strip()
-_existing_tver  = (existing.get("transformation_version") or "v1").strip()
-
+# ========== ÉTAPE 1 : CHOIX DU MODE (Gabarit vs Transformation) ==========
 st.markdown("### 🧩 Source de la table")
+
+# Détecter le mode existant (si on édite)
+_existing_source_kind = "gabarit"
+_existing_tname = ""
+_existing_tver = "v1"
+
+if edit_key:
+    # Charger l'usage existant pour détecter le mode
+    with DatabaseService.get_session() as db:
+        ts = TemplateService(db)
+        temp_existing = ts.get_gabarit_usage_by_target(
+            template_id,
+            edit_key.get("gname", gab_list[0].name),
+            edit_key.get("gver", gab_list[0].version),
+            edit_key.get("sheet", "Data"),
+            edit_key.get("table", gab_list[0].name)
+        ) or {}
+        _existing_source_kind = (temp_existing.get("source_kind") or "gabarit").strip()
+        _existing_tname = (temp_existing.get("transformation_name") or "").strip()
+        _existing_tver = (temp_existing.get("transformation_version") or "v1").strip()
+
 _source_options = ["Gabarit brut", "Transformation réutilisable"]
 _source_index = 1 if (_existing_source_kind == "transformation" or bool(_existing_tname)) else 0
+
 source_mode = st.radio(
     "Type de source",
     options=_source_options,
     index=_source_index,
     horizontal=True,
-    key=f"src_mode_{template_id}_{g.name}_{g.version}_{default_sheet}_{default_table}",
+    key=f"src_mode_{template_id}_global",
 )
 
-selected_transfo = None
-if source_mode == "Transformation réutilisable":
-    all_tf = list_transformations() or []
-    preferred = [t for t in all_tf if (t.get("gabarit_base") or {}).get("name") == g.name]
-    others = [t for t in all_tf if t not in preferred]
-    tf_options = preferred + others
+_is_transfo_mode = (source_mode == "Transformation réutilisable")
 
+# ========== ÉTAPE 2a : MODE TRANSFORMATION ==========
+if _is_transfo_mode:
+    all_tf = list_transformations() or []
+    
     def _tf_label(t):
         gb = (t.get("gabarit_base") or {})
         return f"{t.get('name')} (v{t.get('version','v1')}) – base: {gb.get('name','?')}"
-
-    tf_labels = [_tf_label(t) for t in tf_options]
-
+    
+    tf_labels = [_tf_label(t) for t in all_tf]
+    
     default_t_idx = 0
     if _existing_tname:
-        for i, t in enumerate(tf_options):
+        for i, t in enumerate(all_tf):
             if (t.get("name") == _existing_tname) and (t.get("version","v1") == _existing_tver):
                 default_t_idx = i
                 break
-
-    if not tf_options:
+    
+    if not all_tf:
         st.warning("Aucune transformation disponible.")
+        st.stop()
+    
+    sel = st.selectbox(
+        "Transformation",
+        tf_labels,
+        index=default_t_idx,
+        key=f"transfo_sel_{template_id}_global"
+    )
+    selected_transfo = all_tf[tf_labels.index(sel)]
+    
+    # 🔑 Récupérer le gabarit de BASE de la transformation
+    transfo_gab_base = selected_transfo.get("gabarit_base", {})
+    g_name = transfo_gab_base.get("name", "")
+    g_version = transfo_gab_base.get("version", "v1")
+    
+    g = get_gabarit(g_name, g_version)
+    if not g:
+        st.error(f"Gabarit de base '{g_name}' de la transformation introuvable")
+        st.stop()
+    
+    st.info(f"📦 Gabarit de base : **{g.name}** (v{g.version})")
+    
+    # Excel targets
+    default_sheet = edit_key.get("sheet", "Data") if edit_key else "Data"
+    default_table = edit_key.get("table", g.name) if edit_key else g.name
+    
+    # Charger usage existant
+    with DatabaseService.get_session() as db:
+        ts = TemplateService(db)
+        existing = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, default_sheet, default_table) or {}
+
+# ========== ÉTAPE 2b : MODE GABARIT BRUT ==========
+else:
+    selected_transfo = None
+    
+    # Sélection du gabarit
+    labels = [f"{gg.name} (v{gg.version})" for gg in gab_list]
+    
+    idx = 0
+    if edit_key:
+        try:
+            idx = next(i for i, gg in enumerate(gab_list) if (gg.name, gg.version) == (edit_key["gname"], edit_key["gver"]))
+        except StopIteration:
+            idx = 0
+    
+    gab_choice = st.selectbox("Gabarit de départ", labels, index=idx if labels else 0)
+    g = gab_list[labels.index(gab_choice)]
+    
+    # Excel targets
+    if edit_key and (edit_key["gname"], edit_key["gver"]) == (g.name, g.version):
+        default_sheet = edit_key.get("sheet", "Data")
+        default_table = edit_key.get("table", g.name)
     else:
-        sel = st.selectbox(
-            "Transformation",
-            tf_labels,
-            index=default_t_idx,
-            key=f"transfo_sel_{template_id}_{g.name}_{g.version}_{default_sheet}_{default_table}"
-        )
-        selected_transfo = tf_options[tf_labels.index(sel)]
+        default_sheet = "Data"
+        default_table = g.name
+    
+    # Charger usage existant
+    with DatabaseService.get_session() as db:
+        ts = TemplateService(db)
+        existing = ts.get_gabarit_usage_by_target(template_id, g.name, g.version, default_sheet, default_table) or {}
 
+    
+    # Préparer les colonnes de base pour le multiselect
+    base_cols = [c.name for c in g.columns]
+    existing_cols = existing.get("columns_enabled", []) if existing else base_cols[:]
+    _clean_cols, _renamed_cols, _removed_cols = _safe_reconcile_defaults(existing_cols, base_cols)
+    
+    if _renamed_cols:
+        st.caption("🪄 Renommages de colonnes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_cols.items()]))
+    if _removed_cols:
+        st.caption("⚠️ Colonnes introuvables (retirées) : " + ", ".join(_removed_cols))
 
-base_cols = [c.name for c in g.columns]
-# Reconcilier colonnes renommées/supprimées
-existing_cols = existing.get("columns_enabled", []) if existing else base_cols[:]
-_clean_cols, _renamed_cols, _removed_cols = _safe_reconcile_defaults(existing_cols, base_cols)
+# ========== FIN DE LA SÉLECTION ==========
+# À ce stade, on a toujours:
+# - g: le gabarit (soit sélectionné, soit depuis la transformation)
+# - selected_transfo: None ou la transformation
+# - existing: l'usage existant
+# - _is_transfo_mode: True/False
 
-if _renamed_cols:
-    st.caption("🪄 Renommages de colonnes appliqués : " + ", ".join([f"{k} → {v}" for k, v in _renamed_cols.items()]))
-if _removed_cols:
-    st.caption("⚠️ Colonnes introuvables (retirées) : " + ", ".join(_removed_cols))
-
-# === Détection du mode (gabarit brut vs transformation) — VERSION NETTOYÉE ===
-_is_transfo_mode = (source_mode == "Transformation réutilisable")
+# === Détection du mode (gabarit brut vs transformation) — VERSION NETTOYÉE ===# === Détection du mode (gabarit brut vs transformation) — VERSION NETTOYÉE ===
 
 # === UI Colonnes (un seul chemin, sans doublon) ===
 if _is_transfo_mode and selected_transfo:

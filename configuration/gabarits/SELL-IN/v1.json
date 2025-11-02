@@ -24,6 +24,11 @@
       "is_key": true
     },
     {
+      "name": "En_promo",
+      "type": "number",
+      "is_key": false
+    },
+    {
       "name": "Unite_volumes",
       "type": "text",
       "is_key": false
@@ -40,7 +45,21 @@
     }
   ],
   "title": "SELL-IN",
-  "methods": [],
+  "methods": [
+    {
+      "id": "4fdc30a2-c180-4126-b43b-cf690415e591",
+      "name": "Prix moyen",
+      "description": "Prix moyen de la ligne",
+      "output_column": "Prix moyen",
+      "param_schema": [],
+      "required_columns": [
+        "Chiffre_daffaires",
+        "Volumes"
+      ],
+      "code": "import numpy as np\r\nimport pandas as pd\r\n\r\nvalue = (\r\n    pd.to_numeric(df[\"Chiffre_daffaires\"], errors=\"coerce\")\r\n    .div(pd.to_numeric(df[\"Volumes\"], errors=\"coerce\"))\r\n    .replace([np.inf, -np.inf], 0)\r\n    .fillna(0)\r\n)\r\n",
+      "order": 3
+    }
+  ],
   "defaults": {
     "source": {
       "type": "csv",
@@ -55,6 +74,7 @@
         "CODE_PRODUIT",
         "CODE_PERIODE",
         "CODE_PROMO",
+        "En promo",
         "Unite_volumes",
         "Chiffre_daffaires",
         "Volumes"
@@ -65,6 +85,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "19973",
           "Volumes": 583
@@ -74,6 +95,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -83,6 +105,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -92,6 +115,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -101,6 +125,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "15979",
           "Volumes": 467
@@ -110,6 +135,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -119,6 +145,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -128,6 +155,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "15979",
           "Volumes": 467
@@ -137,6 +165,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "9987",
           "Volumes": 292
@@ -146,6 +175,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -155,6 +185,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -164,6 +195,7 @@
           "CODE_PRODUIT": 50002974,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
           "Volumes": 233
@@ -173,6 +205,7 @@
           "CODE_PRODUIT": 70000589,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "0342",
           "Volumes": 5
@@ -182,6 +215,7 @@
           "CODE_PRODUIT": 50001494,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1376",
           "Volumes": 20
@@ -191,6 +225,7 @@
           "CODE_PRODUIT": 70005430,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1211",
           "Volumes": 45
@@ -200,6 +235,7 @@
           "CODE_PRODUIT": 70005438,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1633",
           "Volumes": 67
@@ -209,6 +245,7 @@
           "CODE_PRODUIT": 70005852,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "0216",
           "Volumes": 5
@@ -218,6 +255,7 @@
           "CODE_PRODUIT": 50001848,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7292",
           "Volumes": 224
@@ -227,6 +265,7 @@
           "CODE_PRODUIT": 50001976,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "10990",
           "Volumes": 350
@@ -236,6 +275,7 @@
           "CODE_PRODUIT": 50002124,
           "CODE_PERIODE": "2024 - Jan - 01",
           "CODE_PROMO": "STD",
+          "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "4689",
           "Volumes": 112
