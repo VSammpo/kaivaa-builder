@@ -1,0 +1,51 @@
+{
+  "name": "COPIE DE TRAVAIL - SELL IN",
+  "version": "1.0",
+  "description": "Etude d'un sell-in en grande consommation.",
+  "created_by": null,
+  "created_at": "2025-11-17T09:17:51.947031",
+  "tags": {
+    "themes": [],
+    "families": []
+  },
+  "parameters": [],
+  "data_source": {
+    "type": "excel",
+    "connection_string": null,
+    "required_tables": []
+  },
+  "slide_mappings": [
+    {
+      "slide_id": "A003",
+      "sheet_name": "Tables",
+      "excel_range": "C7:H13",
+      "has_header": true
+    },
+    {
+      "slide_id": "A004",
+      "sheet_name": "Tables",
+      "excel_range": "M7:P13",
+      "has_header": true
+    },
+    {
+      "slide_id": "A005",
+      "sheet_name": "Tables",
+      "excel_range": "V7:AD15",
+      "has_header": false
+    }
+  ],
+  "loops": [
+    {
+      "loop_id": "Distributeur",
+      "slides": [
+        "B001"
+      ],
+      "sheet_name": "Boucles"
+    }
+  ],
+  "image_injections": {},
+  "ppt_template_path": null,
+  "excel_template_path": null,
+  "estimated_generation_time": null,
+  "gabarit_usages": []
+}

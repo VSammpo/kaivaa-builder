@@ -1,0 +1,192 @@
+{
+  "name": "02 - Dashboard initial sell-in",
+  "version": "1.0",
+  "parameters": [],
+  "gabarit_usages": [
+    {
+      "gabarit_name": "SELL-IN",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "BD",
+        "table": "BD"
+      },
+      "columns_enabled": [
+        "CODE_CLIENT",
+        "CODE_PRODUIT",
+        "CODE_PERIODE",
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes",
+        "En_promo"
+      ],
+      "methods": [
+        "Année_relative",
+        "Numéro_semaine_table",
+        "Trimestre_relatif",
+        "Prix moyen"
+      ],
+      "enrichments": [
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_CLIENT",
+              "Dim_clients_fmcg",
+              "CODE_CLIENT"
+            ]
+          ],
+          "columns": [
+            "Nom_client",
+            "Distributeur",
+            "Enseigne",
+            "Centrale_regionale",
+            "CODE_CLIENT"
+          ]
+        },
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_PERIODE",
+              "Dim_date_FMCG",
+              "CODE_PERIODE"
+            ]
+          ],
+          "columns": [
+            "Année",
+            "Mois",
+            "Semaine",
+            "Date",
+            "CODE_PERIODE"
+          ]
+        },
+        {
+          "join": "left",
+          "path": [
+            [
+              "SELL-IN",
+              "CODE_PRODUIT",
+              "Dim_produits_FMCG",
+              "CODE_PRODUIT"
+            ]
+          ],
+          "columns": [
+            "Marque",
+            "Produit",
+            "Produit_détail",
+            "Format",
+            "CODE_PRODUIT"
+          ]
+        }
+      ],
+      "overlay_python": "col = \"Chiffre_daffaires\"\r\ndf[\"CA_num\"] = (df[col].astype(str)\r\n                   .str.replace(r'[^\\d,\\-\\s]', '', regex=True)\r\n                   .str.replace(r'[\\u00A0\\u202F ]', '', regex=True)\r\n                   .str.replace(',', '.', regex=False)\r\n                ).pipe(pd.to_numeric, errors='coerce')\r\n\r\ndf = df[df[\"CA_num\"] != 0].copy()",
+      "final_renames": {},
+      "final_sort": [],
+      "source_kind": "gabarit",
+      "transformation_name": "",
+      "transformation_version": "v1",
+      "final_order": [
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes",
+        "CODE_CLIENT",
+        "CODE_PRODUIT",
+        "CODE_PERIODE",
+        "En_promo"
+      ],
+      "final_excludes": []
+    },
+    {
+      "gabarit_name": "SELL-IN",
+      "gabarit_version": "v1",
+      "excel_target": {
+        "sheet": "BD_Effects",
+        "table": "BD_Effects"
+      },
+      "columns_enabled": [],
+      "methods": [],
+      "enrichments": [],
+      "final_order": [
+        "CODE_PROMO",
+        "Unite_volumes",
+        "Chiffre_daffaires",
+        "Volumes",
+        "Trimestre_relatif",
+        "Année_relative",
+        "Numéro_semaine_table",
+        "Prix moyen",
+        "CODE_CLIENT",
+        "CODE_PRODUIT",
+        "CODE_PERIODE",
+        "Nom_client",
+        "Distributeur",
+        "Enseigne",
+        "Centrale_regionale",
+        "Année",
+        "Mois",
+        "Semaine",
+        "Date",
+        "Marque",
+        "Produit",
+        "Produit_détail",
+        "Format"
+      ],
+      "final_excludes": [],
+      "source_kind": "transformation",
+      "transformation_name": "Effets Sell In",
+      "transformation_version": "v1",
+      "overlay_python": "",
+      "final_renames": {},
+      "final_sort": []
+    }
+  ],
+  "tags": {
+    "themes": [],
+    "families": []
+  },
+  "description": "Etude d'un sell-in en grande consommation.",
+  "created_by": null,
+  "created_at": "2025-11-12T17:12:02.201100",
+  "data_source": {
+    "type": "excel",
+    "connection_string": null,
+    "required_tables": []
+  },
+  "slide_mappings": [
+    {
+      "slide_id": "A003",
+      "sheet_name": "Tables",
+      "excel_range": "C7:H13",
+      "has_header": true
+    },
+    {
+      "slide_id": "A004",
+      "sheet_name": "Tables",
+      "excel_range": "M7:P13",
+      "has_header": true
+    },
+    {
+      "slide_id": "A005",
+      "sheet_name": "Tables",
+      "excel_range": "V7:AD15",
+      "has_header": false
+    }
+  ],
+  "loops": [
+    {
+      "loop_id": "Distributeur",
+      "slides": [
+        "B001"
+      ],
+      "sheet_name": "Boucles"
+    }
+  ],
+  "image_injections": {},
+  "ppt_template_path": null,
+  "excel_template_path": null,
+  "estimated_generation_time": null
+}

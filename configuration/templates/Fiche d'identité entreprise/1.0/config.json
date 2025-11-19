@@ -695,7 +695,7 @@
           ]
         }
       ],
-      "overlay_python": "df = df[df['Classe_(NACE4)']==segment]"
+      "overlay_python": "df = df[df['Classe_(NACE4)'] == segment]"
     }
   ],
   "description": "Benchmark entreprises",

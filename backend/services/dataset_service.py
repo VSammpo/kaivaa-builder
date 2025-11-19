@@ -50,6 +50,7 @@ def _load_dataframe_from_source(source: dict) -> Optional[pd.DataFrame]:
     """
     Lecture *complète* d'une source (csv, parquet, sql) + application éventuelle
     du script 'python' présent dans la config de la source.
+    ✅ NORMALISE les noms de colonnes (espaces → underscores) pour correspondre au gabarit.
     """
     if not source or not isinstance(source, dict):
         return None
@@ -64,6 +65,8 @@ def _load_dataframe_from_source(source: dict) -> Optional[pd.DataFrame]:
             sep = source.get("sep", ",")
             enc = source.get("encoding", "utf-8-sig")
             df = pd.read_csv(path, sep=sep, encoding=enc)
+            # ✅ NORMALISATION des noms de colonnes (cohérence avec gabarit)
+            df.columns = [str(col).strip().replace(" ", "_") for col in df.columns]
             df = _apply_source_python(df, source)
             logger.info(f"[dataset_service] CSV lu: {path}  shape={df.shape}")
             return df
@@ -74,6 +77,8 @@ def _load_dataframe_from_source(source: dict) -> Optional[pd.DataFrame]:
                 logger.warning(f"[dataset_service] Parquet introuvable: {path}")
                 return None
             df = pd.read_parquet(path)
+            # ✅ NORMALISATION des noms de colonnes
+            df.columns = [str(col).strip().replace(" ", "_") for col in df.columns]
             df = _apply_source_python(df, source)
             logger.info(f"[dataset_service] Parquet lu: {path}  shape={df.shape}")
             return df
@@ -87,6 +92,8 @@ def _load_dataframe_from_source(source: dict) -> Optional[pd.DataFrame]:
                 from sqlalchemy import create_engine
                 eng = create_engine(conn)
                 df = pd.read_sql(query, eng)
+                # ✅ NORMALISATION des noms de colonnes
+                df.columns = [str(col).strip().replace(" ", "_") for col in df.columns]
                 df = _apply_source_python(df, source)
                 logger.info(f"[dataset_service] SQL lu  shape={df.shape}")
                 return df

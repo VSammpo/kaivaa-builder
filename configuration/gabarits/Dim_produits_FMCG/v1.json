@@ -39,7 +39,7 @@
   "defaults": {
     "source": {
       "type": "csv",
-      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_produit_FMCG.csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_produit_FMCG.csv",
       "sep": ",",
       "encoding": "utf-8-sig"
     },

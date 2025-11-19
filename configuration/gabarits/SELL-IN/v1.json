@@ -15,7 +15,7 @@
     },
     {
       "name": "CODE_PERIODE",
-      "type": "date",
+      "type": "text",
       "is_key": true
     },
     {
@@ -66,7 +66,7 @@
       "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Sell_in_MBWS.csv",
       "sep": ",",
       "encoding": "utf-8-sig",
-      "python": "df = df.rename(columns={\"CODE CLIENT\": \"CODE_CLIENT\"})\ndf = df.rename(columns={\"CODE_ARTICLE\": \"CODE_PRODUIT\"})"
+      "python": "df = df.rename(columns={\"CODE CLIENT\": \"CODE_CLIENT\"})\ndf = df.rename(columns={\"CODE_ARTICLE\": \"CODE_PRODUIT\"})\ncol = \"Chiffre_daffaires\"\ndf[\"CA_num\"] = (df[col].astype(str)\n                   .str.replace(r'[^\\d,\\-\\s]', '', regex=True)\n                   .str.replace(r'[\\u00A0\\u202F ]', '', regex=True)\n                   .str.replace(',', '.', regex=False)\n                ).pipe(pd.to_numeric, errors='coerce')\ndf['CODE_PERIODE'] =df['CODE_PERIODE'].astype(str)\ndf = df[df[\"CA_num\"] > 0].copy()\n"
     },
     "preview": {
       "columns": [
@@ -77,208 +77,229 @@
         "En promo",
         "Unite_volumes",
         "Chiffre_daffaires",
-        "Volumes"
+        "Volumes",
+        "CA_num"
       ],
       "rows": [
         {
           "CODE_CLIENT": 10001053,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "19973",
-          "Volumes": 583
+          "Volumes": 583,
+          "CA_num": 19973
         },
         {
           "CODE_CLIENT": 10001054,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 10001055,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 10001056,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 10001057,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "15979",
-          "Volumes": 467
+          "Volumes": 467,
+          "CA_num": 15979
         },
         {
           "CODE_CLIENT": 10001058,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 10001181,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 10001197,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "15979",
-          "Volumes": 467
+          "Volumes": 467,
+          "CA_num": 15979
         },
         {
           "CODE_CLIENT": 10001464,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "9987",
-          "Volumes": 292
+          "Volumes": 292,
+          "CA_num": 9987
         },
         {
           "CODE_CLIENT": 10001466,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 50013647,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 50013653,
           "CODE_PRODUIT": 50002974,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7989",
-          "Volumes": 233
+          "Volumes": 233,
+          "CA_num": 7989
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 70000589,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "0342",
-          "Volumes": 5
+          "Volumes": 5,
+          "CA_num": 342
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 50001494,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1376",
-          "Volumes": 20
+          "Volumes": 20,
+          "CA_num": 1376
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 70005430,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1211",
-          "Volumes": 45
+          "Volumes": 45,
+          "CA_num": 1211
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 70005438,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "1633",
-          "Volumes": 67
+          "Volumes": 67,
+          "CA_num": 1633
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 70005852,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "0216",
-          "Volumes": 5
+          "Volumes": 5,
+          "CA_num": 216
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 50001848,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "7292",
-          "Volumes": 224
+          "Volumes": 224,
+          "CA_num": 7292
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 50001976,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "10990",
-          "Volumes": 350
+          "Volumes": 350,
+          "CA_num": 10990
         },
         {
           "CODE_CLIENT": 50012398,
           "CODE_PRODUIT": 50002124,
-          "CODE_PERIODE": "2024 - Jan - 01",
+          "CODE_PERIODE": "2024 - 01",
           "CODE_PROMO": "STD",
           "En promo": 0,
           "Unite_volumes": "C9L",
           "Chiffre_daffaires": "4689",
-          "Volumes": 112
+          "Volumes": 112,
+          "CA_num": 4689
         }
       ]
     }

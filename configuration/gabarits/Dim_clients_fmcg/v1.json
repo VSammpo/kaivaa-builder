@@ -34,7 +34,7 @@
   "defaults": {
     "source": {
       "type": "csv",
-      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_client_FMCG.csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_client_FMCG.csv",
       "sep": ",",
       "encoding": "utf-8-sig",
       "python": "df = df.rename(columns={\"CODE CLIENT\": \"CODE_CLIENT\"})"

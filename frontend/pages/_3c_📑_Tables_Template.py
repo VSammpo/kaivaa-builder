@@ -669,6 +669,19 @@ if st.button("💾 Enregistrer l’usage", type="primary", use_container_width=T
         keep_final_excl  = old_for_key.get("final_excludes")
         keep_final_ren   = old_for_key.get("final_renames")
         keep_final_sort  = old_for_key.get("final_sort")
+        
+        # ✅ CORRECTION : Synchroniser final_order avec columns_enabled
+        # Si final_order existe, on l'ajuste pour refléter les nouvelles colonnes sélectionnées
+        if keep_final_order:
+            # Retirer les colonnes qui ne sont plus dans enabled
+            keep_final_order = [col for col in keep_final_order if col in enabled]
+            # Ajouter les nouvelles colonnes qui ne sont pas encore dans final_order
+            for col in enabled:
+                if col not in keep_final_order:
+                    keep_final_order.append(col)
+        else:
+            # Si pas de final_order existant, utiliser l'ordre de sélection
+            keep_final_order = enabled[:]
 
         with DatabaseService.get_session() as db:
             ts = TemplateService(db)

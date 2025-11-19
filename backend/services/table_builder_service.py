@@ -664,6 +664,17 @@ def build_table_from_usage(
             if log_kpis:
                 logger.warning(f"[PIPELINE] ⚙️ Colonne de méthode '{method_col}' absente de final_order → ajoutée automatiquement")
     
+    # ✅ CORRECTION : Ajouter TOUTES les colonnes de columns_enabled manquantes
+    # (pas seulement les clés et méthodes, mais aussi les colonnes de données)
+    for data_col in cols_enabled_with_keys:
+        # Appliquer les renommages
+        renamed_col = ren.get(data_col, data_col)
+        # Ajouter si présente dans le DataFrame et pas déjà dans mapped_order
+        if renamed_col in df.columns and renamed_col not in mapped_order:
+            mapped_order.append(renamed_col)
+            if log_kpis:
+                logger.warning(f"[PIPELINE] 📊 Colonne de données '{renamed_col}' absente de final_order → ajoutée automatiquement")
+    
     # Exclusions (SAUF les colonnes clés ET les colonnes de méthodes)
     excl_names = set()
     for c in src_excl:

@@ -41,7 +41,7 @@
         "Année",
         "Semaine"
       ],
-      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\nvalue = (_ord - _ord.min() + 1).astype(int)\r\n",
+      "code": "_ord = df['Année'].fillna(0).astype(int)*52 + (df['Semaine'].fillna(0).astype(int)-1)\nvalue = (_ord - _ord.min() + 1).astype(int)",
       "order": 1
     },
     {
@@ -54,7 +54,7 @@
         "Année",
         "Semaine"
       ],
-      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\n_delta = (_ord.max() - _ord)\r\n_block52 = (_delta // 52).astype(int)\r\nvalue = _block52.map(lambda b: \"N\" if b == 0 else f\"N-{b}\")\r\n",
+      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\n_delta = (_ord.max() - _ord) \n_block52 = (_delta // 52).astype(int) \nvalue = _block52.map(lambda b: \"N\" if b == 0 else f\"N-{b}\") \n",
       "order": 2
     },
     {
@@ -67,16 +67,17 @@
         "Année",
         "Semaine"
       ],
-      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1)\r\n_delta = (_ord.max() - _ord)\r\n_block13 = (_delta // 13).astype(int)\r\nvalue = _block13.map(lambda b: \"T\" if b == 0 else f\"T-{b:02d}\")\r\n",
+      "code": "_ord = df['Année'].astype(int)*52 + (df['Semaine'].astype(int)-1) \n_delta = (_ord.max() - _ord) \n_block13 = (_delta // 13).astype(int) \nvalue = _block13.map(lambda b: \"T\" if b == 0 else f\"T-{b:02d}\")",
       "order": 3
     }
   ],
   "defaults": {
     "source": {
       "type": "csv",
-      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\007 - Data factory\\003 - Dimensions\\Dim_date_FMCG.csv",
+      "path": "C:\\Users\\mosch\\Bureau\\SAMMPO\\004 - Projets\\007 - MBWS\\01 - Données retravaillée\\Dim_date_FMCG.csv",
       "sep": ",",
-      "encoding": "utf-8-sig"
+      "encoding": "utf-8-sig",
+      "python": "df['CODE_PERIODE'] = df['CODE_PERIODE'].astype(str)"
     },
     "preview": {
       "columns": [
@@ -88,143 +89,143 @@
       ],
       "rows": [
         {
-          "CODE_PERIODE": "2024 - Jan - 01",
-          "Année": 2024,
-          "Mois": 1,
-          "Semaine": 1,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Jan - 01",
+          "CODE_PERIODE": "2025 - 40",
           "Année": 2025,
-          "Mois": 1,
-          "Semaine": 1,
+          "Mois": null,
+          "Semaine": 40,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Jan - 02",
-          "Année": 2024,
-          "Mois": 1,
-          "Semaine": 2,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Jan - 02",
+          "CODE_PERIODE": "2025 - 39",
           "Année": 2025,
-          "Mois": 1,
-          "Semaine": 2,
+          "Mois": null,
+          "Semaine": 39,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Jan - 03",
-          "Année": 2024,
-          "Mois": 1,
-          "Semaine": 3,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Jan - 03",
+          "CODE_PERIODE": "2025 - 38",
           "Année": 2025,
-          "Mois": 1,
-          "Semaine": 3,
+          "Mois": null,
+          "Semaine": 38,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Jan - 04",
-          "Année": 2024,
-          "Mois": 1,
-          "Semaine": 4,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Jan - 04",
+          "CODE_PERIODE": "2025 - 37",
           "Année": 2025,
-          "Mois": 1,
-          "Semaine": 4,
+          "Mois": null,
+          "Semaine": 37,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2025 - Jan - 05",
+          "CODE_PERIODE": "2025 - 36",
           "Année": 2025,
-          "Mois": 1,
-          "Semaine": 5,
+          "Mois": null,
+          "Semaine": 36,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Feb - 05",
-          "Année": 2024,
-          "Mois": 2,
-          "Semaine": 5,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2024 - Jan - 05",
-          "Année": 2024,
-          "Mois": 1,
-          "Semaine": 5,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2024 - Feb - 06",
-          "Année": 2024,
-          "Mois": 2,
-          "Semaine": 6,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Feb - 06",
+          "CODE_PERIODE": "2025 - 44",
           "Année": 2025,
-          "Mois": 2,
-          "Semaine": 6,
+          "Mois": null,
+          "Semaine": 44,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Feb - 07",
-          "Année": 2024,
-          "Mois": 2,
-          "Semaine": 7,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Feb - 07",
+          "CODE_PERIODE": "2025 - 43",
           "Année": 2025,
-          "Mois": 2,
-          "Semaine": 7,
+          "Mois": null,
+          "Semaine": 43,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2025 - Feb - 08",
+          "CODE_PERIODE": "2025 - 42",
           "Année": 2025,
-          "Mois": 2,
-          "Semaine": 8,
+          "Mois": null,
+          "Semaine": 42,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Feb - 08",
-          "Année": 2024,
-          "Mois": 2,
-          "Semaine": 8,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2024 - Feb - 09",
-          "Année": 2024,
-          "Mois": 2,
-          "Semaine": 9,
-          "Date": null
-        },
-        {
-          "CODE_PERIODE": "2025 - Feb - 09",
+          "CODE_PERIODE": "2025 - 41",
           "Année": 2025,
-          "Mois": 2,
-          "Semaine": 9,
+          "Mois": null,
+          "Semaine": 41,
           "Date": null
         },
         {
-          "CODE_PERIODE": "2024 - Mar - 09",
-          "Année": 2024,
-          "Mois": 3,
-          "Semaine": 9,
+          "CODE_PERIODE": "2025 - 22",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 22,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 21",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 21,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 20",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 20,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 19",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 19,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 18",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 18,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 14",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 14,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 13",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 13,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 12",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 12,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 11",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 11,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 10",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 10,
+          "Date": null
+        },
+        {
+          "CODE_PERIODE": "2025 - 27",
+          "Année": 2025,
+          "Mois": null,
+          "Semaine": 27,
           "Date": null
         }
       ]
