@@ -60,3 +60,12 @@ data/tmp/
 ~$*.ppt
 ~$*.xlsx
 ~$*.xls
+
+# Ignorer Excel et PowerPoint
+*.xlsx
+*.xls
+*.xlsm
+*.xlsb
+*.pptx
+*.pptm
+*.ppt
